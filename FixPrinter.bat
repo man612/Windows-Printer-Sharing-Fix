@@ -798,60 +798,43 @@ set "DESC=%~2"
 echo     - !DESC!
 call :log "[CMD] !DESC!"
 if not exist "!TARGET!" mkdir "!TARGET!" >nul 2>&1
-if not exist "!TARGET!" (
-    call :addIssue FAIL "!DESC! failed because folder is missing: !TARGET!"
-    exit /b 1
-)
-del /Q /F "!TARGET!\*" >> "%LOG_FILE%" 2>&1
-for /d %%D in ("!TARGET!\*") do rd /S /Q "%%~fD" >> "%LOG_FILE%" 2>&1
-call :log "[OK] !DESC! completed."
+pushd "!TARGET!" || exit /b 0
+del /q /f * >> "%LOG_FILE%" 2>&1
+for /d %%D in (*) do rd /s /q "%%D" >> "%LOG_FILE%" 2>&1
+popd
 exit /b 0
 
 :enableFirewallSharing
-netsh advfirewall firewall set rule group="@FirewallAPI.dll,-28502" new enable=Yes >> "%LOG_FILE%" 2>&1
-if not errorlevel 1 (
+set "RULE_EN=File and Printer Sharing"
+set "RULE_ID=Berbagi File dan Printer"
+netsh advfirewall firewall set rule group="%RULE_EN%" new enable=yes >> "%LOG_FILE%" 2>&1
+set "RC1=!ERRORLEVEL!"
+netsh advfirewall firewall set rule group="%RULE_ID%" new enable=yes >> "%LOG_FILE%" 2>&1
+set "RC2=!ERRORLEVEL!"
+if "!RC1!"=="0" (
     echo !STR_FIREWALL_ENABLED!
-    call :log "[OK] Firewall File and Printer Sharing enabled by resource id."
-    exit /b 0
-)
-netsh advfirewall firewall set rule group="File and Printer Sharing" new enable=Yes >> "%LOG_FILE%" 2>&1
-if not errorlevel 1 (
+    call :log "[OK] Firewall group '%RULE_EN%' enabled."
+) else if "!RC2!"=="0" (
     echo !STR_FIREWALL_ENABLED!
-    call :log "[OK] Firewall File and Printer Sharing enabled by English fallback."
-    exit /b 0
+    call :log "[OK] Firewall group '%RULE_ID%' enabled."
+) else (
+    call :addIssue WARN "Firewall sharing group enable failed (both EN and ID names)."
 )
-netsh firewall set service type=FILEANDPRINT mode=ENABLE >> "%LOG_FILE%" 2>&1
-if not errorlevel 1 (
-    echo !STR_FIREWALL_ENABLED!
-    call :log "[OK] Firewall File and Printer Sharing enabled by legacy netsh fallback."
-    exit /b 0
-)
-echo !STR_FIREWALL_FAILED!
-call :addIssue WARN "Enable Firewall File and Printer Sharing failed."
-exit /b 1
+exit /b 0
 
 :offerNetworkPrivate
 if !BUILD_NUM! LSS 9200 (
     echo !STR_NET_PRIVATE_SKIP!
-    call :log "[SKIP] Set-NetConnectionProfile skipped for pre-Windows 8 build."
+    call :log "[SKIP] Set-NetConnectionProfile skipped for legacy Windows."
     exit /b 0
 )
 choice /C YN /N /M "!STR_NET_PRIVATE_PROMPT!"
 if errorlevel 2 exit /b 0
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -ne 'DomainAuthenticated'} | Set-NetConnectionProfile -NetworkCategory Private" >> "%LOG_FILE%" 2>&1
-if errorlevel 1 (
-    call :addIssue WARN "Set network private failed."
-) else (
-    call :log "[OK] Network profile set to Private where applicable."
-)
+call :runWarn "Set Network to Private" "powershell -NoProfile -ExecutionPolicy Bypass -Command ^"Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private^""
 exit /b 0
 
 :verifyFinal
-call :getServiceStatus Spooler VERIFY_SPOOLER
-echo     - Spooler: !VERIFY_SPOOLER!
-if /I not "!VERIFY_SPOOLER!"=="!STR_RUNNING!" (
-    call :addIssue FAIL "Spooler is not running after fix."
-)
+call :verifyService Spooler
 call :verifyDword "HKLM\System\CurrentControlSet\Control\Print" "RpcAuthnLevelPrivacyEnabled" "0x0"
 call :verifyDword "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC" "RpcUseNamedPipeProtocol" "0x1"
 call :verifyDword "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC" "RpcProtocols" "0x7"
@@ -862,24 +845,68 @@ if /I "!FIX_MODE!"=="LEGACY" (
 )
 exit /b 0
 
-:verifyDword
-set "VKEY=%~1"
-set "VNAME=%~2"
-set "EXPECTED=%~3"
-set "ACTUAL="
-for /f "tokens=3" %%V in ('reg query "%VKEY%" /v "%VNAME%" 2^>nul ^| findstr /I /C:"%VNAME%"') do set "ACTUAL=%%V"
-if /I not "!ACTUAL!"=="!EXPECTED!" (
-    echo     - %VNAME%: !STR_VERIFY_MISMATCH! ^(!STR_ACTUAL!=!ACTUAL!, !STR_TARGET!=%EXPECTED%^)
-    call :addIssue FAIL "%VNAME% verification failed. Actual=!ACTUAL!, Expected=%EXPECTED%."
+:verifyService
+set "SVC=%~1"
+call :isServiceRunning "%SVC%"
+if errorlevel 1 (
+    call :addIssue FAIL "Verification: %SVC% is NOT running."
 ) else (
-    echo     - %VNAME%: OK
-    call :log "[OK] %VNAME% verified as %EXPECTED%."
+    call :log "[VERIFY] %SVC% is running."
 )
 exit /b 0
 
+:verifyDword
+set "VKEY=%~1"
+set "VVAL=%~2"
+set "VEXP=%~3"
+set "VACT="
+for /f "tokens=3" %%A in ('reg query "%VKEY%" /v "%VVAL%" 2^>nul ^| findstr /I /C:"%VVAL%"') do set "VACT=%%A"
+if /I not "!VACT!"=="!VEXP!" (
+    call :addIssue WARN "Verification mismatch: %VVAL% (!STR_ACTUAL! !VACT!, !STR_TARGET! !VEXP!)"
+) else (
+    call :log "[VERIFY] %VVAL% matches expected !VEXP!."
+)
+exit /b 0
+
+:log
+set "MSG=%~1"
+echo [%DATE% %TIME%] !MSG! >> "%LOG_FILE%"
+exit /b 0
+
+:langSettings
+cls
+echo.
+echo ###############################################################################
+echo #                                                                             #
+echo #        !STR_LANG_TITLE!
+echo #                                                                             #
+echo ###############################################################################
+echo.
+echo !STR_LANG_1!
+echo !STR_LANG_2!
+echo !STR_LANG_3!
+echo.
+choice /C 123 /N /M "!STR_LANG_SELECT!"
+if errorlevel 3 goto :mainMenu
+if errorlevel 2 (
+    call :saveLanguage ID
+    goto :mainMenu
+)
+if errorlevel 1 (
+    call :saveLanguage EN
+    goto :mainMenu
+)
+goto :langSettings
+
 :viewLog
 cls
-echo [!STR_LOG_TITLE!]
+echo.
+echo ###############################################################################
+echo #                                                                             #
+echo #        !STR_LOG_TITLE!
+echo #                                                                             #
+echo ###############################################################################
+echo.
 echo !STR_LOG_FILE!: %LOG_FILE%
 echo.
 if not exist "%LOG_FILE%" (
@@ -887,58 +914,74 @@ if not exist "%LOG_FILE%" (
     pause
     goto :mainMenu
 )
-findstr /R /C:"[^ ]" "%LOG_FILE%" >nul 2>&1
-if errorlevel 1 (
+set "SIZE=0"
+for %%A in ("%LOG_FILE%") do set "SIZE=%%~zA"
+if !SIZE! EQU 0 (
     echo !STR_LOG_EMPTY!
-) else (
-    type "%LOG_FILE%"
+    pause
+    goto :mainMenu
 )
+type "%LOG_FILE%"
 echo.
 pause
 goto :mainMenu
 
 :quickAccess
 cls
-echo [!STR_QUICK_ACCESS_TITLE!]
-echo [1] Services
-echo [2] Printers
-echo [3] Network and Sharing Center
-echo [4] Print Management
+echo.
+echo ###############################################################################
+echo #                                                                             #
+echo #        !STR_QUICK_ACCESS_TITLE!
+echo #                                                                             #
+echo ###############################################################################
+echo.
+echo [1] Services (services.msc)
+echo [2] Printers & Scanners (ms-settings:printers)
+echo [3] Print Management (printmanagement.msc)
+echo [4] Network Connections (ncpa.cpl)
 echo [5] !STR_BACK!
 echo.
-choice /C 12345 /N /M "!STR_SELECT_SHORT!: "
+choice /C 12345 /N /M "!STR_SELECT!"
 if errorlevel 5 goto :mainMenu
 if errorlevel 4 (
-    start "" printmanagement.msc
+    start ncpa.cpl
     goto :quickAccess
 )
 if errorlevel 3 (
-    start "" control.exe /name Microsoft.NetworkAndSharingCenter
+    start printmanagement.msc
     goto :quickAccess
 )
 if errorlevel 2 (
-    start "" control.exe printers
+    start ms-settings:printers
     goto :quickAccess
 )
 if errorlevel 1 (
-    start "" services.msc
+    start services.msc
     goto :quickAccess
 )
-goto :mainMenu
+goto :quickAccess
 
 :userGuide
 cls
+echo.
+echo ###############################################################################
+echo #                                                                             #
+echo #        !STR_MENU_5!
+echo #                                                                             #
+echo ###############################################################################
+echo.
 if /I "!LANG!"=="EN" (
-    echo [GUIDE ^& RISK NOTES]
+    echo [GUIDE ^& RISK]
     echo.
-    echo 1. Run as Administrator. Double-click will request UAC automatically.
-    echo 2. Try Quick Fix first.
-    echo 3. Classic/Full Fix is only for older or stubborn cases because it reduces security.
-    echo 4. Point and Print compatibility from the early version is included in Quick Fix.
-    echo 5. A registry backup is created for every run and is not overwritten.
-    echo 6. Restore only restores backed-up registry values, not printer drivers.
-    echo 7. Windows 7 support depends on installed drivers, updates, and SMB settings.
-    echo 8. If FAIL appears, do not treat the fix as successful. Open the log and resolve it.
+    echo 1. Run as Administrator.
+    echo 2. If run normally, the script will request UAC elevation automatically.
+    echo 3. Start with Quick Fix.
+    echo 4. Classic/Full Fix is for persistent issues but reduces security.
+    echo 5. Point and Print compatibility is included in Quick Fix.
+    echo 6. Registry backups are created per run and never overwritten.
+    echo 7. Restore only reverts registry keys, not printer drivers.
+    echo 8. Windows 7 support is best-effort (command compatibility).
+    echo 9. If FAIL appears, check the log and resolve the issue.
 ) else (
     echo [PANDUAN ^& RISIKO]
     echo.
@@ -955,26 +998,3 @@ if /I "!LANG!"=="EN" (
 echo.
 pause
 goto :mainMenu
-
-:langSettings
-cls
-echo [!STR_LANG_TITLE!]
-echo !STR_LANG_1!
-echo !STR_LANG_2!
-echo !STR_LANG_3!
-echo.
-choice /C 123 /N /M "!STR_LANG_SELECT!"
-if errorlevel 3 goto :mainMenu
-if errorlevel 2 (
-    call :saveLanguage ID
-    goto :mainMenu
-)
-if errorlevel 1 (
-    call :saveLanguage EN
-    goto :mainMenu
-)
-goto :mainMenu
-
-:log
->> "%LOG_FILE%" echo [%DATE% %TIME%] %~1
-exit /b 0

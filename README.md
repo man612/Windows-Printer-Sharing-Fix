@@ -72,7 +72,6 @@ This tool may help with problems such as:
 
 ---
 
-<a name="features"></a>
 ## ✨ Features
 
 - **Auto-Elevation (UAC)**: Automatically requests Administrator privileges via PowerShell if not already elevated.
