@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableDelayedExpansion
+setlocal
 color 0F
 title Windows Printer Sharing Fix Utility
 mode con: cols=100 lines=45
@@ -8,11 +8,11 @@ mode con: cols=100 lines=45
 :: Repository: Windows-Printer-Sharing-Fix
 :: Description: Automated fix for Windows 7/8/10/11 printer sharing errors
 :: Author: Yasman
-:: Version: 2.5.0
+:: Version: 2.6.0
 :: License: MIT
 :: ==============================================================================
 
-set "VERSION=2.5.0"
+set "VERSION=2.6.0"
 set "LOG_FILE=printer_fix_log.txt"
 set "BACKUP_DIR=backups"
 set "LANG=EN"
@@ -90,14 +90,21 @@ if "%LANG%"=="ID" (
 :: --- Check for Administrator Privileges ---
 net session >nul 2>&1
 if %errorLevel% neq 0 (
-    color 0C & cls & echo.
+    color 0C
+    cls
+    echo.
     echo  ##############################################################################
     echo  #                                                                            #
     echo  #             %STR_ADMIN_ERR%                     #
     echo  #                                                                            #
     echo  ##############################################################################
-    echo. & echo  %STR_ADMIN_DESC% & echo  %STR_ADMIN_SOL% & echo.
-    echo  %STR_PRESS_KEY% & pause >nul & exit /b
+    echo.
+    echo  %STR_ADMIN_DESC%
+    echo  %STR_ADMIN_SOL%
+    echo.
+    echo  %STR_PRESS_KEY%
+    pause >nul
+    exit /b
 )
 
 :: --- OS Detection ---
@@ -109,7 +116,9 @@ if "%OS_VER%"=="6.2" set "OS_NAME=Windows 8"
 if "%OS_VER%"=="6.1" set "OS_NAME=Windows 7"
 
 :mainMenu
-color 0F & cls & echo.
+color 0F
+cls
+echo.
 echo  ##############################################################################
 echo  #                                                                            #
 echo  #             %STR_MENU_TITLE% v%VERSION%               #
@@ -125,8 +134,14 @@ echo.
 echo  ------------------------------------------------------------------------------
 echo  [%STR_MAIN_MENU%]
 echo  ------------------------------------------------------------------------------
-echo  %STR_OPT_1% & echo  %STR_OPT_2% & echo  %STR_OPT_3% & echo  %STR_OPT_4%
-echo  %STR_OPT_5% & echo  %STR_OPT_6% & echo  %STR_OPT_7% & echo  %STR_OPT_8%
+echo  %STR_OPT_1%
+echo  %STR_OPT_2%
+echo  %STR_OPT_3%
+echo  %STR_OPT_4%
+echo  %STR_OPT_5%
+echo  %STR_OPT_6%
+echo  %STR_OPT_7%
+echo  %STR_OPT_8%
 echo.
 
 set "MENU_CHOICE="
@@ -141,16 +156,29 @@ if "%MENU_CHOICE%"=="6" goto langSettings
 if "%MENU_CHOICE%"=="7" goto viewLog
 if "%MENU_CHOICE%"=="8" exit /b
 
-echo. & echo %STR_ERR_INPUT% & timeout /t 2 >nul & goto mainMenu
+echo.
+echo %STR_ERR_INPUT%
+timeout /t 2 >nul
+goto mainMenu
 
 :viewLog
-if exist "%LOG_FILE%" ( start notepad.exe "%LOG_FILE%" ) else ( echo. & echo [!] Log file not found yet. & pause )
+if exist "%LOG_FILE%" (
+    start notepad.exe "%LOG_FILE%"
+) else (
+    echo.
+    echo [!] Log file not found yet.
+    pause
+)
 goto mainMenu
 
 :langSettings
-cls & echo.
+cls
+echo.
 echo  [LANGUAGE SETTINGS / PENGATURAN BAHASA]
-echo  [1] English (Current: %LANG%) ^| [2] Bahasa Indonesia ^| [3] Back
+echo  [1] English (Current: %LANG%)
+echo  [2] Bahasa Indonesia
+echo  [3] Back / Kembali
+echo.
 set "LANG_CHOICE="
 set /p LANG_CHOICE="Select / Pilih: "
 if "%LANG_CHOICE%"=="1" set "LANG=EN" & goto initLang
@@ -161,21 +189,40 @@ goto langSettings
 :userGuide
 cls
 if "%LANG%"=="ID" (
-    echo. & echo  ==============================================================================
+    echo.
+    echo  ==============================================================================
     echo                            PANDUAN PENGGUNA (DETIL)
     echo  ==============================================================================
-    echo. & echo  1. QUICK FIX ^| 2. FULL FIX ^| 3. RESTORE ^| 4. RESTART
+    echo.
+    echo  1. PERBAIKAN CEPAT (QUICK FIX)
+    echo  2. PERBAIKAN TOTAL (FULL FIX)
+    echo  3. RESTORE (KEMBALIKAN)
+    echo  4. RESTART ADALAH KUNCI
 ) else (
-    echo. & echo  ==============================================================================
+    echo.
+    echo  ==============================================================================
     echo                            USER GUIDE (DETAILED)
     echo  ==============================================================================
-    echo. & echo  1. QUICK FIX ^| 2. FULL FIX ^| 3. RESTORE ^| 4. RESTART
+    echo.
+    echo  1. QUICK FIX
+    echo  2. FULL FIX
+    echo  3. RESTORE
+    echo  4. RESTART IS KEY
 )
-echo  Press any key to return to menu... & pause >nul & goto mainMenu
+echo.
+echo  Press any key to return to menu...
+pause >nul
+goto mainMenu
 
 :quickAccess
-cls & echo  [QUICK ACCESS TOOLS]
-echo  [1] Services ^| [2] Printers ^| [3] Network ^| [4] Print Mgmt ^| [5] Back
+cls
+echo  [QUICK ACCESS TOOLS]
+echo  [1] Services
+echo  [2] Printers
+echo  [3] Network Center
+echo  [4] Print Management
+echo  [5] Back
+echo.
 set "QA_CHOICE="
 set /p QA_CHOICE="Select: "
 if "%QA_CHOICE%"=="1" start services.msc & goto quickAccess
@@ -186,62 +233,124 @@ if "%QA_CHOICE%"=="5" goto mainMenu
 goto quickAccess
 
 :runFix
-cls & color 0E & echo ==============================================================================
+cls
+color 0E
+echo ==============================================================================
 echo                 %STR_STARTING% [%FIX_MODE%]
 echo ==============================================================================
 echo.
 call :log "--- Started Printer Fix [%FIX_MODE%] by Yasman ---"
+
 echo [+] %STR_BACKUP%
 reg export "HKLM\System\CurrentControlSet\Control\Print" "%BACKUP_DIR%\print_backup.reg" /y >nul 2>&1
 reg export "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Print\Providers" "%BACKUP_DIR%\providers_backup.reg" /y >nul 2>&1
-echo. & echo [+] %STR_STOP_SVC%
-net stop spooler /y >nul 2>&1 & net stop LanmanWorkstation /y >nul 2>&1 & net stop LanmanServer /y >nul 2>&1
-echo. & echo [+] %STR_CLEAR_CACHE%
+
+echo.
+echo [+] %STR_STOP_SVC%
+net stop spooler /y >nul 2>&1
+net stop LanmanWorkstation /y >nul 2>&1
+net stop LanmanServer /y >nul 2>&1
+
+echo.
+echo [+] %STR_CLEAR_CACHE%
 del /Q /F /S "%systemroot%\System32\Spool\Printers\*.*" >nul 2>&1
 del /Q /F /S "%systemroot%\System32\Spool\SERVERS\*.*" >nul 2>&1
-echo. & echo [+] %STR_APPLY_REG%
+
+echo.
+echo [+] %STR_APPLY_REG%
 reg delete "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Print\Providers\Client Side Rendering Print Provider" /f >nul 2>&1
 reg add "HKLM\System\CurrentControlSet\Control\Print" /v RpcAuthnLevelPrivacyEnabled /t REG_DWORD /d 0 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC" /v RpcUseNamedPipeProtocol /t REG_DWORD /d 1 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC" /v RpcProtocols /t REG_DWORD /d 0x7 /f >nul 2>&1
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" /v limitblankpassworduse /t REG_DWORD /d 0 /f >nul 2>&1
-echo. & echo [+] %STR_UP_PERM%
+
+echo.
+echo [+] %STR_UP_PERM%
 icacls "%systemroot%\System32\spool\PRINTERS" /grant Everyone:(OI)(CI)F /T /C /Q >nul 2>&1
 icacls "%systemroot%\System32\spool\drivers" /grant Everyone:(OI)(CI)F /T /C /Q >nul 2>&1
+
 echo.
-if "%OS_VER%"=="6.1" ( echo [i] Skipping Windows 10 specific network commands... ) else (
+if "%OS_VER%"=="6.1" (
+    echo [i] Skipping Windows 10 specific network commands...
+) else (
     echo [+] Setting Network Category to Private...
     powershell -Command "Set-NetConnectionProfile -NetworkCategory Private" >nul 2>&1
 )
-if "%FIX_MODE%"=="FULL" (
-    echo. & echo [+] [FULL] Enabling SMBv1 ^& Guest Auth...
-    dism /online /Enable-Feature /FeatureName:"SMB1Protocol" -All /NoRestart /quiet >nul 2>&1
-    reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" /v AllowInsecureGuestAuth /t REG_DWORD /d 1 /f >nul 2>&1
-    reg add "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" /v LmCompatibilityLevel /t REG_DWORD /d 1 /f >nul 2>&1
-)
+
+if "%FIX_MODE%"=="QUICK" goto finalize
+
+echo.
+echo [+] [FULL] Enabling SMBv1 ^& Guest Auth...
+dism /online /Enable-Feature /FeatureName:"SMB1Protocol" -All /NoRestart /quiet >nul 2>&1
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" /v AllowInsecureGuestAuth /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" /v LmCompatibilityLevel /t REG_DWORD /d 1 /f >nul 2>&1
+
 :finalize
-echo. & echo [+] %STR_RESTART_SVC%
-net start LanmanServer >nul 2>&1 & net start LanmanWorkstation >nul 2>&1 & net start spooler >nul 2>&1
-sc config fdPHost start=auto >nul 2>&1 & sc config FDResPub start=auto >nul 2>&1
-net start fdPHost >nul 2>&1 & net start FDResPub >nul 2>&1
-echo. & color 0A & echo ==============================================================================
+echo.
+echo [+] %STR_RESTART_SVC%
+net start LanmanServer >nul 2>&1
+net start LanmanWorkstation >nul 2>&1
+net start spooler >nul 2>&1
+
+:: Service config with specific logging
+sc config fdPHost start=auto >nul 2>&1 && (call :log "[+] fdPHost config success") || (call :log "[-] fdPHost config fail/skip")
+sc config FDResPub start=auto >nul 2>&1 && (call :log "[+] FDResPub config success") || (call :log "[-] FDResPub config fail/skip")
+
+net start fdPHost >nul 2>&1
+net start FDResPub >nul 2>&1
+
+echo.
+color 0A
+echo ==============================================================================
 echo                      %STR_SUCCESS%
 echo ==============================================================================
-echo %STR_REBOOT_REQ% & echo.
-set "REBOOT=" & set /p REBOOT="%STR_REBOOT_NOW%"
+echo %STR_REBOOT_REQ%
+echo.
+set "REBOOT="
+set /p REBOOT="%STR_REBOOT_NOW%"
 if /i "%REBOOT%"=="Y" (
-    echo. & echo Restarting in 10 seconds. Press CTRL+C to abort... & shutdown /r /t 10 /c "Printer Fix Applied by Yasman." & exit /b
-) else ( echo. & echo [!] Please restart manually later. & pause >nul & goto mainMenu )
+    echo.
+    echo Restarting in 10 seconds. Press CTRL+C to abort...
+    shutdown /r /t 10 /c "Printer Fix Applied by Yasman. System Restarting."
+    exit /b
+) else (
+    echo.
+    echo [!] Please restart manually later.
+    pause >nul
+    goto mainMenu
+)
 
 :restoreSettings
-cls & echo ==============================================================================
+cls
+echo ==============================================================================
 echo                        RESTORE SETTINGS FROM BACKUP
 echo ==============================================================================
 echo.
-if not exist "%BACKUP_DIR%\print_backup.reg" ( echo [!] Backup not found. & pause & goto mainMenu )
-if not exist "%BACKUP_DIR%\providers_backup.reg" ( echo [!] Backup not found. & pause & goto mainMenu )
-reg import "%BACKUP_DIR%\print_backup.reg" >nul 2>&1 & reg import "%BACKUP_DIR%\providers_backup.reg" >nul 2>&1
-echo [+] Restore complete. Please restart. & pause & goto mainMenu
+set "MISSING_BACKUP=0"
+if not exist "%BACKUP_DIR%\print_backup.reg" (
+    echo [!] Missing: print_backup.reg
+    set "MISSING_BACKUP=1"
+)
+if not exist "%BACKUP_DIR%\providers_backup.reg" (
+    echo [!] Missing: providers_backup.reg
+    set "MISSING_BACKUP=1"
+)
+
+if "%MISSING_BACKUP%"=="1" (
+    echo.
+    echo [!] Restore aborted. Some backup files are missing.
+    pause
+    goto mainMenu
+)
+
+reg import "%BACKUP_DIR%\print_backup.reg" >nul 2>&1
+reg import "%BACKUP_DIR%\providers_backup.reg" >nul 2>&1
+call :log "[+] Restore executed successfully"
+echo [+] Restore complete. Please restart.
+pause
+goto mainMenu
 
 :log
-set "msg=%~1" & echo [%DATE% %TIME%] %msg% >> "%LOG_FILE%" & exit /b
+set "msg=%~1"
+echo [%DATE% %TIME%] %msg% >> "%LOG_FILE%"
+exit /b
