@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableDelayedExpansion
-color 0B
+color 0F
 title Windows Printer Sharing Fix Utility
 mode con: cols=100 lines=45
 
