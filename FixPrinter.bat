@@ -8,11 +8,11 @@ mode con: cols=100 lines=45
 :: Repository: Windows-Printer-Sharing-Fix
 :: Description: Automated fix for Windows 10/11 printer sharing errors
 :: Author: Yasman
-:: Version: 2.1.0
+:: Version: 2.1.1
 :: License: MIT
 :: ==============================================================================
 
-set "VERSION=2.1.0"
+set "VERSION=2.1.1"
 set "LOG_FILE=printer_fix_log.txt"
 set "BACKUP_DIR=backups"
 
@@ -31,10 +31,10 @@ if %errorLevel% neq 0 (
     echo  #                                                                            #
     echo  ##############################################################################
     echo.
-    echo  [!] Script ini harus dijalankan sebagai Administrator.
-    echo  [!] Caranya: Klik kanan file ini, lalu pilih "Run as administrator".
+    echo  [!] This script must be run as an Administrator to modify system settings.
+    echo  [!] Solution: Right-click this file and select "Run as administrator".
     echo.
-    echo  Tekan tombol apa saja untuk keluar...
+    echo  Press any key to exit...
     pause >nul
     exit /b
 )
