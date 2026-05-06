@@ -34,6 +34,7 @@ A Windows batch utility for troubleshooting common printer sharing issues on loc
 
 ---
 
+<a name="overview"></a>
 ## 🔍 Overview
 
 Windows printer sharing can fail for many different reasons. Some issues are caused by Windows updates, printer driver compatibility, RPC changes, Print Spooler failures, firewall rules, network discovery settings, SMB compatibility, or incorrect host/client configuration.
@@ -42,6 +43,7 @@ This script provides a menu-based troubleshooting utility that applies several k
 
 ---
 
+<a name="supported-windows-versions"></a>
 ## 💻 Supported Windows Versions
 
 This project is intended to support the following Windows versions:
@@ -55,6 +57,7 @@ Windows 7 support is best-effort. Some commands and services differ between Wind
 
 ---
 
+<a name="common-issues"></a>
 ## 🛠️ Common Issues
 
 This tool may help with problems such as:
@@ -66,6 +69,7 @@ This tool may help with problems such as:
 
 ---
 
+<a name="features"></a>
 ## ✨ Features
 
 - **Auto-Elevation (UAC)**: Automatically requests Administrator privileges via PowerShell if not already elevated.
@@ -80,6 +84,7 @@ This tool may help with problems such as:
 
 ---
 
+<a name="how-it-works"></a>
 ## ⚙️ How It Works
 
 The script combines several troubleshooting steps into a single workflow:
@@ -93,6 +98,7 @@ The script combines several troubleshooting steps into a single workflow:
 
 ---
 
+<a name="fix-modes"></a>
 ## 🚀 Fix Modes
 
 ### 🟢 Quick Fix
@@ -110,6 +116,7 @@ Intended for persistent problems or older systems. Includes everything in Quick 
 
 ---
 
+<a name="download"></a>
 ## 📥 Download
 
 Download the latest version: **[FixPrinter.bat](FixPrinter.bat)**
@@ -120,6 +127,7 @@ git clone https://github.com/man612/Windows-Printer-Sharing-Fix.git
 
 ---
 
+<a name="usage"></a>
 ## 📖 Usage
 
 1. Run `FixPrinter.bat` (It will automatically request Admin access).
@@ -128,30 +136,35 @@ git clone https://github.com/man612/Windows-Printer-Sharing-Fix.git
 
 ---
 
+<a name="recommended-workflow"></a>
 ## 📋 Recommended Workflow
 
 For best results, identify the **Printer Host** (the PC sharing the printer). Run the script on the host first, then on the client if connection issues persist.
 
 ---
 
+<a name="backup-and-restore"></a>
 ## 💾 Backup and Restore
 
 Registry changes are backed up to the `backups\` folder. The **Restore** function can revert managed keys or delete keys that were not present before the fix was applied.
 
 ---
 
+<a name="logs"></a>
 ## 📝 Logs
 
 All actions are logged to `printer_fix_log.txt`, including warnings and failures. This file is essential for troubleshooting if the script does not fully resolve the problem.
 
 ---
 
+<a name="security-notes"></a>
 ## 🛡️ Security Notes
 
 The script separates safe fixes from classic fixes. **Classic / Full Fix** may reduce security by enabling older protocols like SMBv1. Only use classic mode on trusted networks.
 
 ---
 
+<a name="what-this-tool-changes"></a>
 ## 🔬 What This Tool Changes
 
 <details>
@@ -166,6 +179,7 @@ The script separates safe fixes from classic fixes. **Classic / Full Fix** may r
 
 ---
 
+<a name="what-this-tool-does-not-do"></a>
 ## 🚫 What This Tool Does Not Do
 
 - Install or download printer drivers.
@@ -175,6 +189,7 @@ The script separates safe fixes from classic fixes. **Classic / Full Fix** may r
 
 ---
 
+<a name="troubleshooting"></a>
 ## 🐞 Troubleshooting
 
 <details>
@@ -205,6 +220,7 @@ gpupdate /force
 
 ---
 
+<a name="known-limitations"></a>
 ## 📋 Known Limitations
 
 - **Driver Compatibility**: The script cannot fix incompatible 32/64-bit drivers.
@@ -213,6 +229,7 @@ gpupdate /force
 
 ---
 
+<a name="faq"></a>
 ## ❓ FAQ
 
 <details>
@@ -226,6 +243,14 @@ gpupdate /force
 
 ---
 
+<a name="contributing"></a>
+## 🤝 Contributing
+
+Contributions are welcome! Please report bugs or submit pull requests while maintaining the simple batch script style.
+
+---
+
+<a name="license"></a>
 ## 📄 License
 
 Distributed under the MIT License. See the `LICENSE` file for details.
