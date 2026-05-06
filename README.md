@@ -166,14 +166,50 @@ The script separates safe fixes from classic fixes. **Classic / Full Fix** may r
 
 ---
 
-## 🛡️ Technical Reference
+## 🚫 What This Tool Does Not Do
 
-| Feature | Registry Path / Action | Technical Purpose |
-|---------|------------------------|-------------------|
-| RPC Privacy | `HKLM\System\...\Print` | Resolves 0x0000011b authentication errors. |
-| Point and Print | `HKLM\...\PointAndPrint` | Allows non-admins to install server-provided drivers. |
-| Named Pipes | `HKLM\...\Printers\RPC` | Forces RPC communication over named pipes. |
-| Guest Auth | `HKLM\...\LanmanWorkstation` | (Classic) Allows access without credentials. |
+- Install or download printer drivers.
+- Repair corrupted Windows system files.
+- Fix hardware or router issues.
+- Fix domain/Group Policy restrictions.
+
+---
+
+## 🐞 Troubleshooting
+
+<details>
+<summary><b>🔧 Detailed Error Guide (Click to expand)</b></summary>
+
+- **0x0000011b**: Often fixed by RPC compatibility settings in Quick Fix.
+- **Access is Denied**: Check credentials, network profile, and guest access.
+- **Spooler Fails to Start**: Check for corrupted drivers in Print Management.
+
+### Browser Shows "Failed - Virus scan failed"
+
+This issue is usually not caused by this script. If the browser fails to download any file, the problem is likely related to the Windows Attachment Manager or Microsoft Defender integration.
+
+Before changing registry values, try:
+1. Update Microsoft Defender security intelligence.
+2. Restart Windows.
+3. Check Windows Security protection history.
+4. Try another browser.
+
+If downloads still fail, the following commands may help reset the attachment scanning policy:
+```bat
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Attachments" /v ScanWithAntiVirus /t REG_DWORD /d 1 /f
+reg add "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\Attachments" /v ScanWithAntiVirus /t REG_DWORD /d 1 /f
+gpupdate /force
+```
+*Restart Windows after running the commands. Note: This does not mean the downloaded file is automatically safe. Keep real-time protection enabled and only download files from trusted sources.*
+</details>
+
+---
+
+## 📋 Known Limitations
+
+- **Driver Compatibility**: The script cannot fix incompatible 32/64-bit drivers.
+- **Modified Windows**: "Lite" or custom ISOs may be missing required services.
+- **Group Policy**: Domain settings may override local registry changes.
 
 ---
 
@@ -182,8 +218,9 @@ The script separates safe fixes from classic fixes. **Classic / Full Fix** may r
 <details>
 <summary><b>🤔 Common Questions (Click to expand)</b></summary>
 
+- **Is this a guaranteed fix?** No, results depend on many external factors.
+- **Host or Client?** Start with the computer sharing the printer (Host).
 - **Is it safe?** Quick Fix is designed for standard safety; Classic Fix is for older setups.
-- **Does it work on Windows 7?** Yes, on a best-effort basis for command compatibility.
 - **Can I undo the changes?** Yes, via the **Restore** option in the menu.
 </details>
 
