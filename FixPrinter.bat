@@ -7,7 +7,7 @@ mode con: cols=100 lines=45
 :: ==============================================================================
 :: Repository: Windows-Printer-Sharing-Fix
 :: Description: Automated fix for Windows 10/11 printer sharing errors
-:: Author: Owner's Haven
+:: Author: Yasman
 :: License: MIT
 :: ==============================================================================
 
