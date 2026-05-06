@@ -38,13 +38,7 @@ A Windows batch utility for troubleshooting common printer sharing issues on loc
 
 Windows printer sharing can fail for many different reasons. Some issues are caused by Windows updates, printer driver compatibility, RPC changes, Print Spooler failures, firewall rules, network discovery settings, SMB compatibility, or incorrect host/client configuration.
 
-This script provides a menu-based troubleshooting utility that applies several known repair steps in a controlled way. The script attempts to:
-- Check for administrator privileges
-- Detect the Windows version
-- Create a backup before applying changes
-- Apply selected printer sharing fixes
-- Restart required services
-- Log command results
+This script provides a menu-based troubleshooting utility that applies several known repair steps in a controlled way.
 
 ---
 
@@ -74,8 +68,9 @@ This tool may help with problems such as:
 
 ## ✨ Features
 
+- **Auto-Elevation (UAC)**: Automatically requests Administrator privileges via PowerShell if not already elevated.
+- **Point and Print Fix**: Automates bypasses for `RestrictDriverInstallationToAdministrators` to allow driver installation from print servers.
 - **Menu-Based Interface**: Simple command-line menu for easy navigation.
-- **Administrator Check**: Ensures script runs with necessary privileges.
 - **Print Spooler Reset**: Stops/Starts service and clears queue files.
 - **RPC Compatibility**: Applies registry values for modern Windows RPC sharing.
 - **Network Discovery**: Configures `fdPHost` and `FDResPub` services.
@@ -88,22 +83,30 @@ This tool may help with problems such as:
 ## ⚙️ How It Works
 
 The script combines several troubleshooting steps into a single workflow:
-1. Admin & OS detection.
-2. Mandatory backup creation.
-3. Service reset & queue cleanup.
-4. Registry & permission application.
-5. Firewall rule activation.
-6. Service restart & result verification.
+1. **UAC Elevation**: Requests admin access if needed.
+2. **OS Detection**: Identifies Windows version and build.
+3. **Mandatory Backup**: Saves registry state before any modification.
+4. **Service Reset**: Clears spooler cache and resets services.
+5. **Fix Application**: Applies Point and Print, RPC, and permission fixes.
+6. **Firewall Rules**: Activates sharing rules across localized OS builds.
+7. **Verification**: Confirms results and writes to log.
 
 ---
 
 ## 🚀 Fix Modes
 
 ### 🟢 Quick Fix
-Recommended first option. Applies safer repair steps without enabling legacy compatibility settings. Includes spooler reset, RPC fixes, and firewall activation.
+**Recommended first option.** Applies safer repair steps including:
+- Print Spooler & Queue Reset
+- **Point and Print Compatibility**
+- RPC Privacy & Named Pipe fixes
+- Firewall & Network Discovery configuration
 
-### 🔴 Legacy / Full Fix
-Intended for older systems or persistent problems. May enable SMBv1 and insecure guest authentication. Use only on trusted local networks.
+### 🔴 Classic / Full Fix
+Intended for persistent problems or older systems. Includes everything in Quick Fix plus:
+- SMBv1 feature enablement (DISM)
+- Insecure guest authentication
+- LAN Manager & Blank password compatibility
 
 ---
 
@@ -119,15 +122,15 @@ git clone https://github.com/man612/Windows-Printer-Sharing-Fix.git
 
 ## 📖 Usage
 
-1. Right-click `FixPrinter.bat` and select **Run as administrator**.
-2. Choose **Quick Fix** from the menu.
+1. Run `FixPrinter.bat` (It will automatically request Admin access).
+2. Choose **Quick Fix** (Option 1) from the menu.
 3. Restart Windows after the repair finishes and test the printer.
 
 ---
 
 ## 📋 Recommended Workflow
 
-For best results, identify the **Printer Host** (the PC sharing the printer). Run the script on the host first, then on the client if connection issues persist. Check the log file if failures occur.
+For best results, identify the **Printer Host** (the PC sharing the printer). Run the script on the host first, then on the client if connection issues persist.
 
 ---
 
@@ -145,7 +148,7 @@ All actions are logged to `printer_fix_log.txt`, including warnings and failures
 
 ## 🛡️ Security Notes
 
-The script separates safe fixes from legacy fixes. **Legacy / Full Fix** may reduce security by enabling older protocols like SMBv1. Only use legacy mode on trusted networks.
+The script separates safe fixes from classic fixes. **Classic / Full Fix** may reduce security by enabling older protocols like SMBv1. Only use classic mode on trusted networks.
 
 ---
 
@@ -155,6 +158,7 @@ The script separates safe fixes from legacy fixes. **Legacy / Full Fix** may red
 <summary><b>🛠️ System Modifications (Click to expand)</b></summary>
 
 - **Services**: Print Spooler, Server, Workstation, fdPHost, FDResPub.
+- **Point and Print**: `RestrictDriverInstallationToAdministrators`, `BypassUpdateRoleIndicator`.
 - **Folders**: Spooler queue (`PRINTERS`), server cache (`SERVERS`), and drivers.
 - **Firewall**: File and Printer Sharing rules.
 - **Registry**: Print service, providers, RPC, LSA, and SMB compatibility.
@@ -162,32 +166,14 @@ The script separates safe fixes from legacy fixes. **Legacy / Full Fix** may red
 
 ---
 
-## 🚫 What This Tool Does Not Do
+## 🛡️ Technical Reference
 
-- Install or download printer drivers.
-- Repair corrupted Windows system files.
-- Fix hardware or router issues.
-- Fix domain/Group Policy restrictions.
-
----
-
-## 🐞 Troubleshooting
-
-<details>
-<summary><b>🔧 Detailed Error Guide (Click to expand)</b></summary>
-
-- **0x0000011b**: Often fixed by RPC compatibility settings in Quick Fix.
-- **Access is Denied**: Check credentials, network profile, and guest access.
-- **Spooler Fails to Start**: Check for corrupted drivers in Print Management.
-</details>
-
----
-
-## 📋 Known Limitations
-
-- **Driver Compatibility**: The script cannot fix incompatible 32/64-bit drivers.
-- **Modified Windows**: "Lite" or custom ISOs may be missing required services.
-- **Group Policy**: Domain settings may override local registry changes.
+| Feature | Registry Path / Action | Technical Purpose |
+|---------|------------------------|-------------------|
+| RPC Privacy | `HKLM\System\...\Print` | Resolves 0x0000011b authentication errors. |
+| Point and Print | `HKLM\...\PointAndPrint` | Allows non-admins to install server-provided drivers. |
+| Named Pipes | `HKLM\...\Printers\RPC` | Forces RPC communication over named pipes. |
+| Guest Auth | `HKLM\...\LanmanWorkstation` | (Classic) Allows access without credentials. |
 
 ---
 
@@ -196,9 +182,9 @@ The script separates safe fixes from legacy fixes. **Legacy / Full Fix** may red
 <details>
 <summary><b>🤔 Common Questions (Click to expand)</b></summary>
 
-- **Is this a guaranteed fix?** No, results depend on many external factors.
-- **Host or Client?** Start with the computer sharing the printer (Host).
-- **Is it safe?** Quick Fix is designed for standard safety; Legacy Fix is for older setups.
+- **Is it safe?** Quick Fix is designed for standard safety; Classic Fix is for older setups.
+- **Does it work on Windows 7?** Yes, on a best-effort basis for command compatibility.
+- **Can I undo the changes?** Yes, via the **Restore** option in the menu.
 </details>
 
 ---
@@ -206,9 +192,3 @@ The script separates safe fixes from legacy fixes. **Legacy / Full Fix** may red
 ## 📄 License
 
 Distributed under the MIT License. See the `LICENSE` file for details.
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please report bugs or submit pull requests while maintaining the simple batch script style.

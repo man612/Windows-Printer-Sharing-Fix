@@ -18,7 +18,7 @@ set "LOG_FILE=%SCRIPT_DIR%printer_fix_log.txt"
 set "BACKUP_ROOT=%SCRIPT_DIR%backups"
 set "LATEST_FILE=%BACKUP_ROOT%\latest_backup.txt"
 set "LANG_FILE=%SCRIPT_DIR%language.cfg"
-set "LANG=ID"
+set "LANG=EN"
 set "WARN_COUNT=0"
 set "FAIL_COUNT=0"
 set "FIX_MODE="
@@ -28,44 +28,64 @@ set "OS_VER=Unknown"
 set "BUILD_NUM=0"
 
 pushd "%SCRIPT_DIR%" >nul 2>&1 || (
-    echo [FATAL] Gagal masuk ke folder script.
+    echo [FATAL] Failed to enter the script folder.
     pause
     exit /b 1
 )
 
 if not exist "%BACKUP_ROOT%" (
     mkdir "%BACKUP_ROOT%" >nul 2>&1 || (
-        echo [FATAL] Gagal membuat folder backup: "%BACKUP_ROOT%"
+        echo [FATAL] Failed to create backup folder: "%BACKUP_ROOT%"
         pause
         exit /b 1
     )
 )
 
 >> "%LOG_FILE%" echo. 2>nul || (
-    echo [FATAL] Gagal menulis log di folder script.
-    echo Pindahkan file .bat ke Desktop lalu jalankan lagi sebagai Administrator.
+    echo [FATAL] Failed to write the log file in the script folder.
+    echo Move this .bat file to Desktop, then run it again as Administrator.
     pause
     exit /b 1
 )
 
-if exist "%LANG_FILE%" (
-    set /p LANG=<"%LANG_FILE%"
-)
-if /I not "!LANG!"=="EN" set "LANG=ID"
-
+call :loadLanguage
 call :initLang
 call :requireAdmin
 if errorlevel 1 exit /b 1
-call :detectOS
-goto :mainMenu
+goto :detectOS
+
+:loadLanguage
+set "LANG=EN"
+if exist "%LANG_FILE%" (
+    for /f "usebackq tokens=1 delims= " %%L in ("%LANG_FILE%") do set "LANG=%%~L"
+)
+call :normalizeLanguage
+exit /b 0
+
+:normalizeLanguage
+if /I "!LANG!"=="ID" exit /b 0
+set "LANG=EN"
+exit /b 0
+
+:saveLanguage
+set "LANG=%~1"
+call :normalizeLanguage
+> "%LANG_FILE%" echo !LANG!
+if errorlevel 1 (
+    echo [WARN] Failed to save language setting: "%LANG_FILE%"
+    echo [WARN] The language was changed for this session only.
+    pause
+)
+call :initLang
+exit /b 0
 
 :initLang
 if /I "!LANG!"=="EN" (
     set "STR_TITLE=WINDOWS PRINTER SHARING FIX UTILITY"
     set "STR_SUBTITLE=Final audited build for Windows 7/8/8.1/10/11"
     set "STR_ADMIN_ERR=ERROR: ADMINISTRATOR PRIVILEGES REQUIRED"
-    set "STR_ADMIN_DESC=[!] This script must be run as Administrator."
-    set "STR_ADMIN_SOL=Right-click this file and choose Run as administrator."
+    set "STR_ADMIN_DESC=This script is not running as Administrator."
+    set "STR_ADMIN_SOL=Requesting Windows UAC elevation automatically..."
     set "STR_PRESS_KEY=Press any key to exit..."
     set "STR_STATUS=Spooler Status"
     set "STR_RUNNING=RUNNING"
@@ -73,15 +93,80 @@ if /I "!LANG!"=="EN" (
     set "STR_UNKNOWN=UNKNOWN"
     set "STR_NOT_FOUND=NOT FOUND"
     set "STR_SELECT=Select option [1-8]: "
-    set "STR_BAD_INPUT=[!] Invalid input."
+    set "STR_BAD_INPUT=[WARN] Invalid input."
     set "STR_DIAG=DIAGNOSTICS"
     set "STR_MENU=MENU"
+    set "STR_LANGUAGE_LABEL=Language"
+    set "STR_TIME_LABEL=Time"
+    set "STR_MENU_1=[1] Quick Fix - spooler, cache, printer RPC, Point and Print, firewall sharing"
+    set "STR_MENU_2=[2] Classic/Full Fix - Quick Fix + SMBv1 + Guest Auth + blank-password [RISK]"
+    set "STR_MENU_3=[3] Restore registry from latest backup"
+    set "STR_MENU_4=[4] Quick Access - Services, Printers, Network, Print Management"
+    set "STR_MENU_5=[5] Guide and risk notes"
+    set "STR_MENU_6=[6] Change Language"
+    set "STR_MENU_7=[7] View Log"
+    set "STR_MENU_8=[8] Exit"
+    set "STR_LANG_TITLE=LANGUAGE"
+    set "STR_LANG_1=[1] English (EN)"
+    set "STR_LANG_2=[2] Indonesian (ID)"
+    set "STR_LANG_3=[3] Back"
+    set "STR_LANG_SELECT=Select language [1-3]: "
+    set "STR_LOG_TITLE=LOG VIEWER"
+    set "STR_LOG_FILE=Log file"
+    set "STR_LOG_MISSING=[WARN] Log file does not exist yet."
+    set "STR_LOG_EMPTY=[INFO] Log has no entries yet."
+    set "STR_BACK=Back"
+    set "STR_SELECT_SHORT=Select"
+    set "STR_ELEVATE_FAIL=[FATAL] Failed to request Administrator access automatically."
+    set "STR_ELEVATE_SOL=Right-click this file and choose Run as administrator."
+    set "STR_PROCESS_START=STARTING PROCESS"
+    set "STR_BACKUP_FATAL=[FATAL] Backup creation failed. The process was aborted for safety."
+    set "STR_PREP_SERVICES=[+] Preparing printer and sharing services..."
+    set "STR_CLEAR_CACHE=[+] Clearing printer cache/queue..."
+    set "STR_APPLY_RPC=[+] Applying printer RPC compatibility registry settings..."
+    set "STR_APPLY_POINT=[+] Opening Point and Print restrictions from the early version..."
+    set "STR_FIX_PERMS=[+] Repairing spooler folder permissions conservatively..."
+    set "STR_ENABLE_FW=[+] Enabling Windows Firewall File and Printer Sharing rules..."
+    set "STR_APPLY_LEGACY=[+] Applying CLASSIC/FULL compatibility fix..."
+    set "STR_SMB_SKIP=    - Enable SMBv1 feature: skipped for Windows 7/legacy"
+    set "STR_RESTART_SERVICES=[+] Restarting services..."
+    set "STR_VERIFY_FINAL=[+] Final verification..."
+    set "STR_DONE_FAIL_A=COMPLETED, BUT THERE ARE"
+    set "STR_DONE_FAIL_B=CRITICAL ISSUE(S) AND"
+    set "STR_DONE_FAIL_C=WARNING(S)."
+    set "STR_DONE_FAIL_HINT=Open the log for details. Do not treat the fix as successful until FAIL items are resolved."
+    set "STR_DONE_WARN_A=COMPLETED, BUT THERE ARE"
+    set "STR_DONE_WARN_B=WARNING(S). Open the log for details."
+    set "STR_DONE_OK=COMPLETED WITH NO WARNING/FAIL DETECTED BY THIS SCRIPT."
+    set "STR_RESTART_ADVICE=Restarting the PC is strongly recommended so registry, sharing, and services reload fully."
+    set "STR_RESTART_PROMPT=Restart now? [Y/N]: "
+    set "STR_RESTART_MANUAL=Please restart manually."
+    set "STR_RESTORE_TITLE=RESTORE REGISTRY FROM LATEST BACKUP"
+    set "STR_NO_BACKUP=[WARN] No backup exists yet."
+    set "STR_BACKUP_BROKEN=[WARN] Backup is damaged or incomplete."
+    set "STR_RESTORE_DONE_FAIL_A=[WARN] Restore completed, but there are"
+    set "STR_RESTORE_DONE_FAIL_B=critical issue(s) and"
+    set "STR_RESTORE_DONE_FAIL_C=warning(s). Check the log."
+    set "STR_RESTORE_DONE_WARN_A=[WARN] Restore completed with"
+    set "STR_RESTORE_DONE_WARN_B=warning(s). Check the log."
+    set "STR_RESTORE_DONE_OK=[+] Restore completed with no detected warnings."
+    set "STR_RESTART_RECOMMENDED=PC restart is recommended."
+    set "STR_ALREADY_ABSENT=already absent"
+    set "STR_SPOOL_CREATE_FAIL=Spool PRINTERS folder could not be created."
+    set "STR_FIREWALL_ENABLED=    - Firewall File and Printer Sharing enabled"
+    set "STR_FIREWALL_FAILED=    - Firewall File and Printer Sharing failed"
+    set "STR_NET_PRIVATE_SKIP=[i] Windows 7/legacy: Set-NetConnectionProfile skipped."
+    set "STR_NET_PRIVATE_PROMPT=Set active network profile to Private? [Y/N]: "
+    set "STR_VERIFY_MISMATCH=not matched"
+    set "STR_ACTUAL=actual"
+    set "STR_TARGET=target"
+    set "STR_QUICK_ACCESS_TITLE=QUICK ACCESS"
 ) else (
     set "STR_TITLE=UTILITAS PERBAIKAN SHARING PRINTER WINDOWS"
     set "STR_SUBTITLE=Build audit final untuk Windows 7/8/8.1/10/11"
     set "STR_ADMIN_ERR=ERROR: BUTUH AKSES ADMINISTRATOR"
-    set "STR_ADMIN_DESC=[!] Script ini harus dijalankan sebagai Administrator."
-    set "STR_ADMIN_SOL=Klik kanan file ini lalu pilih Run as administrator."
+    set "STR_ADMIN_DESC=Script ini belum berjalan sebagai Administrator."
+    set "STR_ADMIN_SOL=Mencoba meminta akses Administrator lewat UAC otomatis..."
     set "STR_PRESS_KEY=Tekan tombol apa saja untuk keluar..."
     set "STR_STATUS=Status Spooler"
     set "STR_RUNNING=BERJALAN"
@@ -89,32 +174,106 @@ if /I "!LANG!"=="EN" (
     set "STR_UNKNOWN=TIDAK DIKETAHUI"
     set "STR_NOT_FOUND=TIDAK ADA"
     set "STR_SELECT=Pilih opsi [1-8]: "
-    set "STR_BAD_INPUT=[!] Input tidak valid."
+    set "STR_BAD_INPUT=[WARN] Input tidak valid."
     set "STR_DIAG=DIAGNOSTIK"
     set "STR_MENU=MENU"
+    set "STR_LANGUAGE_LABEL=Bahasa"
+    set "STR_TIME_LABEL=Waktu"
+    set "STR_MENU_1=[1] Quick Fix - spooler, cache, RPC printer, Point and Print, firewall sharing"
+    set "STR_MENU_2=[2] Classic/Full Fix - Quick Fix + SMBv1 + Guest Auth + blank-password [RISIKO]"
+    set "STR_MENU_3=[3] Restore Registry dari backup terakhir"
+    set "STR_MENU_4=[4] Akses Cepat - Services, Printers, Network, Print Management"
+    set "STR_MENU_5=[5] Panduan dan catatan risiko"
+    set "STR_MENU_6=[6] Ganti Bahasa / Language"
+    set "STR_MENU_7=[7] Lihat Log"
+    set "STR_MENU_8=[8] Keluar"
+    set "STR_LANG_TITLE=LANGUAGE / BAHASA"
+    set "STR_LANG_1=[1] English (EN)"
+    set "STR_LANG_2=[2] Indonesian (ID)"
+    set "STR_LANG_3=[3] Kembali"
+    set "STR_LANG_SELECT=Pilih bahasa [1-3]: "
+    set "STR_LOG_TITLE=LIHAT LOG"
+    set "STR_LOG_FILE=File log"
+    set "STR_LOG_MISSING=[WARN] Log belum ada."
+    set "STR_LOG_EMPTY=[INFO] Log belum berisi catatan."
+    set "STR_BACK=Kembali"
+    set "STR_SELECT_SHORT=Pilih"
+    set "STR_ELEVATE_FAIL=[FATAL] Gagal meminta akses Administrator otomatis."
+    set "STR_ELEVATE_SOL=Klik kanan file ini lalu pilih Run as administrator."
+    set "STR_PROCESS_START=MEMULAI PROSES"
+    set "STR_BACKUP_FATAL=[FATAL] Backup gagal dibuat. Proses dibatalkan agar aman."
+    set "STR_PREP_SERVICES=[+] Menyiapkan service printer dan sharing..."
+    set "STR_CLEAR_CACHE=[+] Membersihkan cache/antrian printer..."
+    set "STR_APPLY_RPC=[+] Menerapkan registry printer RPC compatibility..."
+    set "STR_APPLY_POINT=[+] Membuka batasan Point and Print seperti versi awal..."
+    set "STR_FIX_PERMS=[+] Memperbaiki izin folder spooler secara konservatif..."
+    set "STR_ENABLE_FW=[+] Mengaktifkan firewall rule File and Printer Sharing..."
+    set "STR_APPLY_LEGACY=[+] Menerapkan LEGACY/FULL compatibility fix..."
+    set "STR_SMB_SKIP=    - Enable SMBv1 feature: dilewati untuk Windows 7/legacy"
+    set "STR_RESTART_SERVICES=[+] Menyalakan ulang service..."
+    set "STR_VERIFY_FINAL=[+] Verifikasi akhir..."
+    set "STR_DONE_FAIL_A=SELESAI, TAPI ADA"
+    set "STR_DONE_FAIL_B=MASALAH PENTING DAN"
+    set "STR_DONE_FAIL_C=WARNING."
+    set "STR_DONE_FAIL_HINT=Buka log untuk detail. Jangan anggap fix sukses sebelum FAIL diselesaikan."
+    set "STR_DONE_WARN_A=SELESAI, TAPI ADA"
+    set "STR_DONE_WARN_B=WARNING. Buka log untuk detail."
+    set "STR_DONE_OK=SELESAI TANPA WARNING/FAIL YANG TERDETEKSI OLEH SCRIPT."
+    set "STR_RESTART_ADVICE=Sangat disarankan restart PC agar registry, sharing, dan service reload penuh."
+    set "STR_RESTART_PROMPT=Restart sekarang? [Y/N]: "
+    set "STR_RESTART_MANUAL=Silakan restart manual."
+    set "STR_RESTORE_TITLE=RESTORE REGISTRY DARI BACKUP TERAKHIR"
+    set "STR_NO_BACKUP=[WARN] Belum ada backup."
+    set "STR_BACKUP_BROKEN=[WARN] Backup rusak atau tidak lengkap."
+    set "STR_RESTORE_DONE_FAIL_A=[WARN] Restore selesai, tetapi ada"
+    set "STR_RESTORE_DONE_FAIL_B=masalah penting dan"
+    set "STR_RESTORE_DONE_FAIL_C=warning. Cek log."
+    set "STR_RESTORE_DONE_WARN_A=[WARN] Restore selesai dengan"
+    set "STR_RESTORE_DONE_WARN_B=warning. Cek log."
+    set "STR_RESTORE_DONE_OK=[+] Restore selesai tanpa warning yang terdeteksi."
+    set "STR_RESTART_RECOMMENDED=Disarankan restart PC."
+    set "STR_ALREADY_ABSENT=sudah tidak ada"
+    set "STR_SPOOL_CREATE_FAIL=Folder spool PRINTERS tidak bisa dibuat."
+    set "STR_FIREWALL_ENABLED=    - Firewall File and Printer Sharing enabled"
+    set "STR_FIREWALL_FAILED=    - Firewall File and Printer Sharing gagal"
+    set "STR_NET_PRIVATE_SKIP=[i] Windows 7/legacy: Set-NetConnectionProfile dilewati."
+    set "STR_NET_PRIVATE_PROMPT=Ubah network aktif ke Private? [Y/N]: "
+    set "STR_VERIFY_MISMATCH=tidak sesuai"
+    set "STR_ACTUAL=aktual"
+    set "STR_TARGET=target"
+    set "STR_QUICK_ACCESS_TITLE=AKSES CEPAT"
 )
 exit /b 0
 
 :requireAdmin
 fltmc >nul 2>&1
+if not errorlevel 1 exit /b 0
+
+color 0E
+cls
+echo.
+echo ###############################################################################
+echo #                                                                             #
+echo #                    !STR_ADMIN_ERR!
+echo #                                                                             #
+echo ###############################################################################
+echo.
+echo !STR_ADMIN_DESC!
+echo !STR_ADMIN_SOL!
+echo.
+
+set "ELEVATE_TARGET=%~f0"
+set "ELEVATE_DIR=%SCRIPT_DIR%"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath $env:ELEVATE_TARGET -WorkingDirectory $env:ELEVATE_DIR -Verb RunAs; exit 0 } catch { exit 1 }" >nul 2>&1
 if errorlevel 1 (
     color 0C
-    cls
-    echo.
-    echo ###############################################################################
-    echo #                                                                             #
-    echo #                    !STR_ADMIN_ERR!
-    echo #                                                                             #
-    echo ###############################################################################
-    echo.
-    echo !STR_ADMIN_DESC!
-    echo !STR_ADMIN_SOL!
+    echo !STR_ELEVATE_FAIL!
+    echo !STR_ELEVATE_SOL!
     echo.
     echo !STR_PRESS_KEY!
     pause >nul
-    exit /b 1
 )
-exit /b 0
+exit /b 1
 
 :detectOS
 set "OS_NAME=Windows"
@@ -140,7 +299,7 @@ if !BUILD_NUM! GEQ 22000 (
 ) else if !BUILD_NUM! GEQ 7600 (
     set "OS_NAME=Windows 7"
 )
-exit /b 0
+goto :mainMenu
 
 :mainMenu
 color 0F
@@ -158,65 +317,83 @@ echo [!STR_DIAG!]
 echo - User           : %USERNAME%
 echo - OS             : !OS_NAME! ^(!OS_VER!^)
 echo - Build          : !BUILD_NUM!
-echo - Bahasa         : !LANG!
-echo - Waktu          : %DATE% %TIME%
+echo - !STR_LANGUAGE_LABEL!       : !LANG!
+echo - !STR_TIME_LABEL!           : %DATE% %TIME%
 echo - !STR_STATUS!  : !SPOOLER_STATUS!
 echo.
 echo -------------------------------------------------------------------------------
 echo [!STR_MENU!]
 echo -------------------------------------------------------------------------------
-echo [1] Quick Fix Aman - spooler, cache, RPC printer, permission, firewall sharing
-echo [2] Legacy/Full Fix - SMBv1 + Guest Auth + blank-password compatibility [RISIKO]
-echo [3] Restore Registry dari backup terakhir
-echo [4] Akses Cepat - Services, Printers, Network, Print Management
-echo [5] Panduan dan catatan risiko
-echo [6] Ganti Bahasa / Language
-echo [7] Lihat Log
-echo [8] Keluar
+echo !STR_MENU_1!
+echo !STR_MENU_2!
+echo !STR_MENU_3!
+echo !STR_MENU_4!
+echo !STR_MENU_5!
+echo !STR_MENU_6!
+echo !STR_MENU_7!
+echo !STR_MENU_8!
 echo.
 
-set "MENU_CHOICE="
-set /p MENU_CHOICE="!STR_SELECT!"
+choice /C 12345678 /N /M "!STR_SELECT!"
 
-if "!MENU_CHOICE!"=="1" (
-    set "FIX_MODE=QUICK"
-    goto :runFix
-)
-if "!MENU_CHOICE!"=="2" (
+if errorlevel 8 exit /b 0
+if errorlevel 7 goto :viewLog
+if errorlevel 6 goto :langSettings
+if errorlevel 5 goto :userGuide
+if errorlevel 4 goto :quickAccess
+if errorlevel 3 goto :restoreSettings
+if errorlevel 2 (
     set "FIX_MODE=LEGACY"
     goto :confirmLegacy
 )
-if "!MENU_CHOICE!"=="3" goto :restoreSettings
-if "!MENU_CHOICE!"=="4" goto :quickAccess
-if "!MENU_CHOICE!"=="5" goto :userGuide
-if "!MENU_CHOICE!"=="6" goto :langSettings
-if "!MENU_CHOICE!"=="7" goto :viewLog
-if "!MENU_CHOICE!"=="8" exit /b 0
+if errorlevel 1 (
+    set "FIX_MODE=QUICK"
+    goto :runFix
+)
 
 echo.
 echo !STR_BAD_INPUT!
-timeout /t 2 >nul
+ping -n 2 127.0.0.1 >nul 2>&1
 goto :mainMenu
 
 :confirmLegacy
 cls
 color 0C
 echo.
-echo ###############################################################################
-echo #                          PERINGATAN LEGACY/FULL FIX                         #
-echo ###############################################################################
-echo.
-echo Opsi ini BUKAN untuk dicoba pertama kali.
-echo Opsi ini dapat menurunkan keamanan karena mengaktifkan kompatibilitas lama:
-echo - SMBv1 pada Windows modern.
-echo - SMB insecure guest auth.
-echo - LAN Manager compatibility.
-echo - Pemakaian akun tanpa password.
-echo.
-echo Pakai hanya di jaringan rumah/kantor kecil yang dipercaya dan jika Quick Fix gagal.
+if /I "!LANG!"=="EN" (
+    echo ###############################################################################
+    echo #                         CLASSIC/FULL FIX WARNING                            #
+    echo ###############################################################################
+    echo.
+    echo This option should NOT be tried first.
+    echo It can reduce security because it enables older compatibility settings:
+    echo - SMBv1 on modern Windows.
+    echo - SMB insecure guest auth.
+    echo - LAN Manager compatibility.
+    echo - Blank-password account compatibility.
+    echo.
+    echo Use only on a trusted home/small-office network if Quick Fix fails.
+    echo.
+    set "CONFIRM_PROMPT=Type YES to continue, anything else cancels: "
+) else (
+    echo ###############################################################################
+    echo #                          PERINGATAN LEGACY/FULL FIX                         #
+    echo ###############################################################################
+    echo.
+    echo Opsi ini BUKAN untuk dicoba pertama kali.
+    echo Opsi ini dapat menurunkan keamanan karena mengaktifkan kompatibilitas lama:
+    echo - SMBv1 pada Windows modern.
+    echo - SMB insecure guest auth.
+    echo - LAN Manager compatibility.
+    echo - Pemakaian akun tanpa password.
+    echo.
+    echo Pakai hanya di jaringan rumah/kantor kecil yang dipercaya dan jika Quick Fix gagal.
+    echo.
+    set "CONFIRM_PROMPT=Ketik YES untuk lanjut, selain itu batal: "
+)
 echo.
 set "CONFIRM="
-set /p CONFIRM="Ketik YES untuk lanjut, selain itu batal: "
+set /p CONFIRM="!CONFIRM_PROMPT!"
 if /I not "!CONFIRM!"=="YES" goto :mainMenu
 goto :runFix
 
@@ -227,20 +404,20 @@ set "BACKUP_RUN_DIR="
 cls
 color 0E
 echo ==============================================================================
-echo                  MEMULAI PROSES [!FIX_MODE!]
+echo                  !STR_PROCESS_START! [!FIX_MODE!]
 echo ==============================================================================
 echo.
 call :log "--- Started Printer Fix [!FIX_MODE!] ---"
 
 call :createBackup
 if errorlevel 1 (
-    echo [FATAL] Backup gagal dibuat. Proses dibatalkan agar aman.
+    echo !STR_BACKUP_FATAL!
     call :log "[FATAL] Backup creation failed. Aborting fix."
     pause
     goto :mainMenu
 )
 
-echo [+] Menyiapkan service printer dan sharing...
+echo !STR_PREP_SERVICES!
 call :runCritical "Set Spooler startup auto" "sc config Spooler start= auto"
 call :runWarn "Set Server startup auto" "sc config LanmanServer start= auto"
 call :runWarn "Set Workstation startup auto" "sc config LanmanWorkstation start= auto"
@@ -249,25 +426,30 @@ call :safeStart LanmanWorkstation WARN
 call :safeStop Spooler WARN
 
 echo.
-echo [+] Membersihkan cache/antrian printer...
+echo !STR_CLEAR_CACHE!
 call :ensureSpoolFolders
 call :clearFolder "%SystemRoot%\System32\spool\PRINTERS" "Clear PRINTERS queue"
 call :clearFolder "%SystemRoot%\System32\spool\SERVERS" "Clear SERVERS cache"
 
 echo.
-echo [+] Menerapkan registry printer RPC compatibility...
+echo !STR_APPLY_RPC!
 call :runCritical "Set RpcAuthnLevelPrivacyEnabled=0" "reg add ^"HKLM\System\CurrentControlSet\Control\Print^" /v RpcAuthnLevelPrivacyEnabled /t REG_DWORD /d 0 /f"
 call :runCritical "Set RpcUseNamedPipeProtocol=1" "reg add ^"HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC^" /v RpcUseNamedPipeProtocol /t REG_DWORD /d 1 /f"
 call :runCritical "Set RpcProtocols=7" "reg add ^"HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC^" /v RpcProtocols /t REG_DWORD /d 7 /f"
 call :deleteKeyOptional "Client Side Rendering Print Provider" "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Print\Providers\Client Side Rendering Print Provider"
 
 echo.
-echo [+] Memperbaiki izin folder spooler secara konservatif...
+echo !STR_APPLY_POINT!
+call :runCritical "Set RestrictDriverInstallationToAdministrators=0" "reg add ^"HKLM\Software\Policies\Microsoft\Windows NT\Printers\PointAndPrint^" /v RestrictDriverInstallationToAdministrators /t REG_DWORD /d 0 /f"
+call :runCritical "Set BypassUpdateRoleIndicator=0" "reg add ^"HKLM\Software\Policies\Microsoft\Windows NT\Printers\PointAndPrint^" /v BypassUpdateRoleIndicator /t REG_DWORD /d 0 /f"
+
+echo.
+echo !STR_FIX_PERMS!
 call :runWarn "Grant SYSTEM/Admins on PRINTERS" "icacls ^"%SystemRoot%\System32\spool\PRINTERS^" /grant *S-1-5-18:^(OI^)^(CI^)F *S-1-5-32-544:^(OI^)^(CI^)F /T /C /Q"
 call :runWarn "Grant SYSTEM/Admins on spool drivers" "icacls ^"%SystemRoot%\System32\spool\drivers^" /grant *S-1-5-18:^(OI^)^(CI^)F *S-1-5-32-544:^(OI^)^(CI^)F /T /C /Q"
 
 echo.
-echo [+] Mengaktifkan firewall rule File and Printer Sharing...
+echo !STR_ENABLE_FW!
 call :enableFirewallSharing
 
 echo.
@@ -275,11 +457,11 @@ call :offerNetworkPrivate
 
 if /I "!FIX_MODE!"=="LEGACY" (
     echo.
-    echo [+] Menerapkan LEGACY/FULL compatibility fix...
+    echo !STR_APPLY_LEGACY!
     if !BUILD_NUM! GEQ 9200 (
         call :runWarn "Enable SMBv1 feature" "dism /online /Enable-Feature /FeatureName:SMB1Protocol -All /NoRestart /quiet"
     ) else (
-        echo     - Enable SMBv1 feature: dilewati untuk Windows 7/legacy
+        echo !STR_SMB_SKIP!
         call :log "[SKIP] SMBv1 DISM feature skipped for pre-Windows 8 build."
     )
     call :runCritical "Allow insecure guest auth" "reg add ^"HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters^" /v AllowInsecureGuestAuth /t REG_DWORD /d 1 /f"
@@ -288,7 +470,7 @@ if /I "!FIX_MODE!"=="LEGACY" (
 )
 
 echo.
-echo [+] Menyalakan ulang service...
+echo !STR_RESTART_SERVICES!
 call :safeStart Spooler FAIL
 call :runWarn "Set fdPHost auto" "sc config fdPHost start= auto"
 call :runWarn "Set FDResPub auto" "sc config FDResPub start= auto"
@@ -296,34 +478,34 @@ call :safeStart fdPHost WARN
 call :safeStart FDResPub WARN
 
 echo.
-echo [+] Verifikasi akhir...
+echo !STR_VERIFY_FINAL!
 call :verifyFinal
 
 echo.
 if !FAIL_COUNT! GTR 0 (
     color 0C
     echo ==============================================================================
-    echo SELESAI, TAPI ADA !FAIL_COUNT! MASALAH PENTING DAN !WARN_COUNT! WARNING.
-    echo Buka log untuk detail. Jangan anggap fix sukses sebelum FAIL diselesaikan.
+    echo !STR_DONE_FAIL_A! !FAIL_COUNT! !STR_DONE_FAIL_B! !WARN_COUNT! !STR_DONE_FAIL_C!
+    echo !STR_DONE_FAIL_HINT!
     echo ==============================================================================
 ) else if !WARN_COUNT! GTR 0 (
     color 0E
     echo ==============================================================================
-    echo SELESAI, TAPI ADA !WARN_COUNT! WARNING. Buka log untuk detail.
+    echo !STR_DONE_WARN_A! !WARN_COUNT! !STR_DONE_WARN_B!
     echo ==============================================================================
 ) else (
     color 0A
     echo ==============================================================================
-    echo SELESAI TANPA WARNING/FAIL YANG TERDETEKSI OLEH SCRIPT.
+    echo !STR_DONE_OK!
     echo ==============================================================================
 )
 echo Log    : %LOG_FILE%
 echo Backup : !BACKUP_RUN_DIR!
 echo.
-echo Sangat disarankan restart PC agar registry, sharing, dan service reload penuh.
-choice /C YN /N /M "Restart sekarang? [Y/N]: "
+echo !STR_RESTART_ADVICE!
+choice /C YN /N /M "!STR_RESTART_PROMPT!"
 if errorlevel 2 (
-    echo Silakan restart manual.
+    echo !STR_RESTART_MANUAL!
     pause
     goto :mainMenu
 )
@@ -366,6 +548,8 @@ if errorlevel 1 (
 call :saveValueState "RpcAuthnLevelPrivacyEnabled" "HKLM\System\CurrentControlSet\Control\Print" "RpcAuthnLevelPrivacyEnabled"
 call :saveValueState "RpcUseNamedPipeProtocol" "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC" "RpcUseNamedPipeProtocol"
 call :saveValueState "RpcProtocols" "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC" "RpcProtocols"
+call :saveValueState "RestrictDriverInstallationToAdministrators" "HKLM\Software\Policies\Microsoft\Windows NT\Printers\PointAndPrint" "RestrictDriverInstallationToAdministrators"
+call :saveValueState "BypassUpdateRoleIndicator" "HKLM\Software\Policies\Microsoft\Windows NT\Printers\PointAndPrint" "BypassUpdateRoleIndicator"
 call :saveValueState "AllowInsecureGuestAuth" "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" "AllowInsecureGuestAuth"
 call :saveValueState "LmCompatibilityLevel" "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" "LmCompatibilityLevel"
 call :saveValueState "limitblankpassworduse" "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" "limitblankpassworduse"
@@ -400,18 +584,18 @@ set "FAIL_COUNT=0"
 cls
 color 0E
 echo ==============================================================================
-echo                  RESTORE REGISTRY DARI BACKUP TERAKHIR
+echo                  !STR_RESTORE_TITLE!
 echo ==============================================================================
 echo.
 if not exist "%LATEST_FILE%" (
-    echo [!] Belum ada backup.
+    echo !STR_NO_BACKUP!
     pause
     goto :mainMenu
 )
 set "RESTORE_DIR="
 set /p RESTORE_DIR=<"%LATEST_FILE%"
 if not exist "!RESTORE_DIR!\reg_state.cmd" (
-    echo [!] Backup rusak atau tidak lengkap.
+    echo !STR_BACKUP_BROKEN!
     pause
     goto :mainMenu
 )
@@ -434,6 +618,8 @@ if exist "!RESTORE_DIR!\providers_key.reg" (
 call :restoreValue "RpcAuthnLevelPrivacyEnabled" "HKLM\System\CurrentControlSet\Control\Print" "RpcAuthnLevelPrivacyEnabled"
 call :restoreValue "RpcUseNamedPipeProtocol" "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC" "RpcUseNamedPipeProtocol"
 call :restoreValue "RpcProtocols" "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC" "RpcProtocols"
+call :restoreValue "RestrictDriverInstallationToAdministrators" "HKLM\Software\Policies\Microsoft\Windows NT\Printers\PointAndPrint" "RestrictDriverInstallationToAdministrators"
+call :restoreValue "BypassUpdateRoleIndicator" "HKLM\Software\Policies\Microsoft\Windows NT\Printers\PointAndPrint" "BypassUpdateRoleIndicator"
 call :restoreValue "AllowInsecureGuestAuth" "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" "AllowInsecureGuestAuth"
 call :restoreValue "LmCompatibilityLevel" "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" "LmCompatibilityLevel"
 call :restoreValue "limitblankpassworduse" "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" "limitblankpassworduse"
@@ -442,16 +628,16 @@ call :safeStart Spooler FAIL
 echo.
 if !FAIL_COUNT! GTR 0 (
     color 0C
-    echo [!] Restore selesai, tetapi ada !FAIL_COUNT! masalah penting dan !WARN_COUNT! warning. Cek log.
+    echo !STR_RESTORE_DONE_FAIL_A! !FAIL_COUNT! !STR_RESTORE_DONE_FAIL_B! !WARN_COUNT! !STR_RESTORE_DONE_FAIL_C!
 ) else if !WARN_COUNT! GTR 0 (
     color 0E
-    echo [!] Restore selesai dengan !WARN_COUNT! warning. Cek log.
+    echo !STR_RESTORE_DONE_WARN_A! !WARN_COUNT! !STR_RESTORE_DONE_WARN_B!
 ) else (
     color 0A
-    echo [+] Restore selesai tanpa warning yang terdeteksi.
+    echo !STR_RESTORE_DONE_OK!
 )
 echo Log: %LOG_FILE%
-echo Disarankan restart PC.
+echo !STR_RESTART_RECOMMENDED!
 pause
 goto :mainMenu
 
@@ -592,7 +778,7 @@ exit /b 0
 :deleteKeyOptional
 reg query "%~2" >nul 2>&1
 if errorlevel 1 (
-    echo     - %~1 sudah tidak ada
+    echo     - %~1 !STR_ALREADY_ABSENT!
     call :log "[OK] %~1 already absent."
     exit /b 0
 )
@@ -603,7 +789,7 @@ exit /b 0
 if not exist "%SystemRoot%\System32\spool\PRINTERS" mkdir "%SystemRoot%\System32\spool\PRINTERS" >nul 2>&1
 if not exist "%SystemRoot%\System32\spool\SERVERS" mkdir "%SystemRoot%\System32\spool\SERVERS" >nul 2>&1
 if not exist "%SystemRoot%\System32\spool\drivers" mkdir "%SystemRoot%\System32\spool\drivers" >nul 2>&1
-if not exist "%SystemRoot%\System32\spool\PRINTERS" call :addIssue FAIL "Folder spool PRINTERS tidak bisa dibuat."
+if not exist "%SystemRoot%\System32\spool\PRINTERS" call :addIssue FAIL "!STR_SPOOL_CREATE_FAIL!"
 exit /b 0
 
 :clearFolder
@@ -624,33 +810,33 @@ exit /b 0
 :enableFirewallSharing
 netsh advfirewall firewall set rule group="@FirewallAPI.dll,-28502" new enable=Yes >> "%LOG_FILE%" 2>&1
 if not errorlevel 1 (
-    echo     - Firewall File and Printer Sharing enabled
+    echo !STR_FIREWALL_ENABLED!
     call :log "[OK] Firewall File and Printer Sharing enabled by resource id."
     exit /b 0
 )
 netsh advfirewall firewall set rule group="File and Printer Sharing" new enable=Yes >> "%LOG_FILE%" 2>&1
 if not errorlevel 1 (
-    echo     - Firewall File and Printer Sharing enabled
+    echo !STR_FIREWALL_ENABLED!
     call :log "[OK] Firewall File and Printer Sharing enabled by English fallback."
     exit /b 0
 )
 netsh firewall set service type=FILEANDPRINT mode=ENABLE >> "%LOG_FILE%" 2>&1
 if not errorlevel 1 (
-    echo     - Firewall File and Printer Sharing enabled
+    echo !STR_FIREWALL_ENABLED!
     call :log "[OK] Firewall File and Printer Sharing enabled by legacy netsh fallback."
     exit /b 0
 )
-echo     - Firewall File and Printer Sharing gagal
+echo !STR_FIREWALL_FAILED!
 call :addIssue WARN "Enable Firewall File and Printer Sharing failed."
 exit /b 1
 
 :offerNetworkPrivate
 if !BUILD_NUM! LSS 9200 (
-    echo [i] Windows 7/legacy: Set-NetConnectionProfile dilewati.
+    echo !STR_NET_PRIVATE_SKIP!
     call :log "[SKIP] Set-NetConnectionProfile skipped for pre-Windows 8 build."
     exit /b 0
 )
-choice /C YN /N /M "Ubah network aktif ke Private? [Y/N]: "
+choice /C YN /N /M "!STR_NET_PRIVATE_PROMPT!"
 if errorlevel 2 exit /b 0
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -ne 'DomainAuthenticated'} | Set-NetConnectionProfile -NetworkCategory Private" >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
@@ -669,6 +855,8 @@ if /I not "!VERIFY_SPOOLER!"=="!STR_RUNNING!" (
 call :verifyDword "HKLM\System\CurrentControlSet\Control\Print" "RpcAuthnLevelPrivacyEnabled" "0x0"
 call :verifyDword "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC" "RpcUseNamedPipeProtocol" "0x1"
 call :verifyDword "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC" "RpcProtocols" "0x7"
+call :verifyDword "HKLM\Software\Policies\Microsoft\Windows NT\Printers\PointAndPrint" "RestrictDriverInstallationToAdministrators" "0x0"
+call :verifyDword "HKLM\Software\Policies\Microsoft\Windows NT\Printers\PointAndPrint" "BypassUpdateRoleIndicator" "0x0"
 if /I "!FIX_MODE!"=="LEGACY" (
     call :verifyDword "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" "AllowInsecureGuestAuth" "0x1"
 )
@@ -681,7 +869,7 @@ set "EXPECTED=%~3"
 set "ACTUAL="
 for /f "tokens=3" %%V in ('reg query "%VKEY%" /v "%VNAME%" 2^>nul ^| findstr /I /C:"%VNAME%"') do set "ACTUAL=%%V"
 if /I not "!ACTUAL!"=="!EXPECTED!" (
-    echo     - %VNAME%: tidak sesuai ^(aktual=!ACTUAL!, target=%EXPECTED%^) 
+    echo     - %VNAME%: !STR_VERIFY_MISMATCH! ^(!STR_ACTUAL!=!ACTUAL!, !STR_TARGET!=%EXPECTED%^)
     call :addIssue FAIL "%VNAME% verification failed. Actual=!ACTUAL!, Expected=%EXPECTED%."
 ) else (
     echo     - %VNAME%: OK
@@ -690,78 +878,99 @@ if /I not "!ACTUAL!"=="!EXPECTED!" (
 exit /b 0
 
 :viewLog
-if exist "%LOG_FILE%" (
-    start "" notepad.exe "%LOG_FILE%"
-) else (
-    echo [!] Log tidak ada.
+cls
+echo [!STR_LOG_TITLE!]
+echo !STR_LOG_FILE!: %LOG_FILE%
+echo.
+if not exist "%LOG_FILE%" (
+    echo !STR_LOG_MISSING!
     pause
+    goto :mainMenu
 )
+findstr /R /C:"[^ ]" "%LOG_FILE%" >nul 2>&1
+if errorlevel 1 (
+    echo !STR_LOG_EMPTY!
+) else (
+    type "%LOG_FILE%"
+)
+echo.
+pause
 goto :mainMenu
 
 :quickAccess
 cls
-echo [QUICK ACCESS]
+echo [!STR_QUICK_ACCESS_TITLE!]
 echo [1] Services
 echo [2] Printers
 echo [3] Network and Sharing Center
 echo [4] Print Management
-echo [5] Back
+echo [5] !STR_BACK!
 echo.
-set "QA_CHOICE="
-set /p QA_CHOICE="Pilih: "
-if "!QA_CHOICE!"=="1" (
-    start "" services.msc
-    goto :quickAccess
-)
-if "!QA_CHOICE!"=="2" (
-    start "" control.exe printers
-    goto :quickAccess
-)
-if "!QA_CHOICE!"=="3" (
-    start "" control.exe /name Microsoft.NetworkAndSharingCenter
-    goto :quickAccess
-)
-if "!QA_CHOICE!"=="4" (
+choice /C 12345 /N /M "!STR_SELECT_SHORT!: "
+if errorlevel 5 goto :mainMenu
+if errorlevel 4 (
     start "" printmanagement.msc
     goto :quickAccess
 )
-if "!QA_CHOICE!"=="5" goto :mainMenu
-goto :quickAccess
+if errorlevel 3 (
+    start "" control.exe /name Microsoft.NetworkAndSharingCenter
+    goto :quickAccess
+)
+if errorlevel 2 (
+    start "" control.exe printers
+    goto :quickAccess
+)
+if errorlevel 1 (
+    start "" services.msc
+    goto :quickAccess
+)
+goto :mainMenu
 
 :userGuide
 cls
-echo [PANDUAN ^& RISIKO]
-echo.
-echo 1. Jalankan sebagai Administrator.
-echo 2. Gunakan Quick Fix dulu.
-echo 3. Legacy/Full Fix hanya untuk kasus lama/bandel karena menurunkan keamanan.
-echo 4. Backup registry dibuat per eksekusi dan tidak ditimpa.
-echo 5. Restore menu hanya mengembalikan registry yang dibackup, bukan driver printer.
-echo 6. Windows 7 didukung sebatas kompatibilitas command; hasil tetap tergantung driver/update/SMB.
-echo 7. Jika muncul FAIL, jangan anggap sukses. Buka log dan perbaiki penyebabnya.
+if /I "!LANG!"=="EN" (
+    echo [GUIDE ^& RISK NOTES]
+    echo.
+    echo 1. Run as Administrator. Double-click will request UAC automatically.
+    echo 2. Try Quick Fix first.
+    echo 3. Classic/Full Fix is only for older or stubborn cases because it reduces security.
+    echo 4. Point and Print compatibility from the early version is included in Quick Fix.
+    echo 5. A registry backup is created for every run and is not overwritten.
+    echo 6. Restore only restores backed-up registry values, not printer drivers.
+    echo 7. Windows 7 support depends on installed drivers, updates, and SMB settings.
+    echo 8. If FAIL appears, do not treat the fix as successful. Open the log and resolve it.
+) else (
+    echo [PANDUAN ^& RISIKO]
+    echo.
+    echo 1. Jalankan sebagai Administrator.
+    echo 2. Jika double-click biasa, script akan meminta UAC Administrator otomatis.
+    echo 3. Gunakan Quick Fix dulu.
+    echo 4. Classic/Full Fix hanya untuk kasus lama/bandel karena menurunkan keamanan.
+    echo 5. Point and Print compatibility dari versi awal sudah masuk ke Quick Fix.
+    echo 6. Backup registry dibuat per eksekusi dan tidak ditimpa.
+    echo 7. Restore menu hanya mengembalikan registry yang dibackup, bukan driver printer.
+    echo 8. Windows 7 didukung sebatas kompatibilitas command; hasil tetap tergantung driver/update/SMB.
+    echo 9. Jika muncul FAIL, jangan anggap sukses. Buka log dan perbaiki penyebabnya.
+)
 echo.
 pause
 goto :mainMenu
 
 :langSettings
 cls
-echo [LANGUAGE / BAHASA]
-echo [1] ID
-echo [2] EN
-echo [3] Kembali
+echo [!STR_LANG_TITLE!]
+echo !STR_LANG_1!
+echo !STR_LANG_2!
+echo !STR_LANG_3!
 echo.
-set "LC="
-set /p LC="Pilih: "
-if "!LC!"=="1" (
-    set "LANG=ID"
-    echo ID>"%LANG_FILE%"
-    call :initLang
+choice /C 123 /N /M "!STR_LANG_SELECT!"
+if errorlevel 3 goto :mainMenu
+if errorlevel 2 (
+    call :saveLanguage ID
     goto :mainMenu
 )
-if "!LC!"=="2" (
-    set "LANG=EN"
-    echo EN>"%LANG_FILE%"
-    call :initLang
+if errorlevel 1 (
+    call :saveLanguage EN
     goto :mainMenu
 )
 goto :mainMenu
