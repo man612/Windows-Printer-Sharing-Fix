@@ -1,0 +1,15 @@
+# Backups
+backups/
+*.reg
+
+# Logs
+printer_fix_log.txt
+*.log
+
+# IDEs
+.vscode/
+.idea/
+
+# OS Files
+Thumbs.db
+Desktop.ini

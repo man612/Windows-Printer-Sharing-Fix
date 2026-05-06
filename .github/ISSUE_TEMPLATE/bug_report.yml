@@ -1,0 +1,26 @@
+name: Bug Report
+description: Report a bug to help us improve
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+  - type: input
+    id: windows_version
+    attributes:
+      label: Windows Version
+      description: e.g., Windows 10 Pro 22H2
+    validations:
+      required: true
+  - type: textarea
+    id: bug_description
+    attributes:
+      label: Bug Description
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: log_output
+    attributes:
+      label: Log Output
+      description: Please paste the content of `printer_fix_log.txt` here.
