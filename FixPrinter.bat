@@ -8,17 +8,19 @@ mode con: cols=100 lines=45
 :: Repository: Windows-Printer-Sharing-Fix
 :: Description: Automated fix for Windows 7/8/10/11 printer sharing errors
 :: Author: Yasman
-:: Version: 2.6.0
+:: Version: 2.6.1
 :: License: MIT
 :: ==============================================================================
 
-set "VERSION=2.6.0"
+set "VERSION=2.6.1"
 set "LOG_FILE=printer_fix_log.txt"
 set "BACKUP_DIR=backups"
 set "LANG=EN"
 
 :: Create backup directory if it doesn't exist
-if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
+if not exist "%BACKUP_DIR%" (
+    mkdir "%BACKUP_DIR%"
+)
 
 :initLang
 if "%LANG%"=="ID" (
@@ -109,7 +111,9 @@ if %errorLevel% neq 0 (
 
 :: --- OS Detection ---
 set "OS_NAME=Windows"
-for /f "tokens=4-5 delims=. " %%i in ('ver') do set "OS_VER=%%i.%%j"
+for /f "tokens=4-5 delims=. " %%i in ('ver') do (
+    set "OS_VER=%%i.%%j"
+)
 if "%OS_VER%"=="10.0" set "OS_NAME=Windows 10/11"
 if "%OS_VER%"=="6.3" set "OS_NAME=Windows 8.1"
 if "%OS_VER%"=="6.2" set "OS_NAME=Windows 8"
@@ -129,7 +133,11 @@ echo.
 echo  [%STR_DIAG%]
 echo  - User: %USERNAME% ^| Lang: %LANG% ^| OS: %OS_NAME% (%OS_VER%)
 echo  - Time: %DATE% %TIME%
-net start | find "Print Spooler" >nul && (echo  - %STR_STATUS%: %STR_RUNNING%) || (echo  - %STR_STATUS%: %STR_STOPPED%)
+net start | find "Print Spooler" >nul && (
+    echo  - %STR_STATUS%: %STR_RUNNING%
+) || (
+    echo  - %STR_STATUS%: %STR_STOPPED%
+)
 echo.
 echo  ------------------------------------------------------------------------------
 echo  [%STR_MAIN_MENU%]
@@ -147,14 +155,32 @@ echo.
 set "MENU_CHOICE="
 set /p MENU_CHOICE="%STR_SELECT%"
 
-if "%MENU_CHOICE%"=="1" set "FIX_MODE=QUICK" & goto runFix
-if "%MENU_CHOICE%"=="2" set "FIX_MODE=FULL" & goto runFix
-if "%MENU_CHOICE%"=="3" goto restoreSettings
-if "%MENU_CHOICE%"=="4" goto quickAccess
-if "%MENU_CHOICE%"=="5" goto userGuide
-if "%MENU_CHOICE%"=="6" goto langSettings
-if "%MENU_CHOICE%"=="7" goto viewLog
-if "%MENU_CHOICE%"=="8" exit /b
+if "%MENU_CHOICE%"=="1" (
+    set "FIX_MODE=QUICK"
+    goto runFix
+)
+if "%MENU_CHOICE%"=="2" (
+    set "FIX_MODE=FULL"
+    goto runFix
+)
+if "%MENU_CHOICE%"=="3" (
+    goto restoreSettings
+)
+if "%MENU_CHOICE%"=="4" (
+    goto quickAccess
+)
+if "%MENU_CHOICE%"=="5" (
+    goto userGuide
+)
+if "%MENU_CHOICE%"=="6" (
+    goto langSettings
+)
+if "%MENU_CHOICE%"=="7" (
+    goto viewLog
+)
+if "%MENU_CHOICE%"=="8" (
+    exit /b
+)
 
 echo.
 echo %STR_ERR_INPUT%
@@ -181,9 +207,17 @@ echo  [3] Back / Kembali
 echo.
 set "LANG_CHOICE="
 set /p LANG_CHOICE="Select / Pilih: "
-if "%LANG_CHOICE%"=="1" set "LANG=EN" & goto initLang
-if "%LANG_CHOICE%"=="2" set "LANG=ID" & goto initLang
-if "%LANG_CHOICE%"=="3" goto mainMenu
+if "%LANG_CHOICE%"=="1" (
+    set "LANG=EN"
+    goto initLang
+)
+if "%LANG_CHOICE%"=="2" (
+    set "LANG=ID"
+    goto initLang
+)
+if "%LANG_CHOICE%"=="3" (
+    goto mainMenu
+)
 goto langSettings
 
 :userGuide
@@ -225,11 +259,25 @@ echo  [5] Back
 echo.
 set "QA_CHOICE="
 set /p QA_CHOICE="Select: "
-if "%QA_CHOICE%"=="1" start services.msc & goto quickAccess
-if "%QA_CHOICE%"=="2" start control.exe printers & goto quickAccess
-if "%QA_CHOICE%"=="3" start control.exe /name Microsoft.NetworkAndSharingCenter & goto quickAccess
-if "%QA_CHOICE%"=="4" start printmanagement.msc & goto quickAccess
-if "%QA_CHOICE%"=="5" goto mainMenu
+if "%QA_CHOICE%"=="1" (
+    start services.msc
+    goto quickAccess
+)
+if "%QA_CHOICE%"=="2" (
+    start control.exe printers
+    goto quickAccess
+)
+if "%QA_CHOICE%"=="3" (
+    start control.exe /name Microsoft.NetworkAndSharingCenter
+    goto quickAccess
+)
+if "%QA_CHOICE%"=="4" (
+    start printmanagement.msc
+    goto quickAccess
+)
+if "%QA_CHOICE%"=="5" (
+    goto mainMenu
+)
 goto quickAccess
 
 :runFix
@@ -277,7 +325,9 @@ if "%OS_VER%"=="6.1" (
     powershell -Command "Set-NetConnectionProfile -NetworkCategory Private" >nul 2>&1
 )
 
-if "%FIX_MODE%"=="QUICK" goto finalize
+if "%FIX_MODE%"=="QUICK" (
+    goto finalize
+)
 
 echo.
 echo [+] [FULL] Enabling SMBv1 ^& Guest Auth...
@@ -293,8 +343,19 @@ net start LanmanWorkstation >nul 2>&1
 net start spooler >nul 2>&1
 
 :: Service config with specific logging
-sc config fdPHost start=auto >nul 2>&1 && (call :log "[+] fdPHost config success") || (call :log "[-] fdPHost config fail/skip")
-sc config FDResPub start=auto >nul 2>&1 && (call :log "[+] FDResPub config success") || (call :log "[-] FDResPub config fail/skip")
+sc config fdPHost start=auto >nul 2>&1
+if %errorLevel% equ 0 (
+    call :log "[+] fdPHost config success"
+) else (
+    call :log "[-] fdPHost config fail/skip (Code: %errorLevel%)"
+)
+
+sc config FDResPub start=auto >nul 2>&1
+if %errorLevel% equ 0 (
+    call :log "[+] FDResPub config success"
+) else (
+    call :log "[-] FDResPub config fail/skip (Code: %errorLevel%)"
+)
 
 net start fdPHost >nul 2>&1
 net start FDResPub >nul 2>&1
