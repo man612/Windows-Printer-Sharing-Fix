@@ -2,19 +2,20 @@
 
 ![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
-![Version: 3.0.0](https://img.shields.io/badge/Version-3.0.0-blue?style=for-the-badge)
+![Version: 3.1.0](https://img.shields.io/badge/Version-3.1.0-blue?style=for-the-badge)
 
-A professional, audited utility to fix common Windows printer sharing errors across versions 7, 8, 10, and 11. This script automates registry and protocol changes while maintaining a focus on safety, logging, and state-aware restoration.
+A professional, verified utility to fix common Windows printer sharing errors across versions 7, 8, 10, and 11. This script is the result of rigorous technical auditing, featuring state-aware restoration and final verification checks.
 
 ## 🚀 Key Features
 
-- **Audited System (v3.0+)**: A completely rebuilt architecture focusing on transparency, honest error reporting, and system integrity.
-- **Interactive Menu**: Choose between a safe **Quick Fix** or a **Legacy/Full Fix** (for older systems).
-- **State-Aware Restore**: Not just a simple import; the script tracks the exact previous state of the registry for a clean "Undo".
-- **Timestamped Backups**: Every execution creates a unique backup folder, ensuring you never lose your original system state.
-- **SID-Based Permissions**: Uses Security Identifiers (SIDs) for folder permissions, ensuring 100% compatibility across all Windows display languages.
-- **Multi-Language**: Full support for English and Bahasa Indonesia with persistent settings.
-- **Detailed Logging**: Every command's success, warning, or failure is logged with precise timestamps and error codes.
+- **Final Verification (v3.1+)**: The script doesn't just run commands; it verifies registry values and service states *after* the fix to ensure success.
+- **Safe Execution Logic**: Rebuilt using "Locked" batch blocks to prevent logic leaks and ensure 100% reliable menu navigation.
+- **Audited System**: A completely transparent architecture focusing on honest error reporting (Fail/Warn) and system integrity.
+- **Interactive Menu**: Choose between a safe **Quick Fix** or a **Legacy/Full Fix** (for persistent issues).
+- **State-Aware Restore**: Tracks the exact previous state of the registry for a mathematically clean "Undo".
+- **Timestamped Backups**: Every execution creates a unique backup folder, protecting your system state.
+- **SID-Based Permissions**: Uses Security Identifiers (SIDs) for folder permissions, ensuring compatibility across all Windows display languages.
+- **Detailed Logging**: Every action is logged with precise timestamps and error codes for professional troubleshooting.
 - **Comprehensive Fixes**:
   - RPC Authentication Privacy bypass.
   - Client-Side Rendering (CSR) cleanup.
