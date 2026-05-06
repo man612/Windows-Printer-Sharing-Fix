@@ -1,12 +1,12 @@
 @echo off
 setlocal EnableDelayedExpansion
 color 0B
-title Windows Printer Sharing Fix Utility [PRO]
+title Windows Printer Sharing Fix Utility
 mode con: cols=100 lines=45
 
 :: ==============================================================================
 :: Repository: Windows-Printer-Sharing-Fix
-:: Description: Professional fix for Windows 10/11 printer sharing errors
+:: Description: Automated fix for Windows 10/11 printer sharing errors
 :: Author: Owner's Haven
 :: License: MIT
 :: ==============================================================================
@@ -25,7 +25,7 @@ echo.
 echo  ##############################################################################
 echo  #                                                                            #
 echo  #             WINDOWS PRINTER SHARING FIX UTILITY v%VERSION%               #
-echo  #             Professional Solution for Error 0x0000011b ^& More             #
+echo  #             Solution for Error 0x0000011b ^& More                        #
 echo  #                                                                            #
 echo  ##############################################################################
 echo.

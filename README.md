@@ -1,10 +1,10 @@
-# Windows Printer Sharing Fix (Pro)
+# Windows Printer Sharing Fix
 
 ![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![Version: 2.0.0](https://img.shields.io/badge/Version-2.0.0-blue?style=for-the-badge)
 
-A professional, enterprise-grade utility to fix common Windows 10/11 printer sharing errors. This script automates the complex registry and protocol changes required to resolve the infamous **0x0000011b** error and other network printing issues.
+A utility to fix common Windows 10/11 printer sharing errors. This script automates the registry and protocol changes required to resolve the infamous **0x0000011b** error and other network printing issues.
 
 ## 🚀 Key Features
 
