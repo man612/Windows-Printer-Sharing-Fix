@@ -12,7 +12,7 @@ mode con: cols=105 lines=45 >nul 2>&1
 :: License: MIT
 :: ==============================================================================
 
-set "VERSION=2.8.0"
+set "VERSION=3.0.0"
 set "SCRIPT_DIR=%~dp0"
 set "LOG_FILE=%SCRIPT_DIR%printer_fix_log.txt"
 set "BACKUP_ROOT=%SCRIPT_DIR%backups"

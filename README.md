@@ -2,19 +2,19 @@
 
 ![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
-![Version: 2.2.1](https://img.shields.io/badge/Version-2.2.1-blue?style=for-the-badge)
+![Version: 3.0.0](https://img.shields.io/badge/Version-3.0.0-blue?style=for-the-badge)
 
-A utility to fix common Windows 10/11 printer sharing errors. This script automates the registry and protocol changes required to resolve the infamous **0x0000011b** error and other network printing issues.
+A professional, audited utility to fix common Windows printer sharing errors across versions 7, 8, 10, and 11. This script automates registry and protocol changes while maintaining a focus on safety, logging, and state-aware restoration.
 
 ## 🚀 Key Features
 
-- **Interactive Menu**: Choose between a Quick Fix or a Full Fix.
-- **Multi-Language**: Support for English and Bahasa Indonesia.
-- **System Diagnostics**: Real-time OS and Print Spooler status monitoring.
-- **User Guide**: Integrated detailed instructions and troubleshooting tips.
-- **Quick Access**: Built-in shortcuts to Windows Services and Printer settings.
-- **Safety First**: Automatic registry backups before any modification.
-- **Detailed Logging**: Every action is logged to `printer_fix_log.txt`.
+- **Audited System (v3.0+)**: A completely rebuilt architecture focusing on transparency, honest error reporting, and system integrity.
+- **Interactive Menu**: Choose between a safe **Quick Fix** or a **Legacy/Full Fix** (for older systems).
+- **State-Aware Restore**: Not just a simple import; the script tracks the exact previous state of the registry for a clean "Undo".
+- **Timestamped Backups**: Every execution creates a unique backup folder, ensuring you never lose your original system state.
+- **SID-Based Permissions**: Uses Security Identifiers (SIDs) for folder permissions, ensuring 100% compatibility across all Windows display languages.
+- **Multi-Language**: Full support for English and Bahasa Indonesia with persistent settings.
+- **Detailed Logging**: Every command's success, warning, or failure is logged with precise timestamps and error codes.
 - **Comprehensive Fixes**:
   - RPC Authentication Privacy bypass.
   - Client-Side Rendering (CSR) cleanup.
