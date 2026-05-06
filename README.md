@@ -47,12 +47,14 @@ This script provides a menu-based troubleshooting utility that applies several k
 ## 💻 Supported Windows Versions
 
 This project is intended to support the following Windows versions:
+
 - Windows 7
 - Windows 8 / 8.1
 - Windows 10
 - Windows 11
 
 ### 📄 Notes About Windows 7
+
 Windows 7 support is best-effort. Some commands and services differ between Windows 7 and newer versions. The script avoids using certain modern commands on older systems when possible.
 
 ---
@@ -61,6 +63,7 @@ Windows 7 support is best-effort. Some commands and services differ between Wind
 ## 🛠️ Common Issues
 
 This tool may help with problems such as:
+
 - Shared printer cannot be accessed or connected.
 - Printer sharing stopped working after a Windows update.
 - Print Spooler service fails or becomes stuck.
@@ -88,6 +91,7 @@ This tool may help with problems such as:
 ## ⚙️ How It Works
 
 The script combines several troubleshooting steps into a single workflow:
+
 1. **UAC Elevation**: Requests admin access if needed.
 2. **OS Detection**: Identifies Windows version and build.
 3. **Mandatory Backup**: Saves registry state before any modification.
@@ -102,14 +106,18 @@ The script combines several troubleshooting steps into a single workflow:
 ## 🚀 Fix Modes
 
 ### 🟢 Quick Fix
+
 **Recommended first option.** Applies safer repair steps including:
+
 - Print Spooler & Queue Reset
 - **Point and Print Compatibility**
 - RPC Privacy & Named Pipe fixes
 - Firewall & Network Discovery configuration
 
 ### 🔴 Classic / Full Fix
+
 Intended for persistent problems or older systems. Includes everything in Quick Fix plus:
+
 - SMBv1 feature enablement (DISM)
 - Insecure guest authentication
 - LAN Manager & Blank password compatibility
@@ -204,17 +212,20 @@ The script separates safe fixes from classic fixes. **Classic / Full Fix** may r
 This issue is usually not caused by this script. If the browser fails to download any file, the problem is likely related to the Windows Attachment Manager or Microsoft Defender integration.
 
 Before changing registry values, try:
+
 1. Update Microsoft Defender security intelligence.
 2. Restart Windows.
 3. Check Windows Security protection history.
 4. Try another browser.
 
 If downloads still fail, the following commands may help reset the attachment scanning policy:
+
 ```bat
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Attachments" /v ScanWithAntiVirus /t REG_DWORD /d 1 /f
 reg add "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\Attachments" /v ScanWithAntiVirus /t REG_DWORD /d 1 /f
 gpupdate /force
 ```
+
 *Restart Windows after running the commands. Note: This does not mean the downloaded file is automatically safe. Keep real-time protection enabled and only download files from trusted sources.*
 </details>
 
