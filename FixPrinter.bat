@@ -6,13 +6,13 @@ mode con: cols=100 lines=45
 
 :: ==============================================================================
 :: Repository: Windows-Printer-Sharing-Fix
-:: Description: Automated fix for Windows 10/11 printer sharing errors
+:: Description: Automated fix for Windows 7/8/10/11 printer sharing errors
 :: Author: Yasman
-:: Version: 2.2.1
+:: Version: 2.3.0
 :: License: MIT
 :: ==============================================================================
 
-set "VERSION=2.2.1"
+set "VERSION=2.3.0"
 set "LOG_FILE=printer_fix_log.txt"
 set "BACKUP_DIR=backups"
 set "LANG=EN"
@@ -22,7 +22,7 @@ if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
 
 :initLang
 if "%LANG%"=="ID" (
-    set "STR_SUBTITLE=Solusi Otomatis untuk Error Sharing Printer (0x0000011b ^& Lainnya)"
+    set "STR_SUBTITLE=Solusi Otomatis untuk Error Sharing Printer (Universal: Win 7-11)"
     set "STR_ADMIN_ERR=ERROR: DIBUTUHKAN AKSES ADMINISTRATOR"
     set "STR_ADMIN_DESC=[!] Script ini harus dijalankan sebagai Administrator."
     set "STR_ADMIN_SOL=Solusi: Klik kanan file ini dan pilih 'Run as administrator'."
@@ -53,7 +53,7 @@ if "%LANG%"=="ID" (
     set "STR_REBOOT_REQ=Restart PC dibutuhkan agar semua perubahan aktif."
     set "STR_REBOOT_NOW=Restart PC sekarang? (Y/N): "
 ) else (
-    set "STR_SUBTITLE=Automated Solution for Printer Sharing Errors (0x0000011b ^& More)"
+    set "STR_SUBTITLE=Automated Solution for Printer Sharing Errors (Universal: Win 7-11)"
     set "STR_ADMIN_ERR=ERROR: ADMINISTRATOR PRIVILEGES REQUIRED"
     set "STR_ADMIN_DESC=[!] This script must be run as an Administrator."
     set "STR_ADMIN_SOL=Solution: Right-click this file and select 'Run as administrator'."
@@ -105,10 +105,13 @@ if %errorLevel% neq 0 (
     exit /b
 )
 
-:: --- System Info ---
+:: --- Improved System Detection ---
+set "OS_NAME=Windows"
 for /f "tokens=4-5 delims=. " %%i in ('ver') do set "OS_VER=%%i.%%j"
-set "OS_NAME=Unknown Windows"
 if "%OS_VER%"=="10.0" set "OS_NAME=Windows 10/11"
+if "%OS_VER%"=="6.3" set "OS_NAME=Windows 8.1"
+if "%OS_VER%"=="6.2" set "OS_NAME=Windows 8"
+if "%OS_VER%"=="6.1" set "OS_NAME=Windows 7"
 
 :mainMenu
 cls
@@ -121,7 +124,7 @@ echo  #                                                                         
 echo  ##############################################################################
 echo.
 echo  [%STR_DIAG%]
-echo  - User: %USERNAME% ^| Lang: %LANG% ^| OS: %OS_NAME%
+echo  - User: %USERNAME% ^| Lang: %LANG% ^| OS: %OS_NAME% (%OS_VER%)
 echo  - Time: %DATE% %TIME%
 net start | find "Print Spooler" >nul && (echo  - %STR_STATUS%: %STR_RUNNING%) || (echo  - %STR_STATUS%: %STR_STOPPED%)
 echo.
@@ -179,12 +182,11 @@ if "%LANG%"=="ID" (
     echo     - Mengaktifkan SMBv1 dan Guest Auth.
     echo     - Gunakan jika printer Anda model lama (Legacy) atau server jadul.
     echo.
-    echo  3. KEAMANAN ^& BACKUP
-    echo     - Script ini otomatis mem-backup Registry ke folder 'backups'.
-    echo     - Jika ada masalah, gunakan menu Restore untuk membatalkan perubahan.
+    echo  3. DUKUNGAN WINDOWS 7
+    echo     - Script ini mendeteksi Windows 7 secara otomatis dan menyesuaikan perintah.
     echo.
-    echo  4. RESTART ADALAH KUNCI
-    echo     - Perubahan registry Windows tidak akan aktif sebelum PC di-restart.
+    echo  4. KEAMANAN ^& BACKUP
+    echo     - Script ini otomatis mem-backup Registry ke folder 'backups'.
     echo.
 ) else (
     echo.
@@ -200,12 +202,11 @@ if "%LANG%"=="ID" (
     echo     - Enables SMBv1 and Guest Auth.
     echo     - Use this if your printer is an older (Legacy) model.
     echo.
-    echo  3. SAFETY ^& BACKUP
-    echo     - The script automatically backs up Registry to the 'backups' folder.
-    echo     - If issues occur, use the Restore menu to undo changes.
+    echo  3. WINDOWS 7 SUPPORT
+    echo     - Script detects Windows 7 automatically and adjusts commands accordingly.
     echo.
-    echo  4. RESTART IS KEY
-    echo     - Windows registry changes will not apply until the PC is restarted.
+    echo  4. SAFETY ^& BACKUP
+    echo     - The script automatically backs up Registry to the 'backups' folder.
     echo.
 )
 echo  Press any key to return to menu...
@@ -268,6 +269,15 @@ echo.
 echo [+] %STR_UP_PERM%
 icacls "%systemroot%\System32\spool\PRINTERS" /grant Everyone:(OI)(CI)F /T /C /Q >nul 2>&1
 icacls "%systemroot%\System32\spool\drivers" /grant Everyone:(OI)(CI)F /T /C /Q >nul 2>&1
+echo.
+
+:: --- OS Specific Commands ---
+if "%OS_VER%"=="6.1" (
+    echo [i] Skipping Windows 10 specific network commands...
+) else (
+    echo [+] Setting Network Category to Private...
+    powershell -Command "Set-NetConnectionProfile -NetworkCategory Private" >nul 2>&1
+)
 echo.
 
 if "%FIX_MODE%"=="QUICK" goto finalize
