@@ -8,11 +8,11 @@ mode con: cols=100 lines=45
 :: Repository: Windows-Printer-Sharing-Fix
 :: Description: Automated fix for Windows 7/8/10/11 printer sharing errors
 :: Author: Yasman
-:: Version: 2.4.0
+:: Version: 2.4.1
 :: License: MIT
 :: ==============================================================================
 
-set "VERSION=2.4.0"
+set "VERSION=2.4.1"
 set "LOG_FILE=printer_fix_log.txt"
 set "BACKUP_DIR=backups"
 set "LANG=EN"
@@ -41,7 +41,7 @@ if "%LANG%"=="ID" (
     set "STR_OPT_6=[6] Pengaturan Bahasa (Ganti English / Indonesia)"
     set "STR_OPT_7=[7] Lihat Log Eksekusi (Riwayat Perbaikan)"
     set "STR_OPT_8=[8] Keluar dari Program"
-    set "STR_SELECT=Silakan pilih opsi [1-8]:"
+    set "STR_SELECT=Silakan pilih opsi [1-8]: "
     set "STR_STARTING=MEMULAI PROSES PERBAIKAN"
     set "STR_BACKUP=Mencadangkan pengaturan registry saat ini..."
     set "STR_STOP_SVC=Menghentikan layanan Spooler dan Jaringan..."
@@ -51,7 +51,7 @@ if "%LANG%"=="ID" (
     set "STR_RESTART_SVC=Memulai ulang layanan sistem..."
     set "STR_SUCCESS=EKSEKUSI SELESAI DENGAN SUKSES"
     set "STR_REBOOT_REQ=Restart PC dibutuhkan agar semua perubahan aktif."
-    set "STR_REBOOT_NOW=Restart PC sekarang? (Y/N):"
+    set "STR_REBOOT_NOW=Restart PC sekarang? (Y/N): "
 ) else (
     set "STR_SUBTITLE=Automated Solution for Printer Sharing Errors (Universal: Win 7-11)"
     set "STR_ADMIN_ERR=ERROR: ADMINISTRATOR PRIVILEGES REQUIRED"
@@ -72,7 +72,7 @@ if "%LANG%"=="ID" (
     set "STR_OPT_6=[6] Language Settings (Switch English / Indonesia)"
     set "STR_OPT_7=[7] View Execution Logs (History)"
     set "STR_OPT_8=[8] Exit Utility"
-    set "STR_SELECT=Select an option [1-8]:"
+    set "STR_SELECT=Select an option [1-8]: "
     set "STR_STARTING=STARTING REPAIR PROCESS"
     set "STR_BACKUP=Backing up current registry settings..."
     set "STR_STOP_SVC=Stopping Print Spooler and Network Services..."
@@ -82,7 +82,7 @@ if "%LANG%"=="ID" (
     set "STR_RESTART_SVC=Restarting system services..."
     set "STR_SUCCESS=EXECUTION COMPLETED SUCCESSFULLY"
     set "STR_REBOOT_REQ=A system restart is required to apply all changes."
-    set "STR_REBOOT_NOW=Restart PC now? (Y/N):"
+    set "STR_REBOOT_NOW=Restart PC now? (Y/N): "
 )
 
 :: --- Check for Administrator Privileges ---
@@ -142,16 +142,19 @@ echo  %STR_OPT_7%
 echo  %STR_OPT_8%
 echo.
 
-:: --- CHOICE Implementation (Stable Menu) ---
-choice /c 12345678 /n /m "%STR_SELECT%"
-if errorlevel 8 exit /b
-if errorlevel 7 goto viewLog
-if errorlevel 6 goto langSettings
-if errorlevel 5 goto userGuide
-if errorlevel 4 goto quickAccess
-if errorlevel 3 goto restoreSettings
-if errorlevel 2 set "FIX_MODE=FULL" & goto runFix
-if errorlevel 1 set "FIX_MODE=QUICK" & goto runFix
+:: --- SET /P Implementation (With Anti-Crash Logic) ---
+set "MENU_CHOICE="
+set /p MENU_CHOICE="%STR_SELECT%"
+
+if "%MENU_CHOICE%"=="1" set "FIX_MODE=QUICK" & goto runFix
+if "%MENU_CHOICE%"=="2" set "FIX_MODE=FULL" & goto runFix
+if "%MENU_CHOICE%"=="3" goto restoreSettings
+if "%MENU_CHOICE%"=="4" goto quickAccess
+if "%MENU_CHOICE%"=="5" goto userGuide
+if "%MENU_CHOICE%"=="6" goto langSettings
+if "%MENU_CHOICE%"=="7" goto viewLog
+if "%MENU_CHOICE%"=="8" exit /b
+goto mainMenu
 
 :viewLog
 if exist "%LOG_FILE%" (
@@ -171,10 +174,12 @@ echo  [1] English (Current: %LANG%)
 echo  [2] Bahasa Indonesia
 echo  [3] Back / Kembali
 echo.
-choice /c 123 /n /m "Select / Pilih: "
-if errorlevel 3 goto mainMenu
-if errorlevel 2 set "LANG=ID" & goto initLang
-if errorlevel 1 set "LANG=EN" & goto initLang
+set "LANG_CHOICE="
+set /p LANG_CHOICE="Select / Pilih: "
+if "%LANG_CHOICE%"=="1" set "LANG=EN" & goto initLang
+if "%LANG_CHOICE%"=="2" set "LANG=ID" & goto initLang
+if "%LANG_CHOICE%"=="3" goto mainMenu
+goto langSettings
 
 :userGuide
 cls
@@ -189,7 +194,6 @@ if "%LANG%"=="ID" (
     echo.
     echo  2. PERBAIKAN TOTAL (FULL FIX)
     echo     - Mengaktifkan SMBv1 dan Guest Auth.
-    echo     - Gunakan jika printer Anda model lama (Legacy).
     echo.
     echo  3. RESTORE (KEMBALIKAN)
     echo     - Membatalkan perubahan jika script menyebabkan masalah.
@@ -205,7 +209,6 @@ if "%LANG%"=="ID" (
     echo.
     echo  2. FULL FIX
     echo     - Enables SMBv1 and Guest Auth.
-    echo     - Use this if your printer is an older (Legacy) model.
     echo.
     echo  3. RESTORE
     echo     - Reverts all changes if the script causes issues.
@@ -219,12 +222,14 @@ goto mainMenu
 cls
 echo  [QUICK ACCESS TOOLS]
 echo  [1] Services.msc ^| [2] Control Printers ^| [3] Network Center ^| [4] Print Mgmt ^| [5] Back
-choice /c 12345 /n /m "Select: "
-if errorlevel 5 goto mainMenu
-if errorlevel 4 start printmanagement.msc & goto quickAccess
-if errorlevel 3 start control /name Microsoft.NetworkAndSharingCenter & goto quickAccess
-if errorlevel 2 start control printers & goto quickAccess
-if errorlevel 1 start services.msc & goto quickAccess
+set "QA_CHOICE="
+set /p QA_CHOICE="Select: "
+if "%QA_CHOICE%"=="1" start services.msc & goto quickAccess
+if "%QA_CHOICE%"=="2" start control printers & goto quickAccess
+if "%QA_CHOICE%"=="3" start control /name Microsoft.NetworkAndSharingCenter & goto quickAccess
+if "%QA_CHOICE%"=="4" start printmanagement.msc & goto quickAccess
+if "%QA_CHOICE%"=="5" goto mainMenu
+goto quickAccess
 
 :runFix
 cls
@@ -298,18 +303,18 @@ echo                      %STR_SUCCESS%
 echo ==============================================================================
 echo %STR_REBOOT_REQ%
 echo.
-choice /c YN /n /m "%STR_REBOOT_NOW%"
-if errorlevel 2 (
-    echo.
-    echo [!] Please restart manually later. Press any key...
-    pause >nul
-    goto mainMenu
-)
-if errorlevel 1 (
+set "REBOOT="
+set /p REBOOT="%STR_REBOOT_NOW%"
+if /i "%REBOOT%"=="Y" (
     echo.
     echo Restarting in 10 seconds. Press CTRL+C to abort...
     shutdown /r /t 10 /c "Printer Fix Applied by Yasman. System Restarting."
     exit /b
+) else (
+    echo.
+    echo [!] Please restart manually later. Press any key...
+    pause >nul
+    goto mainMenu
 )
 
 :restoreSettings
