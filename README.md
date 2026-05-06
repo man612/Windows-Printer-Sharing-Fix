@@ -2,13 +2,17 @@
 
 ![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
-![Version: 2.0.0](https://img.shields.io/badge/Version-2.0.0-blue?style=for-the-badge)
+![Version: 2.2.1](https://img.shields.io/badge/Version-2.2.1-blue?style=for-the-badge)
 
 A utility to fix common Windows 10/11 printer sharing errors. This script automates the registry and protocol changes required to resolve the infamous **0x0000011b** error and other network printing issues.
 
 ## 🚀 Key Features
 
 - **Interactive Menu**: Choose between a Quick Fix or a Full Fix.
+- **Multi-Language**: Support for English and Bahasa Indonesia.
+- **System Diagnostics**: Real-time OS and Print Spooler status monitoring.
+- **User Guide**: Integrated detailed instructions and troubleshooting tips.
+- **Quick Access**: Built-in shortcuts to Windows Services and Printer settings.
 - **Safety First**: Automatic registry backups before any modification.
 - **Detailed Logging**: Every action is logged to `printer_fix_log.txt`.
 - **Comprehensive Fixes**:
