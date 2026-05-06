@@ -8,16 +8,21 @@ mode con: cols=100 lines=45
 :: Repository: Windows-Printer-Sharing-Fix
 :: Description: Automated fix for Windows 10/11 printer sharing errors
 :: Author: Yasman
+:: Version: 2.1.0
 :: License: MIT
 :: ==============================================================================
 
-set "VERSION=2.0.0"
+set "VERSION=2.1.0"
 set "LOG_FILE=printer_fix_log.txt"
 set "BACKUP_DIR=backups"
-set "TIMESTAMP=%DATE% %TIME%"
 
 :: Create backup directory if it doesn't exist
 if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
+
+:: --- System Diagnostics ---
+for /f "tokens=4-5 delims=. " %%i in ('ver') do set "OS_VER=%%i.%%j"
+set "OS_NAME=Unknown Windows"
+if "%OS_VER%"=="10.0" set "OS_NAME=Windows 10/11"
 
 :mainMenu
 cls
@@ -25,24 +30,51 @@ echo.
 echo  ##############################################################################
 echo  #                                                                            #
 echo  #             WINDOWS PRINTER SHARING FIX UTILITY v%VERSION%               #
-echo  #             Solution for Error 0x0000011b ^& More                        #
+echo  #             Author: Yasman ^| OS: %OS_NAME%                                #
 echo  #                                                                            #
 echo  ##############################################################################
 echo.
+echo  [SYSTEM DIAGNOSTICS]
+echo  - User: %USERNAME%
+echo  - Time: %DATE% %TIME%
+echo  - Spooler Status: Checking...
+net start | find "Print Spooler" >nul && (echo  - Spooler Service: RUNNING) || (echo  - Spooler Service: STOPPED)
+echo.
+echo  [MAIN MENU]
 echo  [1] Quick Fix (Standard Registry ^& Service Reset) - Recommended
 echo  [2] Full Fix (Advanced: Includes SMBv1 ^& Guest Auth) - For Persistent Errors
 echo  [3] Restore Settings (Undo Changes from Backup)
-echo  [4] View Execution Logs
-echo  [5] Exit
+echo  [4] Quick Access (Open Services, Printers, or Network Sharing)
+echo  [5] View Execution Logs
+echo  [6] Exit
 echo.
-set /p MENU_CHOICE="Select an option [1-5]: "
+set /p MENU_CHOICE="Select an option [1-6]: "
 
 if "%MENU_CHOICE%"=="1" goto startFixQuick
 if "%MENU_CHOICE%"=="2" goto startFixFull
 if "%MENU_CHOICE%"=="3" goto restoreSettings
-if "%MENU_CHOICE%"=="4" start notepad "%LOG_FILE%" & goto mainMenu
-if "%MENU_CHOICE%"=="5" exit /b
+if "%MENU_CHOICE%"=="4" goto quickAccess
+if "%MENU_CHOICE%"=="5" start notepad "%LOG_FILE%" & goto mainMenu
+if "%MENU_CHOICE%"=="6" exit /b
 goto mainMenu
+
+:quickAccess
+cls
+echo.
+echo  [QUICK ACCESS TOOLS]
+echo  [1] Open Services Manager (services.msc)
+echo  [2] Open Devices and Printers (control printers)
+echo  [3] Open Network and Sharing Center
+echo  [4] Open Print Management (Advanced)
+echo  [5] Back to Main Menu
+echo.
+set /p QA_CHOICE="Select a tool [1-5]: "
+if "%QA_CHOICE%"=="1" start services.msc
+if "%QA_CHOICE%"=="2" start control printers
+if "%QA_CHOICE%"=="3" start control /name Microsoft.NetworkAndSharingCenter
+if "%QA_CHOICE%"=="4" start printmanagement.msc
+if "%QA_CHOICE%"=="5" goto mainMenu
+goto quickAccess
 
 :startFixQuick
 set "FIX_MODE=QUICK"
@@ -71,15 +103,13 @@ if %errorLevel% neq 0 (
     goto mainMenu
 )
 
-call :log "--- Started Printer Fix [%FIX_MODE%] ---"
+call :log "--- Started Printer Fix [%FIX_MODE%] by Yasman ---"
 
 :: [1] Registry Backup
 echo [+] Backing up registry settings...
-set "BK_FILE=%BACKUP_DIR%\backup_%DATE:~-4%%DATE:~4,2%%DATE:~7,2%_%TIME:~0,2%%TIME:~3,2%.reg"
-set "BK_FILE=%BK_FILE: =0%"
 reg export "HKLM\System\CurrentControlSet\Control\Print" "%BACKUP_DIR%\print_backup.reg" /y >nul 2>&1
 reg export "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Print\Providers" "%BACKUP_DIR%\providers_backup.reg" /y >nul 2>&1
-call :log "[+] Backups created in %BACKUP_DIR% folder."
+call :log "[+] Backups created."
 echo   - Registry backup complete.
 echo.
 
@@ -93,15 +123,15 @@ echo   - Services stopped.
 echo.
 
 :: [3] Clear Cache
-echo [+] Clearing Spooler Cache...
+echo [+] Clearing Spooler Cache ^& Orphaned Files...
 del /Q /F /S "%systemroot%\System32\Spool\Printers\*.*" >nul 2>&1
 del /Q /F /S "%systemroot%\System32\Spool\SERVERS\*.*" >nul 2>&1
 call :log "[+] Spooler cache cleared."
 echo   - Cache cleared.
 echo.
 
-:: [4] Registry Fixes (Quick)
-echo [+] Applying Registry Fixes...
+:: [4] Registry Fixes
+echo [+] Applying Registry Fixes (0x0000011b, 0x00000709)...
 reg delete "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Print\Providers\Client Side Rendering Print Provider" /f >nul 2>&1
 reg add "HKLM\System\CurrentControlSet\Control\Print" /v RpcAuthnLevelPrivacyEnabled /t REG_DWORD /d 0 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC" /v RpcUseNamedPipeProtocol /t REG_DWORD /d 1 /f >nul 2>&1
@@ -117,13 +147,6 @@ icacls "%systemroot%\System32\spool\PRINTERS" /grant Everyone:(OI)(CI)F /T /C /Q
 icacls "%systemroot%\System32\spool\drivers" /grant Everyone:(OI)(CI)F /T /C /Q >nul 2>&1
 call :log "[+] Permissions updated."
 echo   - Permissions updated.
-echo.
-
-:: [6] Network Category
-echo [+] Setting Network Profile to Private...
-powershell -Command "Set-NetConnectionProfile -NetworkCategory Private" >nul 2>&1
-call :log "[+] Network category set to Private."
-echo   - Network profile set.
 echo.
 
 if "%FIX_MODE%"=="QUICK" goto finalize
@@ -159,9 +182,16 @@ call :log "--- Execution Completed Successfully ---"
 echo ==============================================================================
 echo                      EXECUTION COMPLETED SUCCESSFULLY
 echo ==============================================================================
-echo A system restart is required to apply all changes.
 echo.
-pause
+echo A system restart is required to apply all changes.
+set /p REBOOT="Restart PC now? (Y/N): "
+if /i "%REBOOT%"=="Y" (
+    shutdown /r /t 5 /c "Applying Printer Sharing Fixes by Yasman..."
+) else (
+    echo.
+    echo [!] Please restart manually later. Press any key to return to menu.
+    pause >nul
+)
 goto mainMenu
 
 :restoreSettings
