@@ -8,11 +8,11 @@ mode con: cols=100 lines=45
 :: Repository: Windows-Printer-Sharing-Fix
 :: Description: Automated fix for Windows 10/11 printer sharing errors
 :: Author: Yasman
-:: Version: 2.2.0
+:: Version: 2.2.1
 :: License: MIT
 :: ==============================================================================
 
-set "VERSION=2.2.0"
+set "VERSION=2.2.1"
 set "LOG_FILE=printer_fix_log.txt"
 set "BACKUP_DIR=backups"
 set "LANG=EN"
@@ -22,6 +22,7 @@ if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
 
 :initLang
 if "%LANG%"=="ID" (
+    set "STR_SUBTITLE=Solusi Otomatis untuk Error Sharing Printer (0x0000011b ^& Lainnya)"
     set "STR_ADMIN_ERR=ERROR: DIBUTUHKAN AKSES ADMINISTRATOR"
     set "STR_ADMIN_DESC=[!] Script ini harus dijalankan sebagai Administrator."
     set "STR_ADMIN_SOL=Solusi: Klik kanan file ini dan pilih 'Run as administrator'."
@@ -32,26 +33,27 @@ if "%LANG%"=="ID" (
     set "STR_RUNNING=BERJALAN"
     set "STR_STOPPED=BERHENTI"
     set "STR_MAIN_MENU=MENU UTAMA"
-    set "STR_OPT_1=[1] Perbaikan Cepat (Standar)"
-    set "STR_OPT_2=[2] Perbaikan Total (Lengkap: SMBv1 ^& Guest Auth)"
-    set "STR_OPT_3=[3] Kembalikan Pengaturan (Restore)"
-    set "STR_OPT_4=[4] Akses Cepat (Services, Printers, dll)"
-    set "STR_OPT_5=[5] Panduan Pengguna (User Guide)"
-    set "STR_OPT_6=[6] Pengaturan Bahasa (Language)"
-    set "STR_OPT_7=[7] Lihat Log Eksekusi"
-    set "STR_OPT_8=[8] Keluar"
-    set "STR_SELECT=Pilih opsi [1-8]: "
-    set "STR_STARTING=MEMULAI PERBAIKAN"
-    set "STR_BACKUP=Mencadangkan pengaturan registry..."
+    set "STR_OPT_1=[1] Perbaikan Cepat (Standar Registry ^& Reset Layanan) - Disarankan"
+    set "STR_OPT_2=[2] Perbaikan Total (Lengkap: SMBv1 ^& Guest Auth) - Untuk Error Bandel"
+    set "STR_OPT_3=[3] Kembalikan Pengaturan (Undo Semua Perubahan dari Backup)"
+    set "STR_OPT_4=[4] Akses Cepat (Buka Services, Control Printers, dll)"
+    set "STR_OPT_5=[5] Panduan Pengguna (Instruksi Penggunaan Detil)"
+    set "STR_OPT_6=[6] Pengaturan Bahasa (Ganti English / Indonesia)"
+    set "STR_OPT_7=[7] Lihat Log Eksekusi (Riwayat Perbaikan)"
+    set "STR_OPT_8=[8] Keluar dari Program"
+    set "STR_SELECT=Silakan pilih opsi [1-8]: "
+    set "STR_STARTING=MEMULAI PROSES PERBAIKAN"
+    set "STR_BACKUP=Mencadangkan pengaturan registry saat ini..."
     set "STR_STOP_SVC=Menghentikan layanan Spooler dan Jaringan..."
-    set "STR_CLEAR_CACHE=Membersihkan Cache Spooler..."
-    set "STR_APPLY_REG=Menerapkan Perbaikan Registry..."
-    set "STR_UP_PERM=Memperbarui Izin Folder..."
-    set "STR_RESTART_SVC=Memulai ulang layanan..."
+    set "STR_CLEAR_CACHE=Membersihkan Cache Spooler dan Antrian Print..."
+    set "STR_APPLY_REG=Menerapkan Perbaikan Registry (RPC ^& Named Pipes)..."
+    set "STR_UP_PERM=Memperbarui Izin Folder Spooler..."
+    set "STR_RESTART_SVC=Memulai ulang layanan sistem..."
     set "STR_SUCCESS=EKSEKUSI SELESAI DENGAN SUKSES"
-    set "STR_REBOOT_REQ=Restart PC dibutuhkan untuk menerapkan perubahan."
+    set "STR_REBOOT_REQ=Restart PC dibutuhkan agar semua perubahan aktif."
     set "STR_REBOOT_NOW=Restart PC sekarang? (Y/N): "
 ) else (
+    set "STR_SUBTITLE=Automated Solution for Printer Sharing Errors (0x0000011b ^& More)"
     set "STR_ADMIN_ERR=ERROR: ADMINISTRATOR PRIVILEGES REQUIRED"
     set "STR_ADMIN_DESC=[!] This script must be run as an Administrator."
     set "STR_ADMIN_SOL=Solution: Right-click this file and select 'Run as administrator'."
@@ -62,22 +64,22 @@ if "%LANG%"=="ID" (
     set "STR_RUNNING=RUNNING"
     set "STR_STOPPED=STOPPED"
     set "STR_MAIN_MENU=MAIN MENU"
-    set "STR_OPT_1=[1] Quick Fix (Standard)"
-    set "STR_OPT_2=[2] Full Fix (Advanced: SMBv1 ^& Guest Auth)"
-    set "STR_OPT_3=[3] Restore Settings (Undo Changes)"
-    set "STR_OPT_4=[4] Quick Access (Services, Printers, etc.)"
-    set "STR_OPT_5=[5] User Guide (Instructions)"
-    set "STR_OPT_6=[6] Language Settings (Bahasa)"
-    set "STR_OPT_7=[7] View Execution Logs"
-    set "STR_OPT_8=[8] Exit"
+    set "STR_OPT_1=[1] Quick Fix (Standard Registry ^& Service Reset) - Recommended"
+    set "STR_OPT_2=[2] Full Fix (Advanced: SMBv1 ^& Guest Auth) - For Persistent Errors"
+    set "STR_OPT_3=[3] Restore Settings (Undo All Changes from Backup)"
+    set "STR_OPT_4=[4] Quick Access (Open Services, Printers, or Network)"
+    set "STR_OPT_5=[5] User Guide (Detailed Instructions ^& Troubleshooting)"
+    set "STR_OPT_6=[6] Language Settings (Switch English / Indonesia)"
+    set "STR_OPT_7=[7] View Execution Logs (History)"
+    set "STR_OPT_8=[8] Exit Utility"
     set "STR_SELECT=Select an option [1-8]: "
-    set "STR_STARTING=STARTING PRINTER FIX"
-    set "STR_BACKUP=Backing up registry settings..."
+    set "STR_STARTING=STARTING REPAIR PROCESS"
+    set "STR_BACKUP=Backing up current registry settings..."
     set "STR_STOP_SVC=Stopping Print Spooler and Network Services..."
-    set "STR_CLEAR_CACHE=Clearing Spooler Cache..."
-    set "STR_APPLY_REG=Applying Registry Fixes..."
-    set "STR_UP_PERM=Updating Folder Permissions..."
-    set "STR_RESTART_SVC=Restarting Services..."
+    set "STR_CLEAR_CACHE=Clearing Spooler Cache and Print Queues..."
+    set "STR_APPLY_REG=Applying Registry Fixes (RPC ^& Named Pipes)..."
+    set "STR_UP_PERM=Updating Spooler Folder Permissions..."
+    set "STR_RESTART_SVC=Restarting system services..."
     set "STR_SUCCESS=EXECUTION COMPLETED SUCCESSFULLY"
     set "STR_REBOOT_REQ=A system restart is required to apply all changes."
     set "STR_REBOOT_NOW=Restart PC now? (Y/N): "
@@ -114,16 +116,18 @@ echo.
 echo  ##############################################################################
 echo  #                                                                            #
 echo  #             %STR_MENU_TITLE% v%VERSION%               #
-echo  #             Author: Yasman ^| OS: %OS_NAME%                                #
+echo  #             %STR_SUBTITLE%               #
 echo  #                                                                            #
 echo  ##############################################################################
 echo.
 echo  [%STR_DIAG%]
-echo  - User: %USERNAME% ^| Lang: %LANG%
+echo  - User: %USERNAME% ^| Lang: %LANG% ^| OS: %OS_NAME%
 echo  - Time: %DATE% %TIME%
 net start | find "Print Spooler" >nul && (echo  - %STR_STATUS%: %STR_RUNNING%) || (echo  - %STR_STATUS%: %STR_STOPPED%)
 echo.
+echo  ------------------------------------------------------------------------------
 echo  [%STR_MAIN_MENU%]
+echo  ------------------------------------------------------------------------------
 echo  %STR_OPT_1%
 echo  %STR_OPT_2%
 echo  %STR_OPT_3%
