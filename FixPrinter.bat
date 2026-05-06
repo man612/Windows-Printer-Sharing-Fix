@@ -19,6 +19,26 @@ set "BACKUP_DIR=backups"
 :: Create backup directory if it doesn't exist
 if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
 
+:: --- Check for Administrator Privileges ---
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    color 0C
+    cls
+    echo.
+    echo  ##############################################################################
+    echo  #                                                                            #
+    echo  #             ERROR: ADMINISTRATOR PRIVILEGES REQUIRED                     #
+    echo  #                                                                            #
+    echo  ##############################################################################
+    echo.
+    echo  [!] Script ini harus dijalankan sebagai Administrator.
+    echo  [!] Caranya: Klik kanan file ini, lalu pilih "Run as administrator".
+    echo.
+    echo  Tekan tombol apa saja untuk keluar...
+    pause >nul
+    exit /b
+)
+
 :: --- System Diagnostics ---
 for /f "tokens=4-5 delims=. " %%i in ('ver') do set "OS_VER=%%i.%%j"
 set "OS_NAME=Unknown Windows"
@@ -91,17 +111,9 @@ echo                 STARTING PRINTER FIX [%FIX_MODE% MODE]
 echo ==============================================================================
 echo.
 
-:: Check for Administrator Privileges
+:: Check for Administrator Privileges (Secondary Check)
 net session >nul 2>&1
-if %errorLevel% neq 0 (
-    call :log "[!] ERROR: Administrator privileges required."
-    color 0C
-    echo [!] ERROR: ADMINISTRATOR PRIVILEGES REQUIRED.
-    echo Please right-click this script and select "Run as administrator".
-    echo.
-    pause
-    goto mainMenu
-)
+if %errorLevel% neq 0 goto mainMenu
 
 call :log "--- Started Printer Fix [%FIX_MODE%] by Yasman ---"
 
