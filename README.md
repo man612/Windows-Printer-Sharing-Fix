@@ -6,51 +6,49 @@
 
 A Windows batch utility for troubleshooting common printer sharing issues on local networks.
 
-This project is designed to help reset and repair several Windows printer sharing components that are commonly involved in shared printer connection errors, spooler problems, RPC-related failures, and legacy network printing issues.
+🚀 This project is designed to help reset and repair several Windows printer sharing components that are commonly involved in shared printer connection errors, spooler problems, RPC-related failures, and legacy network printing issues.
 
 ---
 
 ## 📋 Table of Contents
 
-- [Overview](#overview)
-- [Supported Windows Versions](#supported-windows-versions)
-- [Common Issues](#common-issues)
-- [Features](#features)
-- [How It Works](#how-it-works)
-- [Fix Modes](#fix-modes)
-- [Download](#download)
-- [Usage](#usage)
-- [Recommended Workflow](#recommended-workflow)
-- [Backup and Restore](#backup-and-restore)
-- [Logs](#logs)
-- [Security Notes](#security-notes)
-- [What This Tool Changes](#what-this-tool-changes)
-- [What This Tool Does Not Do](#what-this-tool-does-not-do)
-- [Troubleshooting](#troubleshooting)
-- [Known Limitations](#known-limitations)
-- [FAQ](#faq)
-- [Contributing](#contributing)
-- [License](#license)
+- [Overview](#-overview)
+- [Supported Windows Versions](#-supported-windows-versions)
+- [Common Issues](#️-common-issues)
+- [Features](#-features)
+- [How It Works](#️-how-it-works)
+- [Fix Modes](#-fix-modes)
+- [Download](#-download)
+- [Usage](#-usage)
+- [Recommended Workflow](#-recommended-workflow)
+- [Backup and Restore](#-backup-and-restore)
+- [Logs](#-logs)
+- [Security Notes](#-security-notes)
+- [What This Tool Changes](#-what-this-tool-changes)
+- [What This Tool Does Not Do](#-what-this-tool-does-not-do)
+- [Troubleshooting](#-troubleshooting)
+- [Known Limitations](#-known-limitations)
+- [FAQ](#-faq)
+- [Contributing](#-contributing)
+- [License](#-license)
 
 ---
 
-## Overview
+## 🔍 Overview
 
 Windows printer sharing can fail for many different reasons. Some issues are caused by Windows updates, printer driver compatibility, RPC changes, Print Spooler failures, firewall rules, network discovery settings, SMB compatibility, or incorrect host/client configuration.
 
 This script provides a menu-based troubleshooting utility that applies several known repair steps in a controlled way. The script attempts to:
-
 - Check for administrator privileges
 - Detect the Windows version
 - Create a backup before applying changes
 - Apply selected printer sharing fixes
 - Restart required services
 - Log command results
-- Provide a restore option for managed changes
 
 ---
 
-## Supported Windows Versions
+## 💻 Supported Windows Versions
 
 This project is intended to support the following Windows versions:
 - Windows 7
@@ -58,12 +56,12 @@ This project is intended to support the following Windows versions:
 - Windows 10
 - Windows 11
 
-### Notes About Windows 7
-Windows 7 support is best-effort. Some commands and services differ between Windows 7 and newer versions. The script avoids using certain modern commands on older systems when possible. However, results may vary depending on updates and driver availability.
+### 📄 Notes About Windows 7
+Windows 7 support is best-effort. Some commands and services differ between Windows 7 and newer versions. The script avoids using certain modern commands on older systems when possible.
 
 ---
 
-## Common Issues
+## 🛠️ Common Issues
 
 This tool may help with problems such as:
 - Shared printer cannot be accessed or connected.
@@ -74,7 +72,7 @@ This tool may help with problems such as:
 
 ---
 
-## Features
+## ✨ Features
 
 - **Menu-Based Interface**: Simple command-line menu for easy navigation.
 - **Administrator Check**: Ensures script runs with necessary privileges.
@@ -87,7 +85,7 @@ This tool may help with problems such as:
 
 ---
 
-## How It Works
+## ⚙️ How It Works
 
 The script combines several troubleshooting steps into a single workflow:
 1. Admin & OS detection.
@@ -99,17 +97,17 @@ The script combines several troubleshooting steps into a single workflow:
 
 ---
 
-## Fix Modes
+## 🚀 Fix Modes
 
-### Quick Fix
+### 🟢 Quick Fix
 Recommended first option. Applies safer repair steps without enabling legacy compatibility settings. Includes spooler reset, RPC fixes, and firewall activation.
 
-### Legacy / Full Fix
+### 🔴 Legacy / Full Fix
 Intended for older systems or persistent problems. May enable SMBv1 and insecure guest authentication. Use only on trusted local networks.
 
 ---
 
-## Download
+## 📥 Download
 
 Download the latest version: **[FixPrinter.bat](FixPrinter.bat)**
 
@@ -119,7 +117,7 @@ git clone https://github.com/man612/Windows-Printer-Sharing-Fix.git
 
 ---
 
-## Usage
+## 📖 Usage
 
 1. Right-click `FixPrinter.bat` and select **Run as administrator**.
 2. Choose **Quick Fix** from the menu.
@@ -127,31 +125,31 @@ git clone https://github.com/man612/Windows-Printer-Sharing-Fix.git
 
 ---
 
-## Recommended Workflow
+## 📋 Recommended Workflow
 
 For best results, identify the **Printer Host** (the PC sharing the printer). Run the script on the host first, then on the client if connection issues persist. Check the log file if failures occur.
 
 ---
 
-## Backup and Restore
+## 💾 Backup and Restore
 
 Registry changes are backed up to the `backups\` folder. The **Restore** function can revert managed keys or delete keys that were not present before the fix was applied.
 
 ---
 
-## Logs
+## 📝 Logs
 
 All actions are logged to `printer_fix_log.txt`, including warnings and failures. This file is essential for troubleshooting if the script does not fully resolve the problem.
 
 ---
 
-## Security Notes
+## 🛡️ Security Notes
 
 The script separates safe fixes from legacy fixes. **Legacy / Full Fix** may reduce security by enabling older protocols like SMBv1. Only use legacy mode on trusted networks.
 
 ---
 
-## What This Tool Changes
+## 🔬 What This Tool Changes
 
 <details>
 <summary><b>🛠️ System Modifications (Click to expand)</b></summary>
@@ -164,7 +162,7 @@ The script separates safe fixes from legacy fixes. **Legacy / Full Fix** may red
 
 ---
 
-## What This Tool Does Not Do
+## 🚫 What This Tool Does Not Do
 
 - Install or download printer drivers.
 - Repair corrupted Windows system files.
@@ -173,7 +171,7 @@ The script separates safe fixes from legacy fixes. **Legacy / Full Fix** may red
 
 ---
 
-## Troubleshooting
+## 🐞 Troubleshooting
 
 <details>
 <summary><b>🔧 Detailed Error Guide (Click to expand)</b></summary>
@@ -185,7 +183,7 @@ The script separates safe fixes from legacy fixes. **Legacy / Full Fix** may red
 
 ---
 
-## Known Limitations
+## 📋 Known Limitations
 
 - **Driver Compatibility**: The script cannot fix incompatible 32/64-bit drivers.
 - **Modified Windows**: "Lite" or custom ISOs may be missing required services.
@@ -193,7 +191,7 @@ The script separates safe fixes from legacy fixes. **Legacy / Full Fix** may red
 
 ---
 
-## FAQ
+## ❓ FAQ
 
 <details>
 <summary><b>🤔 Common Questions (Click to expand)</b></summary>
@@ -205,12 +203,12 @@ The script separates safe fixes from legacy fixes. **Legacy / Full Fix** may red
 
 ---
 
-## Contributing
+## 📄 License
 
-Contributions are welcome. Please report bugs or submit pull requests while maintaining the simple batch script style.
+Distributed under the MIT License. See the `LICENSE` file for details.
 
 ---
 
-## License
+## 🤝 Contributing
 
-Distributed under the MIT License. See the `LICENSE` file for details.
+Contributions are welcome! Please report bugs or submit pull requests while maintaining the simple batch script style.
