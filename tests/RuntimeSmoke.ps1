@@ -17,7 +17,7 @@ $functionSource = ($functions | ForEach-Object { $_.Extent.Text }) -join "`r`n`r
 . ([scriptblock]::Create($functionSource))
 
 # Minimal script-scoped state required by the diagnostic functions.
-$script:Version = '4.0.0-smoke'
+$script:Version = '4.0.1-smoke'
 $script:Language = 'EN'
 $script:CurrentLog = Join-Path $env:TEMP ('windows-printer-fix-smoke-{0}.log' -f [Guid]::NewGuid().ToString('N'))
 $script:LastDiagnostic = $null

@@ -1,5 +1,27 @@
 # Changelog
 
+## 4.0.1
+
+Stable terminal UX and localization polish.
+
+### Added
+
+- Built-in Guide page for non-technical users with the recommended Diagnose -> Safe Repair -> Compatibility -> Legacy -> Verify/Restore flow.
+- Indonesian localization smoke test in CI.
+- Explicit Windows Server product classification guard for modern shared build numbers such as 26100.
+
+### Changed
+
+- Bahasa Indonesia now covers the stable TUI menus, diagnosis report, UNC path test, repair warnings/prompts, restore flow, tools, status values, and guide content.
+- Main terminal menu has clearer visual grouping while remaining dependency-free Windows PowerShell 5.1.
+- Windows Server product names are preserved instead of being relabeled as Windows 11 based only on build number.
+- Automated validation now covers runtime diagnosis state integrity and Indonesian UI rendering in addition to static safety rules.
+
+### Unchanged
+
+- Safe Repair security boundaries and diagnosis-first repair architecture.
+- High-risk typed confirmations and restore behavior.
+- `FixPrinter.bat` remains a launcher only.
 ## 4.0.0
 
 Major diagnosis-first redesign.

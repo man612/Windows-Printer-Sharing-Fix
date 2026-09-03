@@ -25,3 +25,7 @@ jobs:
       - name: Execute diagnosis-only runtime smoke test
         shell: powershell
         run: .\tests\RuntimeSmoke.ps1
+
+      - name: Validate Indonesian localization output
+        shell: powershell
+        run: .\tests\LocalizationSmoke.ps1
