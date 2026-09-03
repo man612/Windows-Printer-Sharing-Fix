@@ -1,266 +1,333 @@
 # Windows Printer Sharing Fix
 
 ![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows)
+![PowerShell: 5.1+](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?style=for-the-badge&logo=powershell)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
-![Version: 3.1.0](https://img.shields.io/badge/Version-3.1.0-blue?style=for-the-badge)
+![Version: 4.0.0](https://img.shields.io/badge/Version-4.0.0-blue?style=for-the-badge)
 
-A Windows batch utility for troubleshooting common printer sharing issues on local networks.
+A diagnosis-first Windows TUI for troubleshooting shared printers without applying broad security downgrades by default.
 
-🚀 This project is designed to help reset and repair several Windows printer sharing components that are commonly involved in shared printer connection errors, spooler problems, RPC-related failures, and legacy network printing issues.
+Version 4 is a major redesign. `FixPrinter.bat` is now only a small double-click launcher. The actual diagnostics, repair logic, restore system, and terminal UI live in `FixPrinter.ps1`.
 
----
+## Why v4 exists
 
-## 📋 Table of Contents
+Printer sharing failures do not all have the same cause. A stuck queue, Public network profile, blocked SMB/RPC traffic, Windows Protected Print Mode, incompatible legacy driver, Point and Print restriction, and a truly old SMB1-only device require different fixes.
 
-- [Overview](#overview)
-- [Supported Windows Versions](#supported-windows-versions)
-- [Common Issues](#common-issues)
-- [Features](#features)
-- [How It Works](#how-it-works)
-- [Fix Modes](#fix-modes)
-- [Download](#download)
-- [Usage](#usage)
-- [Recommended Workflow](#recommended-workflow)
-- [Backup and Restore](#backup-and-restore)
-- [Logs](#logs)
-- [Security Notes](#security-notes)
-- [What This Tool Changes](#what-this-tool-changes)
-- [What This Tool Does Not Do](#what-this-tool-does-not-do)
-- [Troubleshooting](#troubleshooting)
-- [Known Limitations](#known-limitations)
-- [FAQ](#faq)
-- [Contributing](#contributing)
-- [License](#license)
+Older versions used broad Quick/Full repair paths that could modify several compatibility and security settings at once. That was effective in some environments, but it could also change more of Windows than the actual problem required.
 
----
+v4 changes the model to:
 
-<a name="overview"></a>
-## 🔍 Overview
-
-Windows printer sharing can fail for many different reasons. Some issues are caused by Windows updates, printer driver compatibility, RPC changes, Print Spooler failures, firewall rules, network discovery settings, SMB compatibility, or incorrect host/client configuration.
-
-This script provides a menu-based troubleshooting utility that applies several known repair steps in a controlled way.
-
----
-
-<a name="supported-windows-versions"></a>
-## 💻 Supported Windows Versions
-
-This project is intended to support the following Windows versions:
-
-- Windows 7
-- Windows 8 / 8.1
-- Windows 10
-- Windows 11
-
-### 📄 Notes About Windows 7
-
-Windows 7 support is best-effort. Some commands and services differ between Windows 7 and newer versions. The script avoids using certain modern commands on older systems when possible.
-
----
-
-<a name="common-issues"></a>
-## 🛠️ Common Issues
-
-This tool may help with problems such as:
-
-- Shared printer cannot be accessed or connected.
-- Printer sharing stopped working after a Windows update.
-- Print Spooler service fails or becomes stuck.
-- Shared printer does not appear on the network.
-- RPC-related errors (`0x0000011b`, `0x00000709`, etc.).
-
----
-
-## ✨ Features
-
-- **Auto-Elevation (UAC)**: Automatically requests Administrator privileges via PowerShell if not already elevated.
-- **Point and Print Fix**: Automates bypasses for `RestrictDriverInstallationToAdministrators` to allow driver installation from print servers.
-- **Menu-Based Interface**: Simple command-line menu for easy navigation.
-- **Print Spooler Reset**: Stops/Starts service and clears queue files.
-- **RPC Compatibility**: Applies registry values for modern Windows RPC sharing.
-- **Network Discovery**: Configures `fdPHost` and `FDResPub` services.
-- **Timestamped Backups**: Each run creates a unique backup folder.
-- **State-Aware Restore**: Reverts registry changes based on original state.
-- **Logging**: Detailed logs saved to `printer_fix_log.txt`.
-
----
-
-<a name="how-it-works"></a>
-## ⚙️ How It Works
-
-The script combines several troubleshooting steps into a single workflow:
-
-1. **UAC Elevation**: Requests admin access if needed.
-2. **OS Detection**: Identifies Windows version and build.
-3. **Mandatory Backup**: Saves registry state before any modification.
-4. **Service Reset**: Clears spooler cache and resets services.
-5. **Fix Application**: Applies Point and Print, RPC, and permission fixes.
-6. **Firewall Rules**: Activates sharing rules across localized OS builds.
-7. **Verification**: Confirms results and writes to log.
-
----
-
-<a name="fix-modes"></a>
-## 🚀 Fix Modes
-
-### 🟢 Quick Fix
-
-**Recommended first option.** Applies safer repair steps including:
-
-- Print Spooler & Queue Reset
-- **Point and Print Compatibility**
-- RPC Privacy & Named Pipe fixes
-- Firewall & Network Discovery configuration
-
-### 🔴 Classic / Full Fix
-
-Intended for persistent problems or older systems. Includes everything in Quick Fix plus:
-
-- SMBv1 feature enablement (DISM)
-- Insecure guest authentication
-- LAN Manager & Blank password compatibility
-
----
-
-<a name="download"></a>
-## 📥 Download
-
-Download the latest version: **[FixPrinter.bat](FixPrinter.bat)**
-
-```bash
-git clone https://github.com/man612/Windows-Printer-Sharing-Fix.git
+```text
+Diagnose
+   |
+Identify the failing layer
+   |
+Apply the smallest relevant repair
+   |
+Verify connectivity / printer state
+   |
+Restore the original managed state if needed
 ```
 
----
+## Start here
 
-<a name="usage"></a>
-## 📖 Usage
+1. Download or clone the repository.
+2. Keep `FixPrinter.bat` and `FixPrinter.ps1` in the same folder.
+3. Double-click `FixPrinter.bat`.
+4. Accept the UAC Administrator prompt.
+5. Choose **Diagnose this PC** first.
+6. Only move to Safe Repair, Compatibility Repair, or Legacy Compatibility when the diagnostic result points there.
 
-1. Run `FixPrinter.bat` (It will automatically request Admin access).
-2. Choose **Quick Fix** (Option 1) from the menu.
-3. Restart Windows after the repair finishes and test the printer.
+English is the default language. Indonesian can be selected from the Language menu.
 
----
+### Ringkas untuk pengguna Indonesia
 
-<a name="recommended-workflow"></a>
-## 📋 Recommended Workflow
+Jalankan `FixPrinter.bat`, lalu pilih **Diagnose this PC** dulu. Versi 4 tidak lagi langsung menembakkan banyak tweak sekaligus. Tool akan mengecek kondisi Windows, Spooler, printer host/client, network profile, Windows Protected Print Mode, SMB1, Point and Print, RPC, dan log PrintService. Perbaikan yang menurunkan keamanan dipisahkan ke menu Advanced/Legacy dan membutuhkan konfirmasi tambahan.
 
-For best results, identify the **Printer Host** (the PC sharing the printer). Run the script on the host first, then on the client if connection issues persist.
+## Main TUI
 
----
-
-<a name="backup-and-restore"></a>
-## 💾 Backup and Restore
-
-Registry changes are backed up to the `backups\` folder. The **Restore** function can revert managed keys or delete keys that were not present before the fix was applied.
-
----
-
-<a name="logs"></a>
-## 📝 Logs
-
-All actions are logged to `printer_fix_log.txt`, including warnings and failures. This file is essential for troubleshooting if the script does not fully resolve the problem.
-
----
-
-<a name="security-notes"></a>
-## 🛡️ Security Notes
-
-The script separates safe fixes from classic fixes. **Classic / Full Fix** may reduce security by enabling older protocols like SMBv1. Only use classic mode on trusted networks.
-
----
-
-<a name="what-this-tool-changes"></a>
-## 🔬 What This Tool Changes
-
-<details>
-<summary><b>🛠️ System Modifications (Click to expand)</b></summary>
-
-- **Services**: Print Spooler, Server, Workstation, fdPHost, FDResPub.
-- **Point and Print**: `RestrictDriverInstallationToAdministrators`, `BypassUpdateRoleIndicator`.
-- **Folders**: Spooler queue (`PRINTERS`), server cache (`SERVERS`), and drivers.
-- **Firewall**: File and Printer Sharing rules.
-- **Registry**: Print service, providers, RPC, LSA, and SMB compatibility.
-</details>
-
----
-
-<a name="what-this-tool-does-not-do"></a>
-## 🚫 What This Tool Does Not Do
-
-- Install or download printer drivers.
-- Repair corrupted Windows system files.
-- Fix hardware or router issues.
-- Fix domain/Group Policy restrictions.
-
----
-
-<a name="troubleshooting"></a>
-## 🐞 Troubleshooting
-
-<details>
-<summary><b>🔧 Detailed Error Guide (Click to expand)</b></summary>
-
-- **0x0000011b**: Often fixed by RPC compatibility settings in Quick Fix.
-- **Access is Denied**: Check credentials, network profile, and guest access.
-- **Spooler Fails to Start**: Check for corrupted drivers in Print Management.
-
-### Browser Shows "Failed - Virus scan failed"
-
-This issue is usually not caused by this script. If the browser fails to download any file, the problem is likely related to the Windows Attachment Manager or Microsoft Defender integration.
-
-Before changing registry values, try:
-
-1. Update Microsoft Defender security intelligence.
-2. Restart Windows.
-3. Check Windows Security protection history.
-4. Try another browser.
-
-If downloads still fail, the following commands may help reset the attachment scanning policy:
-
-```bat
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Attachments" /v ScanWithAntiVirus /t REG_DWORD /d 1 /f
-reg add "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\Attachments" /v ScanWithAntiVirus /t REG_DWORD /d 1 /f
-gpupdate /force
+```text
+==============================================================================
+  WINDOWS PRINTER SHARING FIX  v4.0.0
+  Diagnosis-first repair utility
+  > MAIN MENU
+==============================================================================
+  OS: Windows 11 build 26100    Language: EN    Spooler: Running
+------------------------------------------------------------------------------
+[1] Diagnose this PC  <RECOMMENDED>
+[2] Safe Repair
+[3] Compatibility Repair (Advanced)
+[4] Legacy Compatibility (High Risk)
+[5] Restore latest managed changes
+[6] Tools and Logs
+[7] Language
+[8] Exit
+------------------------------------------------------------------------------
 ```
 
-*Restart Windows after running the commands. Note: This does not mean the downloaded file is automatically safe. Keep real-time protection enabled and only download files from trusted sources.*
-</details>
+The UI intentionally uses a simple terminal layout instead of external GUI libraries so the project remains portable and inspectable on normal Windows installations.
 
----
+## What Diagnose checks
 
-<a name="known-limitations"></a>
-## 📋 Known Limitations
+The diagnostic path currently inspects:
 
-- **Driver Compatibility**: The script cannot fix incompatible 32/64-bit drivers.
-- **Modified Windows**: "Lite" or custom ISOs may be missing required services.
-- **Group Policy**: Domain settings may override local registry changes.
+- Windows version and build.
+- PowerShell version.
+- Print Spooler state.
+- Installed printers and shared printers.
+- Whether the PC looks like a printer **Host**, **Client**, or both.
+- Active network profiles and whether one is Public.
+- Windows Protected Print Mode (WPP) policy/state indicators.
+- `RpcAuthnLevelPrivacyEnabled`.
+- `RpcUseNamedPipeProtocol` and `RpcProtocols`.
+- `RestrictDriverInstallationToAdministrators`.
+- SMB1 client feature state.
+- Insecure SMB guest authentication.
+- LAN Manager compatibility level.
+- Blank-password remote-logon policy.
+- Recent PrintService Admin errors/warnings.
 
----
+It can also test a specific shared printer path such as:
 
-<a name="faq"></a>
-## ❓ FAQ
+```text
+\\PRINT-PC\OfficePrinter
+```
 
-<details>
-<summary><b>🤔 Common Questions (Click to expand)</b></summary>
+That target test separates several layers:
 
-- **Is this a guaranteed fix?** No, results depend on many external factors.
-- **Host or Client?** Start with the computer sharing the printer (Host).
-- **Is it safe?** Quick Fix is designed for standard safety; Classic Fix is for older setups.
-- **Can I undo the changes?** Yes, via the **Restore** option in the menu.
-</details>
+```text
+name resolution
+    -> TCP 445 / SMB
+    -> TCP 135 / RPC Endpoint Mapper
+    -> host share namespace
+    -> local printer connection state
+```
 
----
+This is important because a DNS, firewall, credential, WPP, driver, or Point and Print problem should not automatically be treated as an RPC or SMB1 problem.
 
-<a name="contributing"></a>
-## 🤝 Contributing
+## Safe Repair
 
-Contributions are welcome! Please report bugs or submit pull requests while maintaining the simple batch script style.
+Safe Repair is deliberately restricted. It does **not** disable RPC packet privacy, Point and Print protection, SMB authentication protections, or blank-password restrictions.
 
----
+Available actions include:
 
-<a name="license"></a>
-## 📄 License
+- Restart Print Spooler.
+- Clear the stuck print queue, with an explicit warning because pending jobs are permanently deleted.
+- Enable File and Printer Sharing firewall rules only for Domain/Private profiles.
+- Change one explicitly selected active network profile to Private.
+- Start Network Discovery services.
+- Run the non-destructive safe actions together.
 
-Distributed under the MIT License. See the `LICENSE` file for details.
+Unlike v3, changing a network profile is targeted by interface. The tool no longer sends every detected profile through `Set-NetConnectionProfile` at once.
+
+## Compatibility Repair (Advanced)
+
+Compatibility options are separated from Safe Repair.
+
+### RPC Named Pipes fallback
+
+Windows normally prefers printer RPC over TCP. v4 can apply the documented Named Pipes compatibility path without automatically disabling RPC packet privacy.
+
+The action is role-aware:
+
+- Client side: `RpcUseNamedPipeProtocol=1`
+- Host side: `RpcProtocols=7`
+
+This is a compatibility fallback, not the preferred default state.
+
+Microsoft reference:
+https://learn.microsoft.com/en-us/troubleshoot/windows-client/printing/windows-11-rpc-connection-updates-for-print
+
+### Temporary Point and Print relaxation
+
+If a shared printer cannot install because Windows requires Administrator approval for its driver, v4 can temporarily set:
+
+```text
+RestrictDriverInstallationToAdministrators=0
+```
+
+The important difference is that v4 does this only around a specific printer connection attempt and restores the original registry state in a `finally` block immediately afterwards.
+
+It is no longer a permanent Quick Fix setting.
+
+Microsoft reference:
+https://support.microsoft.com/help/5005652
+
+### Windows Protected Print Mode
+
+Windows 11 can operate in Windows Protected Print Mode. WPP intentionally prevents legacy third-party print drivers from being used while the mode is active.
+
+v4 detects WPP indicators before suggesting unrelated RPC/SMB changes. If WPP appears enforced by Group Policy, this utility does not attempt to bypass the organizational policy.
+
+Microsoft reference:
+https://learn.microsoft.com/en-us/windows/modern-print/windows-protected-print-mode/windows-protected-print-mode
+
+### RPC privacy downgrade
+
+`RpcAuthnLevelPrivacyEnabled=0` still exists as an explicitly high-risk compatibility option because some old environments may depend on it.
+
+It is **not** part of Safe Repair and requires the user to type `RISK` before the setting is changed.
+
+Users should restore the previous state after compatibility testing.
+
+## Legacy Compatibility (High Risk)
+
+There is intentionally no one-click **Full Fix** anymore.
+
+Legacy technologies solve different problems, so v4 exposes them separately:
+
+- Enable **SMB1 client only** for a device proven to be SMB1-only.
+- Allow insecure SMB guest authentication.
+- Set legacy LAN Manager compatibility level 1.
+- Blank-password remote logon is displayed as unsupported and is **not automated**.
+
+### SMB1 is no longer enabled with `-All`
+
+Older versions could enable the full `SMB1Protocol` feature tree. v4 only offers `SMB1Protocol-Client`, reducing the scope of the compatibility change.
+
+Microsoft reference:
+https://learn.microsoft.com/en-us/windows-server/storage/file-server/troubleshoot/smbv1-not-installed-by-default-in-windows
+
+### Blank-password bypass is intentionally blocked
+
+v4 will never automate:
+
+```text
+LimitBlankPasswordUse=0
+```
+
+Use password-protected credentials instead.
+
+## Windows printing in 2026
+
+Windows printing is moving away from older third-party v3/v4 driver workflows toward the modern IPP / Windows Ready Print path. Windows 11 also increasingly uses Windows Protected Print Mode security boundaries.
+
+The v4 architecture therefore treats driver/platform compatibility as a first-class diagnostic signal rather than assuming every shared-printer failure is an old RPC or SMB problem.
+
+Microsoft third-party printer driver servicing roadmap:
+https://learn.microsoft.com/en-us/windows-hardware/drivers/print/end-of-servicing-plan-for-third-party-printer-drivers-on-windows
+
+## Restore model
+
+Every repair action first creates a timestamped snapshot under:
+
+```text
+backups\
+```
+
+The managed snapshot records the original state of items the v4 utility may change, including:
+
+- Managed printer/RPC/SMB registry values.
+- Relevant Windows services and their startup/running state.
+- Network profile category per interface.
+- File and Printer Sharing firewall-rule state/profile.
+- SMB1 client optional-feature state.
+
+Restore applies those recorded states back instead of importing the entire historical `Control\Print` registry tree.
+
+That avoids rolling unrelated printer configuration backwards just because one troubleshooting setting needs to be undone.
+
+### What cannot be restored
+
+Some actions are inherently irreversible:
+
+- Deleted pending print jobs.
+- External changes made manually after a snapshot.
+- Hardware/router changes outside Windows.
+
+The TUI warns before deleting queued jobs.
+
+## Removed or changed v3 behavior
+
+v4 intentionally removes these broad defaults:
+
+| v3 behavior | v4 behavior |
+| --- | --- |
+| Quick Fix set `RpcAuthnLevelPrivacyEnabled=0` | High-risk Advanced option only |
+| Quick Fix set `RestrictDriverInstallationToAdministrators=0` permanently | Temporary around one connection attempt, then automatically restored |
+| Quick Fix deleted the entire Client Side Rendering Print Provider key | Removed; targeted printer-connection reset is used instead |
+| Quick Fix recursively changed spool driver ACLs | Removed from automatic repair; no ACL change without evidence |
+| Network Private action changed all profiles returned by PowerShell | User selects one active interface |
+| Firewall used only English/Indonesian display-group names | Uses Microsoft's world-ready firewall group identifier when available, with display-name fallbacks |
+| Full Fix enabled the entire SMB1 feature tree | Legacy option enables SMB1 client only |
+| Full Fix allowed blank-password remote logon | Not automated at all |
+| Restore imported broad historical Print registry trees | Restore uses managed state snapshots |
+| Verification mainly checked whether tweak values were written | Target test also checks DNS, SMB 445, RPC 135 and local connection state |
+
+`BypassUpdateRoleIndicator` is no longer written by v4 because it did not have sufficiently clear modern Microsoft documentation/provenance for inclusion as a critical repair setting.
+
+## Logs
+
+Each run creates a separate timestamped log in:
+
+```text
+logs\
+```
+
+The Tools menu can open the active log and export a simplified diagnostic report suitable for attaching to a GitHub issue.
+
+## Supported Windows versions
+
+### Windows 11
+
+Primary target for v4. Modern WPP, IPP, RPC, firewall, and print-driver behavior is considered in the diagnostic design.
+
+### Windows 10
+
+Compatibility target. Windows 10 standard support has ended; environments using eligible ESU scenarios should still keep the OS fully patched.
+
+### Windows 7 / 8 / 8.1
+
+Legacy best-effort only. The v4 TUI requires Windows PowerShell 5.1. Some modern networking and printing cmdlets are unavailable on old Windows versions, so diagnostics/actions degrade gracefully where possible.
+
+These operating systems should not be interpreted as security-equivalent to a currently supported Windows 11 system.
+
+## Automated validation
+
+The repository includes `tests/Validate.ps1` and a Windows GitHub Actions workflow.
+
+CI uses Windows PowerShell 5.1 to:
+
+- Parse `FixPrinter.ps1` for syntax errors.
+- Confirm the batch file remains only a launcher.
+- Ensure Safe Repair cannot contain security-downgrade settings.
+- Block the old `BypassUpdateRoleIndicator` tweak.
+- Block whole-provider registry deletion.
+- Block full SMB1 `-All` enablement.
+- Block automation of `LimitBlankPasswordUse=0`.
+- Confirm temporary Point and Print relaxation has a restore path.
+- Confirm high-risk RPC compatibility requires typed confirmation.
+
+These are guardrails, not a replacement for real host/client integration testing.
+
+## Recommended real-world test matrix
+
+Before tagging v4 as fully stable, test at minimum:
+
+- Windows 11 current build -> Windows 11 current build.
+- Windows 11 client -> Windows 10 printer host.
+- Host role only, client role only, and host+client machines.
+- WPP off and WPP on.
+- Modern IPP/Windows Ready Print device.
+- Legacy third-party driver printer.
+- Private, Public, and DomainAuthenticated network profiles.
+- Healthy queue and deliberately stuck queue.
+- RPC over TCP normal path and Named Pipes fallback.
+- Point and Print admin prompt scenario.
+- SMB1-only lab device if one is available.
+- Restore after every managed modification.
+
+Never validate SMB1, insecure guest auth, LM compatibility, or RPC privacy downgrade on an exposed production network just to prove that the menu works. Use an isolated lab/VM network.
+
+## Project philosophy
+
+The utility follows four rules:
+
+1. **Diagnose before changing.**
+2. **Prefer the smallest fix.**
+3. **Security downgrade is never a default repair.**
+4. **Every managed change should have a recorded rollback path when technically possible.**
+
+## License
+
+MIT. See `LICENSE`.
