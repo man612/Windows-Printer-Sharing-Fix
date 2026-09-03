@@ -1,8 +1,9 @@
-# Backups
+# Runtime restore snapshots
 backups/
 *.reg
 
-# Logs
+# Runtime logs and exported diagnostics
+logs/
 printer_fix_log.txt
 *.log
 
