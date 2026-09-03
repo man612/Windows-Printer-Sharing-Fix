@@ -43,7 +43,7 @@ foreach ($fn in $safeFunctions) {
 # Dangerous v3 patterns must not return.
 if ($source -match 'BypassUpdateRoleIndicator') { throw 'Unsupported BypassUpdateRoleIndicator tweak must not be present.' }
 if ($source -match 'Client Side Rendering Print Provider') { throw 'Whole-provider registry deletion must not be present.' }
-if ($source -match "Set-RegistryDword\s+['\"]HKLM:.*LimitBlankPasswordUse['\"]\s+0") { throw 'The utility must never automate disabling LimitBlankPasswordUse.' }
+if ($source -match 'Set-RegistryDword[^\r\n]+LimitBlankPasswordUse[^\r\n]+\s0(?:\s|;|$)') { throw 'The utility must never automate disabling LimitBlankPasswordUse.' }
 if ($source -match 'SMB1Protocol\s+-All') { throw 'The utility must never enable the entire SMB1 feature tree.' }
 
 # Point and Print relaxation must be restored in a finally block.
@@ -53,11 +53,8 @@ if ($point -notmatch 'Restore-RegistryValue') { throw 'Temporary Point and Print
 
 # High-risk compatibility changes must require explicit typed confirmation.
 $rpcRisk = Get-FunctionText 'Set-RpcPrivacyCompatibility'
-if ($rpcRisk -notmatch "Type RISK") { throw 'RPC privacy downgrade lacks explicit RISK confirmation.' }
+if ($rpcRisk -notmatch 'Type RISK') { throw 'RPC privacy downgrade lacks explicit RISK confirmation.' }
 $legacy = Get-FunctionText 'Show-LegacyMenu'
-if ($legacy -match 'Full Fix') {
-    # Text may explain that Full Fix no longer exists; only reject a callable menu item pattern.
-    if ($legacy -match '\[[0-9]+\].*Full Fix') { throw 'One-click legacy Full Fix must not return.' }
-}
+if ($legacy -match '\[[0-9]+\].*Full Fix') { throw 'One-click legacy Full Fix must not return.' }
 
 Write-Host 'Validation passed: syntax, launcher separation, and v4 safety guards are intact.' -ForegroundColor Green
