@@ -6,7 +6,7 @@ English is the default language. Indonesian is optional.
 #>
 
 [CmdletBinding()]
-param([switch]$NoElevation)
+param([switch]$NoElevation,[switch]$LibraryMode)
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
@@ -376,6 +376,8 @@ function Show-MainMenu {
     while($true){Write-Header (T 'Main');$os=Get-OsInfo;$spool=Get-Service Spooler -ErrorAction SilentlyContinue;Write-Host ('  OS: {0} build {1}    Language: {2}    Spooler: {3}' -f $os.Name,$os.Build,$script:Language,$(if($spool){$spool.Status}else{'Missing'})) -ForegroundColor DarkGray;Write-Rule;Write-Host "[1] $(T 'Diagnose')  <$(T 'Recommended')>" -ForegroundColor Green;Write-Host "[2] $(T 'Safe')";Write-Host "[3] $(T 'Compat')";Write-Host "[4] $(T 'Legacy')" -ForegroundColor Yellow;Write-Host "[5] $(T 'Restore')";Write-Host "[6] $(T 'Tools')";Write-Host "[7] $(T 'Language')";Write-Host "[8] $(T 'Exit')";Write-Rule;$c=Read-Choice (T 'Select') @('1','2','3','4','5','6','7','8');switch($c){'1'{[void](Invoke-Diagnosis)};'2'{Show-SafeRepairMenu};'3'{Show-CompatibilityMenu};'4'{Show-LegacyMenu};'5'{Invoke-RestoreLatest};'6'{Show-ToolsMenu};'7'{Show-LanguageMenu};'8'{return}}}
 }
 
+if($LibraryMode){ return }
+
 try {
     Initialize-Workspace
     if(-not(Ensure-Administrator)){if(-not(Test-IsAdministrator)){exit 0}}
@@ -386,3 +388,4 @@ try {
     Pause-Tui
     exit 1
 }
+

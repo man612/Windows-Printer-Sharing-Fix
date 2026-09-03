@@ -14,3 +14,8 @@ printer_fix_log.txt
 # OS Files
 Thumbs.db
 Desktop.ini
+
+# Experimental OpenTUI build artifacts
+tui/node_modules/
+tui/dist/
+*.fullbak

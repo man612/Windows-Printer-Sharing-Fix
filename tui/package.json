@@ -1,0 +1,21 @@
+{
+    "name":  "windows-printer-sharing-fix-tui",
+    "private":  true,
+    "version":  "4.1.0-alpha.1",
+    "type":  "module",
+    "scripts":  {
+                    "dev":  "bun src/index.tsx",
+                    "typecheck":  "tsc --noEmit",
+                    "build:win":  "bun run build.ts"
+                },
+    "dependencies":  {
+                         "@opentui/core":  "0.5.9",
+                         "@opentui/keymap":  "0.5.9",
+                         "@opentui/solid":  "0.5.9",
+                         "solid-js":  "1.9.12"
+                     },
+    "devDependencies":  {
+                            "@types/bun":  "latest",
+                            "typescript":  "latest"
+                        }
+}

@@ -5,6 +5,8 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![Version: 4.0.0](https://img.shields.io/badge/Version-4.0.0-blue?style=for-the-badge)
 
+> **Experimental branch notice:** the OpenTUI frontend in 	ui/ is an alpha development preview and is **not recommended for normal use yet**. The stable interface remains FixPrinter.bat + FixPrinter.ps1.
+
 A diagnosis-first Windows TUI for troubleshooting shared printers without applying broad security downgrades by default.
 
 Version 4 is a major redesign. `FixPrinter.bat` is now only a small double-click launcher. The actual diagnostics, repair logic, restore system, and terminal UI live in `FixPrinter.ps1`.
