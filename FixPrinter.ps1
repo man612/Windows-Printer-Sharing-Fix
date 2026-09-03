@@ -41,8 +41,11 @@ function Initialize-Workspace {
         if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
     }
     if (Test-Path -LiteralPath $script:LanguageFile) {
-        $value = (Get-Content -LiteralPath $script:LanguageFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim().ToUpperInvariant()
-        if ($value -in @('EN','ID')) { $script:Language = $value }
+        $rawLanguage = Get-Content -LiteralPath $script:LanguageFile -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -ne $rawLanguage) {
+            $value = ([string]$rawLanguage).Trim().ToUpperInvariant()
+            if ($value -in @('EN','ID')) { $script:Language = $value }
+        }
     }
     $script:CurrentLog = Join-Path $script:LogRoot ('printer-fix-{0}.log' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
     Write-Log "Windows Printer Sharing Fix v$($script:Version) started."
@@ -63,8 +66,8 @@ function Ensure-Administrator {
     if ($NoElevation) { return $false }
     Write-Host 'Requesting Administrator access...' -ForegroundColor Yellow
     try {
-        $args = @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"{0}"' -f $script:ScriptPath))
-        Start-Process -FilePath 'powershell.exe' -Verb RunAs -WorkingDirectory $script:Root -ArgumentList ($args -join ' ')
+        $argumentLine = '-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $script:ScriptPath
+        Start-Process -FilePath 'powershell.exe' -Verb RunAs -WorkingDirectory $script:Root -ArgumentList $argumentLine
     } catch {
         Write-Host "Could not obtain Administrator access: $($_.Exception.Message)" -ForegroundColor Red
     }
@@ -160,7 +163,8 @@ function Get-WppState {
     $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\WPP'
     $gp=Get-RegistryValueState $path 'WindowsProtectedPrintGroupPolicyState'
     $mode=Get-RegistryValueState $path 'WindowsProtectedPrintMode'
-    return [pscustomobject]@{Enabled=(($gp.Present -and [int]$gp.Value -eq 1) -or ($mode.Present -and [int]$mode.Value -eq 1));GroupPolicy=$gp;Mode=$mode}
+    $enabledBy=Get-RegistryValueState $path 'EnabledBy'
+    return [pscustomobject]@{Enabled=(($gp.Present -and [int]$gp.Value -eq 1) -or ($mode.Present -and [int]$mode.Value -eq 1));GroupPolicy=$gp;Mode=$mode;EnabledBy=$enabledBy}
 }
 
 function Get-WindowsFeatureState([string]$Name) {
@@ -190,8 +194,14 @@ function Test-TcpPort([string]$ComputerName,[int]$Port) {
 }
 
 function Invoke-Diagnosis([switch]$Quiet) {
-    $os=Get-OsInfo; $spooler=Get-Service Spooler -ErrorAction SilentlyContinue; $printers=Get-PrinterInventory; $profiles=Get-NetworkProfilesSafe; $wpp=Get-WppState; $errors=Get-RecentPrintErrors
-    $shared=@($printers|Where-Object{$_.Shared -or $_.ShareName}); $connections=@($printers|Where-Object{$_.Name -like '\\*' -or $_.Type -eq 'Connection'})
+    $os=Get-OsInfo
+    $spooler=Get-Service Spooler -ErrorAction SilentlyContinue
+    $printers=@(Get-PrinterInventory)
+    $profiles=@(Get-NetworkProfilesSafe)
+    $wpp=Get-WppState
+    $errors=@(Get-RecentPrintErrors)
+    $shared=@($printers|Where-Object{$_.Shared -or $_.ShareName})
+    $connections=@($printers|Where-Object{$_.Name -like '\\*' -or $_.Type -eq 'Connection'})
     $role=if($shared.Count -and $connections.Count){'Host + Client'}elseif($shared.Count){'Host'}elseif($connections.Count){'Client'}else{'Unknown / local only'}
     $rpcPrivacy=Get-RegistryValueState 'HKLM:\SYSTEM\CurrentControlSet\Control\Print' 'RpcAuthnLevelPrivacyEnabled'
     $rpcPipe=Get-RegistryValueState 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcUseNamedPipeProtocol'
@@ -275,31 +285,34 @@ function Get-ManagedRegistryEntries {
     $out=@();foreach($t in $targets){$s=Get-RegistryValueState $t[0] $t[1];$out+=[pscustomobject]@{Path=$t[0];Name=$t[1];Present=$s.Present;Value=$s.Value;Kind=$s.Kind}};return $out
 }
 
-function New-RestoreSnapshot([string]$Reason) {
+function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Services','Network','Firewall','SMB1')) {
     try {
         $dir=Join-Path $script:BackupRoot ((Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[Guid]::NewGuid().ToString('N').Substring(0,6));New-Item -ItemType Directory -Path $dir -Force|Out-Null
-        $services=@();foreach($name in @('Spooler','LanmanServer','LanmanWorkstation','fdPHost','FDResPub')){try{$s=Get-CimInstance Win32_Service -Filter "Name='$name'";$services+=[pscustomobject]@{Name=$name;State=$s.State;StartMode=$s.StartMode}}catch{}}
-        $profiles=@(Get-NetworkProfilesSafe|ForEach-Object{[pscustomobject]@{InterfaceIndex=[int]$_.InterfaceIndex;NetworkCategory=[string]$_.NetworkCategory}})
-        $fw=@(Get-FirewallSharingRules|ForEach-Object{[pscustomobject]@{Name=[string]$_.Name;Enabled=[string]$_.Enabled;Profile=[string]$_.Profile}})
-        $state=[pscustomobject]@{Version=$script:Version;Created=(Get-Date).ToString('o');Reason=$Reason;Registry=(Get-ManagedRegistryEntries);Services=$services;NetworkProfiles=$profiles;FirewallRules=$fw;WindowsFeatures=@([pscustomobject]@{Name='SMB1Protocol-Client';State=(Get-WindowsFeatureState 'SMB1Protocol-Client')})}
-        $state|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $dir 'managed-state.json') -Encoding UTF8;$dir|Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8;Write-Log "Snapshot: $dir reason=$Reason";return $dir
+        $registry=@();$services=@();$profiles=@();$fw=@();$features=@()
+        if($Scopes -contains 'Registry'){$registry=@(Get-ManagedRegistryEntries)}
+        if($Scopes -contains 'Services'){foreach($name in @('Spooler','fdPHost','FDResPub')){try{$s=Get-CimInstance Win32_Service -Filter "Name='$name'";$services+=[pscustomobject]@{Name=$name;State=$s.State;StartMode=$s.StartMode}}catch{}}}
+        if($Scopes -contains 'Network'){$profiles=@(Get-NetworkProfilesSafe|ForEach-Object{[pscustomobject]@{InterfaceIndex=[int]$_.InterfaceIndex;NetworkCategory=[string]$_.NetworkCategory}})}
+        if($Scopes -contains 'Firewall'){$fw=@(Get-FirewallSharingRules|ForEach-Object{[pscustomobject]@{Name=[string]$_.Name;Enabled=[string]$_.Enabled;Profile=[string]$_.Profile}})}
+        if($Scopes -contains 'SMB1'){$features=@([pscustomobject]@{Name='SMB1Protocol-Client';State=(Get-WindowsFeatureState 'SMB1Protocol-Client')})}
+        $state=[pscustomobject]@{Version=$script:Version;Created=(Get-Date).ToString('o');Reason=$Reason;Scopes=@($Scopes);Registry=$registry;Services=$services;NetworkProfiles=$profiles;FirewallRules=$fw;WindowsFeatures=$features}
+        $state|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $dir 'managed-state.json') -Encoding UTF8;$dir|Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8;Write-Log "Snapshot: $dir reason=$Reason scopes=$($Scopes -join ',')";return $dir
     } catch {Write-Fail "Snapshot failed: $($_.Exception.Message)";Write-Log $_.Exception.Message 'ERROR';return $null}
 }
 
 function Restore-ServiceStartMode([string]$Name,[string]$Mode){$map=@{Auto='Automatic';Automatic='Automatic';Manual='Manual';Disabled='Disabled'};if($map.ContainsKey($Mode)){Set-Service -Name $Name -StartupType $map[$Mode] -ErrorAction SilentlyContinue}}
 
 function Invoke-RestoreLatest {
-    Write-Header 'RESTORE';Write-Warn 'Restore reverts states managed by v4. Deleted print jobs cannot be recovered.'
+    Write-Header 'RESTORE';Write-Warn 'Restore reverts only the states captured for the latest v4 action. Deleted print jobs and removed printer connections cannot be recreated automatically.'
     if(-not(Test-Path -LiteralPath $script:LatestStateFile)){Write-Warn 'No v4 restore snapshot exists yet.';Pause-Tui;return}
     $dir=(Get-Content -LiteralPath $script:LatestStateFile|Select-Object -First 1).Trim();$file=Join-Path $dir 'managed-state.json';if(-not(Test-Path -LiteralPath $file)){Write-Fail 'Latest snapshot is missing or damaged.';Pause-Tui;return}
     if(-not(Read-YesNo "Restore state from $dir ?" $true)){return}
     try{
         $state=Get-Content -LiteralPath $file -Raw|ConvertFrom-Json
-        foreach($r in $state.Registry){Restore-RegistryValue $r}
-        foreach($f in $state.FirewallRules){if(Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue){Set-NetFirewallRule -Name $f.Name -Enabled ([string]$f.Enabled) -Profile ([string]$f.Profile) -ErrorAction SilentlyContinue}}
-        foreach($n in $state.NetworkProfiles){if(Get-Command Set-NetConnectionProfile -ErrorAction SilentlyContinue){Set-NetConnectionProfile -InterfaceIndex ([int]$n.InterfaceIndex) -NetworkCategory ([string]$n.NetworkCategory) -ErrorAction SilentlyContinue}}
-        foreach($feature in $state.WindowsFeatures){if($feature.Name -eq 'SMB1Protocol-Client' -and (Get-Command Get-WindowsOptionalFeature -ErrorAction SilentlyContinue)){$current=Get-WindowsFeatureState $feature.Name;if([string]$feature.State -match '^Enabled' -and $current -notmatch '^Enabled'){Enable-WindowsOptionalFeature -Online -FeatureName $feature.Name -NoRestart -ErrorAction SilentlyContinue|Out-Null}elseif([string]$feature.State -match '^Disabled' -and $current -notmatch '^Disabled'){Disable-WindowsOptionalFeature -Online -FeatureName $feature.Name -NoRestart -ErrorAction SilentlyContinue|Out-Null}}}
-        foreach($s in $state.Services){Restore-ServiceStartMode $s.Name $s.StartMode;if($s.State -eq 'Running'){Start-Service $s.Name -ErrorAction SilentlyContinue}else{Stop-Service $s.Name -Force -ErrorAction SilentlyContinue}}
+        foreach($r in @($state.Registry)){Restore-RegistryValue $r}
+        foreach($f in @($state.FirewallRules)){if(Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue){Set-NetFirewallRule -Name $f.Name -Enabled ([string]$f.Enabled) -Profile ([string]$f.Profile) -ErrorAction SilentlyContinue}}
+        foreach($n in @($state.NetworkProfiles)){if(Get-Command Set-NetConnectionProfile -ErrorAction SilentlyContinue){Set-NetConnectionProfile -InterfaceIndex ([int]$n.InterfaceIndex) -NetworkCategory ([string]$n.NetworkCategory) -ErrorAction SilentlyContinue}}
+        foreach($feature in @($state.WindowsFeatures)){if($feature.Name -eq 'SMB1Protocol-Client' -and (Get-Command Get-WindowsOptionalFeature -ErrorAction SilentlyContinue)){$current=Get-WindowsFeatureState $feature.Name;if([string]$feature.State -match '^Enabled' -and $current -notmatch '^Enabled'){Enable-WindowsOptionalFeature -Online -FeatureName $feature.Name -NoRestart -ErrorAction SilentlyContinue|Out-Null}elseif([string]$feature.State -match '^Disabled' -and $current -notmatch '^Disabled'){Disable-WindowsOptionalFeature -Online -FeatureName $feature.Name -NoRestart -ErrorAction SilentlyContinue|Out-Null}}}
+        foreach($s in @($state.Services)){Restore-ServiceStartMode $s.Name $s.StartMode;if($s.State -eq 'Running'){Start-Service $s.Name -ErrorAction SilentlyContinue}else{Stop-Service $s.Name -Force -ErrorAction SilentlyContinue}}
         Write-Ok 'Managed state restored.';Write-Log "Restore completed from $dir"
     }catch{Write-Fail $_.Exception.Message;Write-Log $_.Exception.Message 'ERROR'};Pause-Tui
 }
@@ -309,7 +322,7 @@ function Invoke-ClearPrintQueue {Write-Warn 'This permanently removes pending pr
 
 function Enable-PrivateFirewallSharing {
     if(-not(Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue)){Write-Warn 'Modern firewall cmdlets unavailable.';return}
-    $rules=Get-FirewallSharingRules;if(-not $rules.Count){Write-Warn 'File and Printer Sharing firewall group could not be identified.';return}
+    $rules=@(Get-FirewallSharingRules);if(-not $rules.Count){Write-Warn 'File and Printer Sharing firewall group could not be identified.';return}
     $count=0;foreach($r in $rules){if([string]$r.Profile -match 'Private|Domain|Any'){Set-NetFirewallRule -Name $r.Name -Enabled True -Profile Domain,Private -ErrorAction SilentlyContinue;$count++}};Write-Ok "Enabled/limited $count sharing firewall rule(s) to Domain/Private."
 }
 
@@ -322,33 +335,34 @@ function Set-OneNetworkPrivate {if(-not(Get-Command Set-NetConnectionProfile -Er
 function Start-NetworkDiscoveryServices {foreach($n in @('fdPHost','FDResPub')){if(Get-Service $n -ErrorAction SilentlyContinue){Start-Service $n -ErrorAction SilentlyContinue}};Write-Ok 'Network Discovery services requested.'}
 
 function Show-SafeRepairMenu {
-    while($true){Write-Header 'SAFE REPAIR';Write-Info 'Safe Repair never disables RPC privacy, Point and Print protection, SMB security, or blank-password restrictions.';Write-Host '[1] Restart Print Spooler';Write-Host '[2] Clear stuck queue (removes pending jobs)';Write-Host '[3] Enable File and Printer Sharing firewall rules for Private/Domain only';Write-Host '[4] Change one selected active network to Private';Write-Host '[5] Start Network Discovery services';Write-Host '[6] Run all non-destructive safe repairs';Write-Host "[B] $(T 'Back')";$c=Read-Choice (T 'Select') @('1','2','3','4','5','6','B');if($c -eq 'B'){return};$snap=New-RestoreSnapshot "Safe Repair option $c";if(-not $snap){Pause-Tui;continue};try{switch($c){'1'{Invoke-RestartSpooler};'2'{Invoke-ClearPrintQueue};'3'{Enable-PrivateFirewallSharing};'4'{Set-OneNetworkPrivate};'5'{Start-NetworkDiscoveryServices};'6'{Invoke-RestartSpooler;Enable-PrivateFirewallSharing;Start-NetworkDiscoveryServices}}}catch{Write-Fail $_.Exception.Message};Write-Info "Restore snapshot: $snap";Pause-Tui}
+    while($true){Write-Header 'SAFE REPAIR';Write-Info 'Safe Repair never disables RPC privacy, Point and Print protection, SMB security, or blank-password restrictions.';Write-Host '[1] Restart Print Spooler';Write-Host '[2] Clear stuck queue (removes pending jobs)';Write-Host '[3] Enable File and Printer Sharing firewall rules for Private/Domain only';Write-Host '[4] Change one selected active network to Private';Write-Host '[5] Start Network Discovery services';Write-Host '[6] Run all non-destructive safe repairs';Write-Host "[B] $(T 'Back')";$c=Read-Choice (T 'Select') @('1','2','3','4','5','6','B');if($c -eq 'B'){return};$snap=$null;try{switch($c){'1'{$snap=New-RestoreSnapshot 'Restart Print Spooler' @('Services');if($snap){Invoke-RestartSpooler}};'2'{Invoke-ClearPrintQueue};'3'{$snap=New-RestoreSnapshot 'Enable sharing firewall rules' @('Firewall');if($snap){Enable-PrivateFirewallSharing}};'4'{$snap=New-RestoreSnapshot 'Change selected network profile' @('Network');if($snap){Set-OneNetworkPrivate}};'5'{$snap=New-RestoreSnapshot 'Start Network Discovery services' @('Services');if($snap){Start-NetworkDiscoveryServices}};'6'{$snap=New-RestoreSnapshot 'Combined non-destructive Safe Repair' @('Services','Firewall');if($snap){Invoke-RestartSpooler;Enable-PrivateFirewallSharing;Start-NetworkDiscoveryServices}}}}catch{Write-Fail $_.Exception.Message};if($snap){Write-Info "Restore snapshot: $snap"};Pause-Tui}
 }
 
 function Set-RpcNamedPipeFallback {
-    $d=Invoke-Diagnosis -Quiet;$snap=New-RestoreSnapshot 'RPC Named Pipes compatibility fallback';if(-not $snap){return};Write-Warn 'RPC over TCP is the Windows default. Named Pipes is a compatibility fallback.'
+    $d=Invoke-Diagnosis -Quiet;$snap=New-RestoreSnapshot 'RPC Named Pipes compatibility fallback' @('Registry');if(-not $snap){return};Write-Warn 'RPC over TCP is the Windows default. Named Pipes is a compatibility fallback.'
     if($d.Role -match 'Client' -or $d.Role -eq 'Unknown / local only'){Set-RegistryDword 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcUseNamedPipeProtocol' 1;Write-Ok 'Client outgoing printer RPC set to Named Pipes fallback.'}
     if($d.Role -match 'Host' -or $d.Role -eq 'Unknown / local only'){Set-RegistryDword 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcProtocols' 7;Write-Ok 'Print host RPC listener set to allow supported protocol families.'};Write-Info "Restore snapshot: $snap"
 }
 
 function Connect-SharedPrinterTemporarilyRelaxed {
     $unc=(Read-Host 'Shared printer path, e.g. \\PRINT-PC\OfficePrinter').Trim();if($unc -notmatch '^\\\\[^\\]+\\[^\\]+$'){Write-Warn 'Invalid printer UNC path.';return}
-    $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint';$original=Get-RegistryValueState $path 'RestrictDriverInstallationToAdministrators';$snap=New-RestoreSnapshot 'Temporary Point and Print relaxation';if(-not $snap){return}
+    $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint';$original=Get-RegistryValueState $path 'RestrictDriverInstallationToAdministrators'
     Write-Warn 'This temporarily reduces Point and Print driver-installation protection. It will be restored immediately after the connection attempt.';if((Read-Host 'Type RISK to continue').Trim().ToUpperInvariant() -ne 'RISK'){return}
+    $snap=New-RestoreSnapshot 'Temporary Point and Print relaxation' @('Registry');if(-not $snap){return}
     try{Set-RegistryDword $path 'RestrictDriverInstallationToAdministrators' 0;if(Get-Command Add-Printer -ErrorAction SilentlyContinue){Add-Printer -ConnectionName $unc}else{Start-Process rundll32.exe -ArgumentList ('printui.dll,PrintUIEntry /in /n "{0}"' -f $unc) -Wait};Write-Ok "Connection attempt completed: $unc"}catch{Write-Fail $_.Exception.Message}finally{Restore-RegistryValue ([pscustomobject]@{Path=$path;Name='RestrictDriverInstallationToAdministrators';Present=$original.Present;Value=$original.Value;Kind=$original.Kind});Write-Ok 'Point and Print protection returned to its previous state.'}
 }
 
-function Set-RpcPrivacyCompatibility {Write-Header 'RPC PRIVACY COMPATIBILITY';Write-Fail 'This disables RPC packet-level privacy enforcement for incoming printer connections.';Write-Warn 'Use only for proven legacy incompatibility and restore it after testing.';if((Read-Host 'Type RISK to continue').Trim().ToUpperInvariant() -ne 'RISK'){return};$snap=New-RestoreSnapshot 'High-risk RPC privacy workaround';if($snap){Set-RegistryDword 'HKLM:\SYSTEM\CurrentControlSet\Control\Print' 'RpcAuthnLevelPrivacyEnabled' 0;Write-Warn 'RPC packet privacy is now disabled.';Write-Info "Restore snapshot: $snap"}}
+function Set-RpcPrivacyCompatibility {Write-Header 'RPC PRIVACY COMPATIBILITY';Write-Fail 'This disables RPC packet-level privacy enforcement for incoming printer connections.';Write-Warn 'Use only for proven legacy incompatibility and restore it after testing.';if((Read-Host 'Type RISK to continue').Trim().ToUpperInvariant() -ne 'RISK'){return};$snap=New-RestoreSnapshot 'High-risk RPC privacy workaround' @('Registry');if($snap){Set-RegistryDword 'HKLM:\SYSTEM\CurrentControlSet\Control\Print' 'RpcAuthnLevelPrivacyEnabled' 0;Write-Warn 'RPC packet privacy is now disabled.';Write-Info "Restore snapshot: $snap"}}
 
 function Show-WppHelp {$w=Get-WppState;if($w.Enabled){Write-Warn 'Windows Protected Print Mode appears enabled.';Write-Info 'Legacy third-party-driver printers may be removed or blocked.';if($w.GroupPolicy.Present -and [int]$w.GroupPolicy.Value -eq 1){Write-Warn 'WPP appears policy-enforced. This utility will not bypass organizational policy.'}else{Write-Info 'Manage WPP in Settings > Bluetooth & devices > Printers & scanners > Printer preferences.';if(Read-YesNo 'Open Settings now?' $false){Start-Process 'ms-settings:printers'}}}else{Write-Ok 'WPP is not detected as enabled.'}}
 
-function Reset-ClientPrinterConnectionTargeted {$p=@(Get-PrinterInventory|Where-Object{$_.Name -like '\\*' -or $_.Type -eq 'Connection'});if(-not $p.Count){Write-Warn 'No network printer connection detected.';return};for($i=0;$i -lt $p.Count;$i++){Write-Host ('[{0}] {1}' -f ($i+1),$p[$i].Name)};$allowed=@(1..$p.Count|ForEach-Object{[string]$_})+'B';$c=Read-Choice 'Choose one connection to remove, or B' $allowed;if($c -eq 'B'){return};$target=$p[[int]$c-1].Name;$snap=New-RestoreSnapshot "Targeted connection removal: $target";if(-not $snap -or -not(Read-YesNo "Remove only $target ?" $true)){return};if(Get-Command Remove-Printer -ErrorAction SilentlyContinue){Remove-Printer -Name $target}else{Start-Process rundll32.exe -ArgumentList ('printui.dll,PrintUIEntry /dn /n "{0}"' -f $target) -Wait};Write-Ok "Removed targeted connection: $target";Write-Info 'Reconnect the same UNC path after restarting the spooler.'}
+function Reset-ClientPrinterConnectionTargeted {$p=@(Get-PrinterInventory|Where-Object{$_.Name -like '\\*' -or $_.Type -eq 'Connection'});if(-not $p.Count){Write-Warn 'No network printer connection detected.';return};for($i=0;$i -lt $p.Count;$i++){Write-Host ('[{0}] {1}' -f ($i+1),$p[$i].Name)};$allowed=@(1..$p.Count|ForEach-Object{[string]$_})+'B';$c=Read-Choice 'Choose one connection to remove, or B' $allowed;if($c -eq 'B'){return};$target=$p[[int]$c-1].Name;Write-Warn 'Removing a printer connection is not recreated by generic Restore. You must reconnect the same UNC path manually if needed.';if(-not(Read-YesNo "Remove only $target ?" $true)){return};if(Get-Command Remove-Printer -ErrorAction SilentlyContinue){Remove-Printer -Name $target}else{Start-Process rundll32.exe -ArgumentList ('printui.dll,PrintUIEntry /dn /n "{0}"' -f $target) -Wait};Write-Ok "Removed targeted connection: $target";Write-Info 'Reconnect the same UNC path after restarting the spooler if needed.';Write-Log "Targeted printer connection removed: $target" 'WARN'}
 
 function Show-CompatibilityMenu {while($true){Write-Header 'COMPATIBILITY REPAIR';Write-Host '[1] RPC Named Pipes fallback (role-aware; keeps RPC privacy)';Write-Host '[2] Connect shared printer with TEMPORARY Point and Print relaxation';Write-Host '[3] Check Windows Protected Print Mode (WPP)';Write-Host '[4] Remove one targeted network-printer connection for clean reconnect';Write-Host '[5] Disable RPC packet privacy [HIGH RISK]';Write-Host "[B] $(T 'Back')";$c=Read-Choice (T 'Select') @('1','2','3','4','5','B');if($c -eq 'B'){return};try{switch($c){'1'{Set-RpcNamedPipeFallback};'2'{Connect-SharedPrinterTemporarilyRelaxed};'3'{Show-WppHelp};'4'{Reset-ClientPrinterConnectionTargeted};'5'{Set-RpcPrivacyCompatibility}}}catch{Write-Fail $_.Exception.Message};Pause-Tui}}
 
-function Enable-Smb1ClientLegacy {Write-Fail 'SMB1 is obsolete and unsafe. Use only when a specific old device is proven SMB1-only.';if((Read-Host 'Type LEGACY to continue').Trim().ToUpperInvariant() -ne 'LEGACY'){return};$snap=New-RestoreSnapshot 'Enable SMB1 client';if($snap -and (Get-Command Enable-WindowsOptionalFeature -ErrorAction SilentlyContinue)){Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol-Client -NoRestart|Out-Null;Write-Warn 'SMB1 CLIENT enabled. SMB1 server was not enabled.';Write-Info "Restore snapshot: $snap"}}
-function Enable-InsecureGuestLegacy {Write-Fail 'Insecure guest SMB authentication weakens credential protection.';if((Read-Host 'Type LEGACY to continue').Trim().ToUpperInvariant() -ne 'LEGACY'){return};$snap=New-RestoreSnapshot 'Enable insecure SMB guest';if($snap){Set-RegistryDword 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' 'AllowInsecureGuestAuth' 1;Write-Warn 'Insecure SMB guest authentication enabled.';Write-Info "Restore snapshot: $snap"}}
-function Set-LegacyLmCompatibility {Write-Fail 'This lowers machine-wide LAN Manager/NTLM authentication compatibility.';if((Read-Host 'Type LEGACY to continue').Trim().ToUpperInvariant() -ne 'LEGACY'){return};$snap=New-RestoreSnapshot 'Legacy LAN Manager level';if($snap){Set-RegistryDword 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' 'LmCompatibilityLevel' 1;Write-Warn 'LmCompatibilityLevel=1 applied. Restore after testing.';Write-Info "Restore snapshot: $snap"}}
+function Enable-Smb1ClientLegacy {Write-Fail 'SMB1 is obsolete and unsafe. Use only when a specific old device is proven SMB1-only.';if((Read-Host 'Type LEGACY to continue').Trim().ToUpperInvariant() -ne 'LEGACY'){return};$snap=New-RestoreSnapshot 'Enable SMB1 client' @('SMB1');if($snap -and (Get-Command Enable-WindowsOptionalFeature -ErrorAction SilentlyContinue)){Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol-Client -NoRestart|Out-Null;Write-Warn 'SMB1 CLIENT enabled. SMB1 server was not enabled.';Write-Info "Restore snapshot: $snap"}}
+function Enable-InsecureGuestLegacy {Write-Fail 'Insecure guest SMB authentication weakens credential protection.';if((Read-Host 'Type LEGACY to continue').Trim().ToUpperInvariant() -ne 'LEGACY'){return};$snap=New-RestoreSnapshot 'Enable insecure SMB guest' @('Registry');if($snap){Set-RegistryDword 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' 'AllowInsecureGuestAuth' 1;Write-Warn 'Insecure SMB guest authentication enabled.';Write-Info "Restore snapshot: $snap"}}
+function Set-LegacyLmCompatibility {Write-Fail 'This lowers machine-wide LAN Manager/NTLM authentication compatibility.';if((Read-Host 'Type LEGACY to continue').Trim().ToUpperInvariant() -ne 'LEGACY'){return};$snap=New-RestoreSnapshot 'Legacy LAN Manager level' @('Registry');if($snap){Set-RegistryDword 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' 'LmCompatibilityLevel' 1;Write-Warn 'LmCompatibilityLevel=1 applied. Restore after testing.';Write-Info "Restore snapshot: $snap"}}
 
 function Show-LegacyMenu {while($true){Write-Header 'LEGACY COMPATIBILITY';Write-Fail 'There is intentionally no one-click insecure Full Fix anymore.';Write-Host '[1] Enable SMB1 CLIENT only';Write-Host '[2] Allow insecure SMB guest authentication';Write-Host '[3] Set LAN Manager compatibility level 1 [VERY HIGH RISK]';Write-Host '[4] Blank-password remote logon: NOT AUTOMATED (use a password instead)';Write-Host "[B] $(T 'Back')";$c=Read-Choice (T 'Select') @('1','2','3','4','B');if($c -eq 'B'){return};try{switch($c){'1'{Enable-Smb1ClientLegacy};'2'{Enable-InsecureGuestLegacy};'3'{Set-LegacyLmCompatibility};'4'{Write-Warn 'This utility intentionally refuses to disable LimitBlankPasswordUse. Use password-protected credentials instead.'}}}catch{Write-Fail $_.Exception.Message};Pause-Tui}}
 
@@ -356,7 +370,7 @@ function Export-DiagnosticText {$d=Invoke-Diagnosis -Quiet;$path=Join-Path $scri
 
 function Show-ToolsMenu {while($true){Write-Header 'TOOLS AND LOGS';Write-Host '[1] Printers & scanners Settings';Write-Host '[2] Print Management';Write-Host '[3] Services';Write-Host '[4] Network Connections';Write-Host '[5] Open current log';Write-Host '[6] Open backup folder';Write-Host '[7] Export fresh diagnostic report';Write-Host '[8] Test a shared printer path';Write-Host "[B] $(T 'Back')";$c=Read-Choice (T 'Select') @('1','2','3','4','5','6','7','8','B');if($c -eq 'B'){return};switch($c){'1'{Start-Process 'ms-settings:printers' -ErrorAction SilentlyContinue};'2'{Start-Process 'printmanagement.msc' -ErrorAction SilentlyContinue};'3'{Start-Process 'services.msc'};'4'{Start-Process 'ncpa.cpl'};'5'{Start-Process notepad.exe -ArgumentList ('"{0}"' -f $script:CurrentLog)};'6'{Start-Process explorer.exe -ArgumentList ('"{0}"' -f $script:BackupRoot)};'7'{Export-DiagnosticText;Pause-Tui};'8'{Invoke-SharedPrinterPathDiagnosis;Pause-Tui}}}}
 
-function Show-LanguageMenu {Write-Header 'LANGUAGE';Write-Host '[1] English (default)';Write-Host '[2] Indonesia';Write-Host "[B] $(T 'Back')";$c=Read-Choice (T 'Select') @('1','2','B');if($c -eq 'B'){return};$script:Language=if($c -eq '2'){'ID'}else{'EN'};$script:Language|Set-Content -LiteralPath $script:LanguageFile -Encoding ASCII}
+function Show-LanguageMenu {Write-Header 'LANGUAGE';Write-Host '[1] English (default)';Write-Host '[2] Indonesian';Write-Host "[B] $(T 'Back')";$c=Read-Choice (T 'Select') @('1','2','B');if($c -eq 'B'){return};$script:Language=if($c -eq '2'){'ID'}else{'EN'};$script:Language|Set-Content -LiteralPath $script:LanguageFile -Encoding ASCII}
 
 function Show-MainMenu {
     while($true){Write-Header (T 'Main');$os=Get-OsInfo;$spool=Get-Service Spooler -ErrorAction SilentlyContinue;Write-Host ('  OS: {0} build {1}    Language: {2}    Spooler: {3}' -f $os.Name,$os.Build,$script:Language,$(if($spool){$spool.Status}else{'Missing'})) -ForegroundColor DarkGray;Write-Rule;Write-Host "[1] $(T 'Diagnose')  <$(T 'Recommended')>" -ForegroundColor Green;Write-Host "[2] $(T 'Safe')";Write-Host "[3] $(T 'Compat')";Write-Host "[4] $(T 'Legacy')" -ForegroundColor Yellow;Write-Host "[5] $(T 'Restore')";Write-Host "[6] $(T 'Tools')";Write-Host "[7] $(T 'Language')";Write-Host "[8] $(T 'Exit')";Write-Rule;$c=Read-Choice (T 'Select') @('1','2','3','4','5','6','7','8');switch($c){'1'{[void](Invoke-Diagnosis)};'2'{Show-SafeRepairMenu};'3'{Show-CompatibilityMenu};'4'{Show-LegacyMenu};'5'{Invoke-RestoreLatest};'6'{Show-ToolsMenu};'7'{Show-LanguageMenu};'8'{return}}}
