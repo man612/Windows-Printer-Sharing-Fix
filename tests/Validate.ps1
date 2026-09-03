@@ -57,4 +57,19 @@ if ($rpcRisk -notmatch 'Type RISK') { throw 'RPC privacy downgrade lacks explici
 $legacy = Get-FunctionText 'Show-LegacyMenu'
 if ($legacy -match '\[[0-9]+\].*Full Fix') { throw 'One-click legacy Full Fix must not return.' }
 
+# Stable UX release guards.
+if ($source -notmatch [regex]::Escape("`$script:Version = '4.0.1'")) { throw 'Stable script version is not 4.0.1.' }
+if ($source -notmatch "Guide='Guide'" -or $source -notmatch "Guide='Panduan'") { throw 'Guide label is not localized in both languages.' }
+$guide = Get-FunctionText 'Show-GuideMenu'
+if ($guide -notmatch 'DIAGNOSIS DULU' -or $guide -notmatch 'LEGACY ADALAH PILIHAN TERAKHIR') { throw 'Indonesian in-app guide content is incomplete.' }
+$main = Get-FunctionText 'Show-MainMenu'
+if ($main -notmatch 'Show-GuideMenu') { throw 'Main menu does not expose the in-app guide.' }
+foreach ($fn in @('Show-DiagnosticReport','Invoke-SharedPrinterPathDiagnosis','Show-SafeRepairMenu','Show-CompatibilityMenu','Show-LegacyMenu','Show-ToolsMenu')) {
+    if ((Get-FunctionText $fn) -notmatch '\bL\s') { throw "Localized UI helper is not used by $fn." }
+}
+
+# Windows Server must not be relabeled as Windows 11 just because it shares a modern build number.
+Invoke-Expression (Get-FunctionText 'Resolve-WindowsProductName')
+if ((Resolve-WindowsProductName 'Windows Server 2025 Standard' 'Server' 26100) -ne 'Windows Server 2025 Standard') { throw 'Windows Server 2025 is misclassified as a desktop Windows release.' }
+if ((Resolve-WindowsProductName 'Windows 10 Pro' 'Client' 26100) -ne 'Windows 11') { throw 'Desktop build 26100 should be classified as Windows 11.' }
 Write-Host 'Validation passed: syntax, launcher separation, and v4 safety guards are intact.' -ForegroundColor Green

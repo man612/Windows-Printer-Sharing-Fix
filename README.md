@@ -3,7 +3,7 @@
 ![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows)
 ![PowerShell: 5.1+](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?style=for-the-badge&logo=powershell)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
-![Version: 4.0.0](https://img.shields.io/badge/Version-4.0.0-blue?style=for-the-badge)
+![Version: 4.0.1](https://img.shields.io/badge/Version-4.0.1-blue?style=for-the-badge)
 
 A diagnosis-first Windows TUI for troubleshooting shared printers without applying broad security downgrades by default.
 
@@ -38,7 +38,7 @@ Restore the original managed state if needed
 5. Choose **Diagnose this PC** first.
 6. Only move to Safe Repair, Compatibility Repair, or Legacy Compatibility when the diagnostic result points there.
 
-English is the default language. Indonesian can be selected from the Language menu.
+English is the default language. Bahasa Indonesia can be selected from the Language menu. In v4.0.1, the stable TUI localizes the main menus, diagnosis output, repair warnings/prompts, tools, restore flow, and the built-in Guide page. Technical Windows names, driver names, registry values, and Event Log messages remain unchanged when they are system data.
 
 ### Ringkas untuk pengguna Indonesia
 
@@ -48,24 +48,30 @@ Jalankan `FixPrinter.bat`, lalu pilih **Diagnose this PC** dulu. Versi 4 tidak l
 
 ```text
 ==============================================================================
-  WINDOWS PRINTER SHARING FIX  v4.0.0
+  WINDOWS PRINTER SHARING FIX  v4.0.1
   Diagnosis-first repair utility
   > MAIN MENU
 ==============================================================================
-  OS: Windows 11 build 26100    Language: EN    Spooler: Running
+  OS: Windows 11 build 26100    Language: English    Spooler: Running
+------------------------------------------------------------------------------
+[INFO] Start with diagnosis. Repairs do nothing until you choose them.
 ------------------------------------------------------------------------------
 [1] Diagnose this PC  <RECOMMENDED>
 [2] Safe Repair
 [3] Compatibility Repair (Advanced)
 [4] Legacy Compatibility (High Risk)
+------------------------------------------------------------------------------
 [5] Restore latest managed changes
 [6] Tools and Logs
-[7] Language
-[8] Exit
+[7] Guide
+[8] Language
+[9] Exit
 ------------------------------------------------------------------------------
 ```
 
 The UI intentionally uses a simple terminal layout instead of external GUI libraries so the project remains portable and inspectable on normal Windows installations.
+
+The built-in **Guide** explains the recommended path for non-technical users: Diagnose first -> Safe Repair for common issues -> Compatibility only with evidence -> Legacy only as a last resort -> verify and restore if the change did not help.
 
 ## What Diagnose checks
 
@@ -284,7 +290,7 @@ These operating systems should not be interpreted as security-equivalent to a cu
 
 ## Automated validation
 
-The repository includes `tests/Validate.ps1` and a Windows GitHub Actions workflow.
+The repository includes static safety validation, a diagnosis-only runtime smoke test, and an Indonesian localization smoke test, all executed by the Windows GitHub Actions workflow.
 
 CI uses Windows PowerShell 5.1 to:
 
@@ -297,6 +303,9 @@ CI uses Windows PowerShell 5.1 to:
 - Block automation of `LimitBlankPasswordUse=0`.
 - Confirm temporary Point and Print relaxation has a restore path.
 - Confirm high-risk RPC compatibility requires typed confirmation.
+- Execute the real diagnosis path and verify its managed-state fingerprint is unchanged.
+- Render the stable diagnosis report and Guide in Bahasa Indonesia and reject core English-label leakage.
+- Verify modern Windows Server product names are not misclassified as Windows 11 solely from the build number.
 
 These are guardrails, not a replacement for real host/client integration testing.
 
