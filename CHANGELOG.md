@@ -17,10 +17,12 @@ Major diagnosis-first redesign.
 - Role-aware RPC Named Pipes compatibility fallback.
 - Temporary Point and Print relaxation around one printer connection attempt with `finally` rollback.
 - Managed JSON restore snapshots.
+- Restore snapshots scoped to the type of state an action actually changes (Registry, Services, Network, Firewall, or SMB1).
 - Targeted network-profile selection by InterfaceIndex.
 - World-ready File and Printer Sharing firewall group detection.
 - Separate Legacy compatibility actions.
 - Windows PowerShell 5.1 CI syntax/safety validation.
+- Non-destructive Windows runtime smoke test that executes the real diagnosis functions and verifies the managed-state fingerprint is unchanged.
 - Architecture and integration test documentation.
 
 ### Changed
@@ -28,8 +30,11 @@ Major diagnosis-first redesign.
 - `FixPrinter.bat` is now a launcher only.
 - Firewall repair is limited to Domain/Private profiles.
 - SMB1 compatibility enables the client component only instead of the complete feature tree.
-- Restore reverts managed state rather than importing an old broad Print registry tree.
+- Restore reverts only state captured for the relevant action instead of importing an old broad Print registry tree or rolling back unrelated managed settings.
 - High-risk compatibility changes require explicit typed confirmation.
+- Printer-connection removal explicitly warns that the generic Restore action cannot recreate the removed connection.
+- PowerShell collection handling is hardened for zero/one/many printer, network, and PrintService results under StrictMode.
+- GitHub Actions uses the Node 24 generation of `actions/checkout`.
 
 ### Removed from default repair
 
