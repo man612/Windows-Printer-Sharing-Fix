@@ -1,7 +1,7 @@
 # Windows Printer Sharing Fix
 
 <p align="center">
-  <img src="docs/assets/hero.png" alt="Windows Printer Sharing Fix — diagnosis-first PowerShell TUI" width="100%">
+  <img src="docs/assets/hero-v2.png" alt="Windows Printer Sharing Fix — diagnosis-first PowerShell TUI" width="100%">
 </p>
 
 <p align="center">

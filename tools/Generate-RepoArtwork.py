@@ -102,7 +102,7 @@ def build_artwork():
     text(draw, (px, panel_y + panel_h - 56), footer, MUTED, footer_face)
 
     OUT.mkdir(parents=True, exist_ok=True)
-    hero = OUT / "hero.png"
+    hero = OUT / "hero-v2.png"
     preview = OUT / "social-preview.png"
     image.save(hero, optimize=True)
     image.save(preview, optimize=True)
