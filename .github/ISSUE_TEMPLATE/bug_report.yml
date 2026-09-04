@@ -1,0 +1,85 @@
+name: Bug report
+description: Report a reproducible problem in the stable Windows PowerShell TUI.
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Run **Diagnose this PC** first when possible and remove credentials, internal hostnames/domains, private addresses, and unrelated sensitive data before posting logs.
+  - type: input
+    id: version
+    attributes:
+      label: Tool version / commit
+      placeholder: "v4.0.2 or commit SHA"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows product and build
+      placeholder: "Windows 11 24H2 build 26100.x"
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: This PC is acting as
+      options:
+        - Printer host
+        - Printer client
+        - Host + client
+        - Local printer only / unknown
+    validations:
+      required: true
+  - type: input
+    id: printer
+    attributes:
+      label: Printer / driver
+      placeholder: "Model, driver name, IPP/inbox/vendor driver if known"
+  - type: input
+    id: error
+    attributes:
+      label: Exact error code or message
+      placeholder: "0x0000011b, 0x00000709, Windows cannot connect..."
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe expected behavior and actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Smallest reproduction steps
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: diagnosis
+    attributes:
+      label: Sanitized diagnosis / relevant log excerpt
+      description: Paste only the portion needed to understand the failure. Redact sensitive environment details.
+      render: text
+  - type: textarea
+    id: changes
+    attributes:
+      label: What changed before the problem appeared?
+      placeholder: "Windows update, driver update, policy change, new printer, network change, unknown..."
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I ran Diagnose first when possible.
+          required: true
+        - label: I removed credentials and unrelated sensitive environment details.
+          required: true
+        - label: I am reporting stable PowerShell TUI behavior, not the experimental OpenTUI frontend.
+          required: true

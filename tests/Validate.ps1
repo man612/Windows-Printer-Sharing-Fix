@@ -58,7 +58,7 @@ $legacy = Get-FunctionText 'Show-LegacyMenu'
 if ($legacy -match '\[[0-9]+\].*Full Fix') { throw 'One-click legacy Full Fix must not return.' }
 
 # Stable UX release guards.
-if ($source -notmatch [regex]::Escape("`$script:Version = '4.0.1'")) { throw 'Stable script version is not 4.0.1.' }
+if ($source -notmatch [regex]::Escape("`$script:Version = '4.0.2'")) { throw 'Stable script version is not 4.0.2.' }
 if ($source -notmatch "Guide='Guide'" -or $source -notmatch "Guide='Panduan'") { throw 'Guide label is not localized in both languages.' }
 $guide = Get-FunctionText 'Show-GuideMenu'
 if ($guide -notmatch 'DIAGNOSIS DULU' -or $guide -notmatch 'LEGACY ADALAH PILIHAN TERAKHIR') { throw 'Indonesian in-app guide content is incomplete.' }
@@ -68,6 +68,10 @@ foreach ($fn in @('Show-DiagnosticReport','Invoke-SharedPrinterPathDiagnosis','S
     if ((Get-FunctionText $fn) -notmatch '\bL\s') { throw "Localized UI helper is not used by $fn." }
 }
 
+# Runtime data should live outside the repository by default.
+if ($source -notmatch 'LOCALAPPDATA' -or $source -notmatch 'WindowsPrinterSharingFix') { throw 'Runtime workspace is not configured under LocalAppData.' }
+if ($source -notmatch 'WPSF_DATA_ROOT') { throw 'Custom runtime workspace override is missing.' }
+if ($source -notmatch 'LegacyLanguageFile' -or $source -notmatch 'LegacyBackupRoot') { throw 'Legacy v4 runtime-state migration guards are missing.' }
 # Windows Server must not be relabeled as Windows 11 just because it shares a modern build number.
 Invoke-Expression (Get-FunctionText 'Resolve-WindowsProductName')
 if ((Resolve-WindowsProductName 'Windows Server 2025 Standard' 'Server' 26100) -ne 'Windows Server 2025 Standard') { throw 'Windows Server 2025 is misclassified as a desktop Windows release.' }

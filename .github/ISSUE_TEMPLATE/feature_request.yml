@@ -1,0 +1,41 @@
+name: Feature request
+description: Propose a focused improvement to diagnosis, repair, restore, testing, or documentation.
+title: "[Feature]: "
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the real Windows printer-sharing problem or contributor friction, not only the desired UI/button.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should the tool do, show, detect, or document?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence / references
+      description: Link Microsoft documentation, a reproducible lab case, logs, or other evidence when relevant.
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Does this require changing Windows security/compatibility state?
+      options:
+        - No / read-only or documentation only
+        - Maybe / needs investigation
+        - Yes / compatibility or legacy behavior
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Smaller alternatives considered
+      description: Explain whether the same goal can be achieved with a narrower change.

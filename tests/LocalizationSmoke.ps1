@@ -12,7 +12,7 @@ $functions = @($ast.EndBlock.Statements | Where-Object { $_ -is [System.Manageme
 $functionSource = ($functions | ForEach-Object { $_.Extent.Text }) -join "`r`n`r`n"
 . ([scriptblock]::Create($functionSource))
 
-$script:Version = '4.0.1-smoke'
+$script:Version = '4.0.2-smoke'
 $script:Language = 'ID'
 $script:CurrentLog = Join-Path $env:TEMP 'windows-printer-fix-localization-smoke.log'
 $script:Text = @{

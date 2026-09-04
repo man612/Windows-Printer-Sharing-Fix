@@ -11,14 +11,23 @@ param([switch]$NoElevation)
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$script:Version = '4.0.1'
+$script:Version = '4.0.2'
 $script:ScriptPath = $PSCommandPath
 $script:Root = Split-Path -Parent $script:ScriptPath
-$script:BackupRoot = Join-Path $script:Root 'backups'
-$script:LogRoot = Join-Path $script:Root 'logs'
-$script:LanguageFile = Join-Path $script:Root 'language.cfg'
-$script:LatestStateFile = Join-Path $script:BackupRoot 'latest_backup.txt'
+$script:LegacyBackupRoot = Join-Path $script:Root 'backups'
+$script:LegacyLanguageFile = Join-Path $script:Root 'language.cfg'
 $script:Language = 'EN'
+
+function Set-WorkspacePaths([string]$DataRoot) {
+    $script:DataRoot = $DataRoot
+    $script:BackupRoot = Join-Path $DataRoot 'backups'
+    $script:LogRoot = Join-Path $DataRoot 'logs'
+    $script:LanguageFile = Join-Path $DataRoot 'language.cfg'
+    $script:LatestStateFile = Join-Path $script:BackupRoot 'latest_backup.txt'
+}
+
+$preferredDataRoot = if ($env:WPSF_DATA_ROOT) { $env:WPSF_DATA_ROOT } elseif ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'WindowsPrinterSharingFix' } elseif ($env:TEMP) { Join-Path $env:TEMP 'WindowsPrinterSharingFix' } else { Join-Path $script:Root '.runtime' }
+Set-WorkspacePaths $preferredDataRoot
 $script:CurrentLog = $null
 $script:LastDiagnostic = $null
 
@@ -57,8 +66,35 @@ function Localize-SystemValue([string]$Value) {
 }
 
 function Initialize-Workspace {
-    foreach ($dir in @($script:BackupRoot,$script:LogRoot)) {
-        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    try {
+        foreach ($dir in @($script:DataRoot,$script:BackupRoot,$script:LogRoot)) {
+            if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        }
+    } catch {
+        $fallbackRoot = if ($env:TEMP) { Join-Path $env:TEMP 'WindowsPrinterSharingFix' } else { Join-Path $script:Root '.runtime' }
+        Set-WorkspacePaths $fallbackRoot
+        foreach ($dir in @($script:DataRoot,$script:BackupRoot,$script:LogRoot)) {
+            if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $script:LanguageFile) -and (Test-Path -LiteralPath $script:LegacyLanguageFile)) {
+        $legacyLanguage = Get-Content -LiteralPath $script:LegacyLanguageFile -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -ne $legacyLanguage -and ([string]$legacyLanguage).Trim().ToUpperInvariant() -in @('EN','ID')) {
+            ([string]$legacyLanguage).Trim().ToUpperInvariant() | Set-Content -LiteralPath $script:LanguageFile -Encoding ASCII
+        }
+    }
+    if (-not (Test-Path -LiteralPath $script:LatestStateFile) -and (Test-Path -LiteralPath $script:LegacyBackupRoot)) {
+        $legacyLatest = Join-Path $script:LegacyBackupRoot 'latest_backup.txt'
+        if (Test-Path -LiteralPath $legacyLatest) {
+            $legacySnapshot = ([string](Get-Content -LiteralPath $legacyLatest -ErrorAction SilentlyContinue | Select-Object -First 1)).Trim()
+            Copy-Item -Path (Join-Path $script:LegacyBackupRoot '*') -Destination $script:BackupRoot -Recurse -Force -ErrorAction SilentlyContinue
+            if ($legacySnapshot) {
+                $snapshotName = Split-Path -Leaf $legacySnapshot
+                $migratedSnapshot = Join-Path $script:BackupRoot $snapshotName
+                if (Test-Path -LiteralPath $migratedSnapshot) { $migratedSnapshot | Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8 }
+            }
+        }
     }
     if (Test-Path -LiteralPath $script:LanguageFile) {
         $rawLanguage = Get-Content -LiteralPath $script:LanguageFile -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -68,9 +104,8 @@ function Initialize-Workspace {
         }
     }
     $script:CurrentLog = Join-Path $script:LogRoot ('printer-fix-{0}.log' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
-    Write-Log "Windows Printer Sharing Fix v$($script:Version) started."
+    Write-Log "Windows Printer Sharing Fix v$($script:Version) started. data=$script:DataRoot"
 }
-
 function Write-Log([string]$Message,[string]$Level='INFO') {
     if ($script:CurrentLog) { ('[{0}] [{1}] {2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'),$Level,$Message) | Add-Content -LiteralPath $script:CurrentLog -Encoding UTF8 }
 }

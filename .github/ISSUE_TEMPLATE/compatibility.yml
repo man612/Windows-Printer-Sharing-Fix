@@ -1,0 +1,74 @@
+name: Compatibility report
+description: Report a printer, driver, Windows-version, RPC/SMB, or legacy compatibility case.
+title: "[Compatibility]: "
+labels:
+  - compatibility
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when the stable tool works differently across Windows versions, printer drivers, host/client roles, WPP, or older network-printing environments. Do not enable risky legacy settings on an exposed production network just to gather data.
+  - type: input
+    id: host
+    attributes:
+      label: Printer host Windows version/build
+      placeholder: "Windows 11 24H2 build 26100.x / not applicable"
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Printer client Windows version/build
+      placeholder: "Windows 10 22H2 / Windows 11 / Server / not applicable"
+    validations:
+      required: true
+  - type: input
+    id: printer
+    attributes:
+      label: Printer model and driver path
+      placeholder: "Model; IPP/inbox/v3/v4/vendor driver if known"
+    validations:
+      required: true
+  - type: dropdown
+    id: wpp
+    attributes:
+      label: Windows Protected Print (WPP)
+      options:
+        - Disabled / not detected
+        - Enabled locally
+        - Enabled by policy
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: network
+    attributes:
+      label: Network / authentication context
+      placeholder: "Private/Public/DomainAuthenticated; workgroup/domain; anything unusual"
+  - type: textarea
+    id: result
+    attributes:
+      label: What works and what fails?
+      description: Include the exact stage that fails and any relevant error code.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnosis
+    attributes:
+      label: Sanitized diagnosis output
+      render: text
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Repair/workaround tested
+      description: State whether Safe, Advanced, or Legacy was tried and whether Restore was used afterward.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I did not test security downgrades on an exposed production network merely to reproduce this report.
+          required: true
+        - label: Sensitive environment details have been removed.
+          required: true
