@@ -1,16 +1,25 @@
-# Runtime restore snapshots
+# Runtime state (v4.0.2+ uses %LOCALAPPDATA% by default)
 backups/
-*.reg
-
-# Runtime logs and exported diagnostics
 logs/
+language.cfg
+.runtime/
+*.reg
 printer_fix_log.txt
 *.log
+
+# Local release/build output
+dist/
+*.zip
+SHA256SUMS.txt
+
+# Development leftovers
+*.bak
+*.tmp
 
 # IDEs
 .vscode/
 .idea/
 
-# OS Files
+# OS files
 Thumbs.db
 Desktop.ini

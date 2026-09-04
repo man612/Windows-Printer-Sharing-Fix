@@ -143,9 +143,9 @@ Also test:
 4. Confirm destructive/high-risk prompts remain understandable in both modes.
 5. Run in a narrow terminal and verify important warnings remain readable.
 
-## Release gate
+## Full hardware-validation gate
 
-A v4 stable tag should require:
+The project CI can validate code safety and packaging without physical printer hardware. Before claiming broad real-world hardware validation, complete at least:
 
 - GitHub validation workflow passing.
 - No Safe Repair security downgrade.

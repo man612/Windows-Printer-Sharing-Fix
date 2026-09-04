@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - v4-tui-diagnosis-first
   pull_request:
 
 permissions:
@@ -29,3 +28,11 @@ jobs:
       - name: Validate Indonesian localization output
         shell: powershell
         run: .\tests\LocalizationSmoke.ps1
+
+      - name: Validate runtime workspace migration
+        shell: powershell
+        run: .\tests\WorkspaceSmoke.ps1
+
+      - name: Validate release package
+        shell: powershell
+        run: .\tests\PackageSmoke.ps1

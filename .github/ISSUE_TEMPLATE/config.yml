@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions, setup help, and working configurations
+    url: https://github.com/man612/Windows-Printer-Sharing-Fix/discussions
+    about: Use Discussions when you need help or want to share a working printer setup rather than report a reproducible bug.
+  - name: Security vulnerability
+    url: https://github.com/man612/Windows-Printer-Sharing-Fix/blob/main/SECURITY.md
+    about: Follow the private-reporting guidance in SECURITY.md instead of posting exploitable details publicly.

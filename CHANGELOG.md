@@ -1,5 +1,28 @@
 # Changelog
 
+## 4.0.2
+
+Repository, distribution, and runtime-data polish.
+
+### Added
+
+- User-focused release ZIP builder with SHA256 checksum and package smoke test.
+- Automatic stable-release asset upload workflow.
+- English/Indonesian onboarding split, Quick Start, Roadmap, contributor Code of Conduct, Issue Forms, PR template, and GitHub Actions Dependabot config.
+- Programmatic README/social-preview artwork and contributor-facing roadmap.
+
+### Changed
+
+- Runtime logs, language preference, and managed restore snapshots now default to `%LOCALAPPDATA%\WindowsPrinterSharingFix` instead of the repository folder.
+- Existing repository-local v4 language preference and backup state are migrated on first run when possible.
+- README is front-loaded around quick start, diagnosis-first behavior, safety boundaries, and contribution entry points.
+- CI also validates the user release package.
+
+### Unchanged
+
+- Windows-mutating repair primitives and Safe/Advanced/Legacy security boundaries.
+- Stable UI remains the dependency-free Windows PowerShell 5.1 TUI.
+
 ## 4.0.1
 
 Stable terminal UX and localization polish.
@@ -22,6 +45,7 @@ Stable terminal UX and localization polish.
 - Safe Repair security boundaries and diagnosis-first repair architecture.
 - High-risk typed confirmations and restore behavior.
 - `FixPrinter.bat` remains a launcher only.
+
 ## 4.0.0
 
 Major diagnosis-first redesign.

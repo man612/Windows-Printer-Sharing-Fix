@@ -20,7 +20,7 @@ No printer, registry, firewall, SMB, RPC, or service repair logic should be adde
 
 `FixPrinter.ps1` provides a dependency-free terminal UI using normal Windows PowerShell console primitives. It avoids third-party terminal frameworks so the utility remains easy to inspect and deploy.
 
-English is the default (`EN`). Indonesian (`ID`) is optional through `language.cfg` and the Language menu.
+English is the default (`EN`). Indonesian (`ID`) is optional through the Language menu. Runtime preference is stored under `%LOCALAPPDATA%\WindowsPrinterSharingFix` by default, not in the Git working tree.
 
 ## Diagnostic model
 
@@ -102,7 +102,7 @@ Each legacy behavior is isolated:
 
 ## Managed restore state
 
-Before repair changes, v4 writes a timestamped `managed-state.json` snapshot.
+Before repair changes, v4 writes a timestamped `managed-state.json` snapshot under the runtime data root (`%LOCALAPPDATA%\WindowsPrinterSharingFix` by default). Existing repository-local v4 backup state is migrated when possible so an upgrade does not silently discard the latest managed restore state.
 
 Managed state currently includes:
 
@@ -134,7 +134,7 @@ Legacy compatibility remains available for real old environments, but is no long
 
 ## Future work
 
-Useful future improvements include:
+The public roadmap is maintained in [ROADMAP.md](../ROADMAP.md). Useful technical directions include:
 
 - More precise driver classification (IPP/inbox/v3/v4/vendor).
 - Optional guided test-page verification.
