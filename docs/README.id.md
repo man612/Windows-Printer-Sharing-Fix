@@ -1,7 +1,7 @@
 # Windows Printer Sharing Fix — Bahasa Indonesia
 
 <p align="center">
-  <img src="assets/hero.png" alt="Windows Printer Sharing Fix" width="100%">
+  <img src="assets/hero-v2.png" alt="Windows Printer Sharing Fix" width="100%">
 </p>
 
 <p align="center"><a href="../README.md">English</a> · <strong>Bahasa Indonesia</strong></p>
