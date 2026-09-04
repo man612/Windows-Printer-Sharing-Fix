@@ -140,9 +140,9 @@ Starting with v4.0.2, runtime state is stored outside the repository under:
 
 ```text
 %LOCALAPPDATA%\WindowsPrinterSharingFix\
-â”œâ”€â”€ backups\
-â”œâ”€â”€ logs\
-â””â”€â”€ language.cfg
+|-- backups\
+|-- logs\
+|-- language.cfg
 ```
 
 This keeps a Git clone clean when you change language or run diagnostics. Existing v4 backup state and language preference from the old repository-local layout are migrated on first run when possible. Set `WPSF_DATA_ROOT` before launch only if you intentionally need a custom runtime-data location.
