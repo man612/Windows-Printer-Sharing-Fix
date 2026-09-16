@@ -76,6 +76,7 @@ Tidak ada telemetry atau upload laporan otomatis. Test UNC hanya mengakses host/
 - [JSON diagnosis terstruktur](DIAGNOSTIC-JSON.md)
 - [Klasifikasi event PrintService](PRINTSERVICE-EVENTS.md)
 - [Bukti sumber kebijakan printer](POLICY-SOURCES.md)
+- [Korelasi lapisan troubleshooting](CORRELATION.md)
 - [Contoh diagnosis yang sudah disanitasi](examples/README.md)
 - [Test Matrix](TEST-MATRIX.md)
 - [Hasil pengujian nyata](REAL-WORLD-RESULTS.md)

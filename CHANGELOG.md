@@ -16,6 +16,7 @@ Testing, real-world evidence, and structured diagnostic export infrastructure.
 - Synthetic sanitized diagnosis examples for healthy, DNS, SMB 445, WPP/legacy-driver, and legacy-security scenarios, with CI privacy/JSON guards.
 - Conservative PrintService event classification by troubleshooting layer, including normalized Event 372 Win32 code classes without exporting raw event messages.
 - Read-only printer-policy source evidence using RSoP plus conservative MDM-aware signals, with normalized privacy-safe provenance labels in structured JSON.
+- Conservative `Next layer to investigate` correlation that prioritizes the earliest failed dependency without claiming root cause or recommending security downgrades.
 
 ### Fixed
 

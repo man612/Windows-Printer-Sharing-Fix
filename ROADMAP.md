@@ -7,9 +7,7 @@ This roadmap describes direction, not a promise of release dates. Stable behavio
 ### Reliability
 
 - Expand disposable host/client testing across Windows 10, Windows 11, and Windows Server.
-- Add more structured interpretation for useful PrintService event IDs.
 - Improve printer-driver classification (IPP/inbox/v3/v4/vendor) without guessing.
-- Detect whether policy values are local, domain, or MDM-controlled before proposing conflicting changes.
 
 ### Verification
 

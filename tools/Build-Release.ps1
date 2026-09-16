@@ -32,7 +32,7 @@ foreach ($name in $rootFiles) {
 
 $docsTarget = Join-Path $stage 'docs'
 New-Item -ItemType Directory -Path $docsTarget -Force | Out-Null
-foreach ($name in @('ARCHITECTURE.md','DIAGNOSTIC-JSON.md','PRINTSERVICE-EVENTS.md','POLICY-SOURCES.md','TEST-MATRIX.md','REAL-WORLD-RESULTS.md','README.id.md')) {
+foreach ($name in @('ARCHITECTURE.md','DIAGNOSTIC-JSON.md','PRINTSERVICE-EVENTS.md','POLICY-SOURCES.md','CORRELATION.md','TEST-MATRIX.md','REAL-WORLD-RESULTS.md','README.id.md')) {
     Copy-Item -LiteralPath (Join-Path $repo ('docs\' + $name)) -Destination (Join-Path $docsTarget $name) -Force
 }
 $examplesSource = Join-Path $repo 'docs\examples'

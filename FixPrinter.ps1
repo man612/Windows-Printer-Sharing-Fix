@@ -450,6 +450,106 @@ function Test-TcpPort([string]$ComputerName,[int]$Port,[int]$TimeoutMs=2500,[Sys
     return $false
 }
 
+function Get-NextInvestigationSignals($D) {
+    $signals=New-Object System.Collections.Generic.List[string]
+    $wppProp=$D.PSObject.Properties['WPP']
+    if($wppProp -and $wppProp.Value -and $wppProp.Value.Enabled){$signals.Add('WppEnabled')}
+    $profilesProp=$D.PSObject.Properties['Profiles']
+    if($profilesProp -and @($profilesProp.Value|Where-Object{$_.NetworkCategory -eq 'Public' -and $_.IPv4Connectivity -ne 'Disconnected'}).Count){$signals.Add('PublicNetworkProfile')}
+    $eventsProp=$D.PSObject.Properties['PrintErrors']
+    if($eventsProp){
+        foreach($category in @($eventsProp.Value|ForEach-Object{[string]$_.Category}|Where-Object{$_}|Select-Object -Unique)){$signals.Add(('PrintService:{0}' -f $category))}
+    }
+    return @($signals)
+}
+
+function Test-NextInvestigationEventCategory($D,[string]$Category) {
+    $eventsProp=$D.PSObject.Properties['PrintErrors']
+    if(-not $eventsProp){return $false}
+    return (@($eventsProp.Value|Where-Object{[string]$_.Category -eq $Category}).Count -gt 0)
+}
+
+function New-NextInvestigation([string]$Layer,[string]$Reason,[bool]$RemoteTransportTested,[string[]]$Signals=@()) {
+    return [pscustomobject]@{Layer=$Layer;Reason=$Reason;RemoteTransportTested=$RemoteTransportTested;Signals=@($Signals);RootCauseClaimed=$false}
+}
+function Get-NextInvestigation($D,[object]$TargetPath=$null) {
+    if($null -eq $D){throw 'Diagnostic object is required for correlation.'}
+    $signals=@(Get-NextInvestigationSignals $D)
+    $spoolerProp=$D.PSObject.Properties['Spooler']
+    if(-not $spoolerProp -or $null -eq $spoolerProp.Value){return New-NextInvestigation 'LocalSpooler' 'SpoolerMissing' ($null -ne $TargetPath) $signals}
+    if([string]$spoolerProp.Value.Status -ne 'Running'){return New-NextInvestigation 'LocalSpooler' 'SpoolerNotRunning' ($null -ne $TargetPath) $signals}
+    if($null -eq $TargetPath){return New-NextInvestigation 'RemoteTransportUntested' 'TargetPathNotTested' $false $signals}
+    if(-not [bool]$TargetPath.DnsResolved){return New-NextInvestigation 'NameResolutionOrBasicNetwork' 'TargetDnsFailed' $true $signals}
+    if(-not [bool]$TargetPath.Smb445Reachable){return New-NextInvestigation 'SmbFirewallOrRouting' 'TargetSmb445Failed' $true $signals}
+    if(-not [bool]$TargetPath.Rpc135Reachable){return New-NextInvestigation 'RpcReachability' 'TargetRpc135Failed' $true $signals}
+    if(-not [bool]$TargetPath.ShareNamespaceAccessible){return New-NextInvestigation 'ShareNamespaceOrCredentials' 'TargetNamespaceFailed' $true $signals}
+    $installed=[bool]$TargetPath.PrinterInstalled
+    $wppProp=$D.PSObject.Properties['WPP']
+    if(-not $installed -and $wppProp -and $wppProp.Value -and $wppProp.Value.Enabled){return New-NextInvestigation 'WppCompatibility' 'WppEnabledPrinterNotInstalled' $true $signals}
+    if(-not $installed -and (Test-NextInvestigationEventCategory $D 'DriverOrPackage')){return New-NextInvestigation 'DriverOrPackage' 'RecentDriverOrPackageEvents' $true $signals}
+    if(-not $installed -and (Test-NextInvestigationEventCategory $D 'Policy')){return New-NextInvestigation 'Policy' 'RecentPolicyEvents' $true $signals}
+    if(-not $installed -and (Test-NextInvestigationEventCategory $D 'SharingOrConnection')){return New-NextInvestigation 'SharingOrConnection' 'RecentSharingOrConnectionEvents' $true $signals}
+    if(-not $installed){return New-NextInvestigation 'PrinterConnectionSetup' 'PrinterNotInstalledAfterTransport' $true $signals}
+    if(Test-NextInvestigationEventCategory $D 'SpoolerOrRpc'){return New-NextInvestigation 'SpoolerOrRpc' 'RecentSpoolerOrRpcEvents' $true $signals}
+    if(Test-NextInvestigationEventCategory $D 'PortOrProcessor'){return New-NextInvestigation 'PortOrProcessor' 'RecentPortOrProcessorEvents' $true $signals}
+    if(Test-NextInvestigationEventCategory $D 'PrintJob'){return New-NextInvestigation 'PrintJob' 'RecentPrintJobEvents' $true $signals}
+    if(Test-NextInvestigationEventCategory $D 'DirectoryOrGpo'){return New-NextInvestigation 'DirectoryOrGpo' 'RecentDirectoryOrGpoEvents' $true $signals}
+    return New-NextInvestigation 'FunctionalVerification' 'PrerequisitesHealthy' $true $signals
+}
+
+function Get-NextInvestigationLayerLabel([string]$Layer) {
+    switch($Layer){
+        'LocalSpooler'{return (L 'local Print Spooler' 'Print Spooler lokal')}
+        'RemoteTransportUntested'{return (L 'target path / remote transport' 'path target / transport remote')}
+        'NameResolutionOrBasicNetwork'{return (L 'name resolution / basic network' 'resolusi nama / jaringan dasar')}
+        'SmbFirewallOrRouting'{return (L 'SMB / firewall / routing' 'SMB / firewall / routing')}
+        'RpcReachability'{return (L 'RPC Endpoint Mapper / firewall' 'RPC Endpoint Mapper / firewall')}
+        'ShareNamespaceOrCredentials'{return (L 'share namespace / credentials / sharing' 'namespace share / kredensial / sharing')}
+        'WppCompatibility'{return (L 'WPP / driver compatibility' 'WPP / kompatibilitas driver')}
+        'DriverOrPackage'{return (L 'driver / package' 'driver / paket')}
+        'Policy'{return (L 'printer policy' 'kebijakan printer')}
+        'SharingOrConnection'{return (L 'sharing / connection' 'sharing / koneksi')}
+        'PrinterConnectionSetup'{return (L 'printer connection setup' 'setup koneksi printer')}
+        'SpoolerOrRpc'{return 'Spooler / RPC'}
+        'PortOrProcessor'{return (L 'port / print processor' 'port / print processor')}
+        'PrintJob'{return (L 'print job' 'job cetak')}
+        'DirectoryOrGpo'{return (L 'directory / GPO deployment' 'direktori / deployment GPO')}
+        'FunctionalVerification'{return (L 'functional print verification' 'verifikasi fungsi cetak')}
+        default{return $Layer}
+    }
+}
+
+function Get-NextInvestigationReasonText([string]$Reason) {
+    switch($Reason){
+        'SpoolerMissing'{return (L 'The local Print Spooler is missing; fix the local print service before interpreting remote signals.' 'Print Spooler lokal tidak ditemukan; benahi layanan cetak lokal sebelum menafsirkan sinyal remote.')}
+        'SpoolerNotRunning'{return (L 'The local Print Spooler is not running; verify it before moving to network or compatibility layers.' 'Print Spooler lokal tidak berjalan; periksa ini sebelum lanjut ke lapisan jaringan atau kompatibilitas.')}
+        'TargetPathNotTested'{return (L 'Remote DNS/SMB/RPC prerequisites have not been tested yet. Run the shared-printer path test before changing compatibility policy.' 'Prasyarat DNS/SMB/RPC remote belum diuji. Jalankan tes path printer sharing sebelum mengubah kebijakan kompatibilitas.')}
+        'TargetDnsFailed'{return (L 'The target name did not resolve, so later SMB/RPC failures are not yet meaningful.' 'Nama target tidak berhasil di-resolve, jadi kegagalan SMB/RPC setelahnya belum bermakna.')}
+        'TargetSmb445Failed'{return (L 'Name resolution succeeded but TCP 445 did not. Check SMB reachability, firewall, and routing before printer-policy changes.' 'Resolusi nama berhasil tetapi TCP 445 tidak. Periksa SMB, firewall, dan routing sebelum mengubah kebijakan printer.')}
+        'TargetRpc135Failed'{return (L 'DNS and SMB succeeded but RPC Endpoint Mapper on TCP 135 did not. This does not test the later dynamic RPC ports.' 'DNS dan SMB berhasil tetapi RPC Endpoint Mapper pada TCP 135 tidak. Ini belum menguji dynamic RPC ports setelahnya.')}
+        'TargetNamespaceFailed'{return (L 'SMB and RPC endpoint checks succeeded, but the host share namespace was not accessible. Check sharing, credentials, and policy next.' 'Pemeriksaan SMB dan RPC endpoint berhasil, tetapi namespace share host tidak dapat diakses. Periksa sharing, kredensial, dan kebijakan berikutnya.')}
+        'WppEnabledPrinterNotInstalled'{return (L 'Transport prerequisites look healthy, but WPP is enabled and the target printer is not installed. Verify Windows Ready Print/WPP compatibility before legacy-driver workarounds.' 'Prasyarat transport terlihat sehat, tetapi WPP aktif dan printer target belum terpasang. Periksa kompatibilitas Windows Ready Print/WPP sebelum memakai workaround driver lama.')}
+        'RecentDriverOrPackageEvents'{return (L 'Transport prerequisites look healthy and recent PrintService driver/package events exist. Treat them as supporting evidence, not proof of cause.' 'Prasyarat transport terlihat sehat dan ada event PrintService driver/paket terbaru. Anggap ini sebagai bukti pendukung, bukan bukti penyebab.')}
+        'RecentPolicyEvents'{return (L 'Transport prerequisites look healthy and recent PrintService policy events exist. Inspect effective policy and its source evidence next.' 'Prasyarat transport terlihat sehat dan ada event kebijakan PrintService terbaru. Periksa kebijakan efektif dan bukti sumbernya berikutnya.')}
+        'RecentSharingOrConnectionEvents'{return (L 'Transport prerequisites look healthy and recent sharing/connection events exist. Inspect the printer connection and remote share configuration next.' 'Prasyarat transport terlihat sehat dan ada event sharing/koneksi terbaru. Periksa koneksi printer dan konfigurasi share remote berikutnya.')}
+        'PrinterNotInstalledAfterTransport'{return (L 'Basic remote transport and namespace checks passed, but the printer is not installed locally. Check connection setup, driver requirements, policy, and credentials without lowering security by default.' 'Pemeriksaan transport remote dan namespace dasar lolos, tetapi printer belum terpasang lokal. Periksa setup koneksi, kebutuhan driver, kebijakan, dan kredensial tanpa menurunkan keamanan secara default.')}
+        'RecentSpoolerOrRpcEvents'{return (L 'Basic target prerequisites passed, but recent Spooler/RPC events remain. Inspect those events before changing compatibility settings.' 'Prasyarat dasar target lolos, tetapi masih ada event Spooler/RPC terbaru. Periksa event tersebut sebelum mengubah pengaturan kompatibilitas.')}
+        'RecentPortOrProcessorEvents'{return (L 'Basic target prerequisites passed, but recent port/print-processor events remain.' 'Prasyarat dasar target lolos, tetapi masih ada event port/print-processor terbaru.')}
+        'RecentPrintJobEvents'{return (L 'The printer is installed and basic prerequisites passed, but recent print-job events remain. Verify an actual test print and inspect the job failure details.' 'Printer sudah terpasang dan prasyarat dasar lolos, tetapi masih ada event job cetak terbaru. Verifikasi dengan test print nyata dan periksa detail kegagalan job.')}
+        'RecentDirectoryOrGpoEvents'{return (L 'Basic target prerequisites passed, but recent directory/GPO deployment events remain.' 'Prasyarat dasar target lolos, tetapi masih ada event deployment direktori/GPO terbaru.')}
+        'PrerequisitesHealthy'{return (L 'No earlier failing layer is evident from the collected checks. Perform a real test print for functional verification.' 'Tidak terlihat lapisan gagal yang lebih awal dari pemeriksaan yang terkumpul. Lakukan test print nyata untuk verifikasi fungsi.')}
+        default{return $Reason}
+    }
+}
+
+function Show-NextInvestigation($Next) {
+    if($null -eq $Next){return}
+    Write-Rule
+    Write-Host ((L 'Next layer to investigate: {0}' 'Lapisan berikutnya untuk diperiksa: {0}') -f (Get-NextInvestigationLayerLabel ([string]$Next.Layer))) -ForegroundColor White
+    Write-Info (Get-NextInvestigationReasonText ([string]$Next.Reason))
+    Write-Info (L 'This is a troubleshooting priority, not a root-cause claim.' 'Ini adalah prioritas troubleshooting, bukan klaim akar penyebab.')
+}
+
 function Invoke-Diagnosis([switch]$Quiet) {
     $script:LastTargetPathDiagnostic = $null
     $diagClock=[System.Diagnostics.Stopwatch]::StartNew();$step=[System.Diagnostics.Stopwatch]::StartNew()
@@ -508,6 +608,7 @@ function Show-DiagnosticReport($D) {
     Write-Rule
     if(-not $D.Findings.Count){Write-Ok (L 'No obvious critical problem was detected.' 'Tidak ditemukan masalah kritis yang terlihat jelas.')}
     foreach($f in $D.Findings){switch($f.Severity){'FAIL'{Write-Fail $f.Text};'WARN'{Write-Warn $f.Text};default{Write-Info $f.Text}}}
+    Show-NextInvestigation (Get-NextInvestigation $D $null)
     $policySourcesProp=$D.PSObject.Properties['PolicySources']
     if($policySourcesProp -and $policySourcesProp.Value){$configuredPolicySources=@($policySourcesProp.Value.PSObject.Properties|Where-Object{$_.Value.Configured});if($configuredPolicySources.Count){Write-Rule;Write-Host (L 'Printer policy source evidence:' 'Bukti sumber kebijakan printer:');foreach($entry in $configuredPolicySources){Write-Host ('  {0}: {1}' -f (Get-PrinterPolicyDisplayName $entry.Name),(Get-PolicySourceLabel ([string]$entry.Value.Source)))}}}
     if($D.SharedPrinters.Count){Write-Rule;Write-Host (L 'Shared printers:' 'Printer yang dishare:');foreach($p in $D.SharedPrinters){Write-Host ('  - {0} | share={1} | driver={2}' -f $p.Name,$p.ShareName,$p.DriverName)}}
@@ -534,16 +635,24 @@ function Invoke-SharedPrinterPathDiagnosis {
     if($rpc){Write-Ok (L 'TCP 135 (RPC Endpoint Mapper) reachable.' 'TCP 135 (RPC Endpoint Mapper) dapat dijangkau.')}else{Write-Warn (L 'TCP 135 (RPC Endpoint Mapper) not reachable.' 'TCP 135 (RPC Endpoint Mapper) tidak dapat dijangkau.')}
     if($root){Write-Ok ((L 'Host share namespace accessible: \\{0}' 'Namespace share host dapat diakses: \\{0}') -f $hostName)}elseif($smb){Write-Warn (L 'SMB port is reachable but the share namespace was not accessible; credentials, sharing, or policy may be involved.' 'Port SMB dapat dijangkau tetapi namespace share tidak dapat diakses; kredensial, pengaturan sharing, atau kebijakan Windows mungkin terlibat.')}
     if($installed){Write-Ok ((L 'Printer installed locally: {0}' 'Printer sudah terpasang lokal: {0}') -f $unc)}else{Write-Info ((L 'Printer not currently installed locally: {0}' 'Printer belum terpasang lokal: {0}') -f $unc)}
-    Write-Rule
-    $likelyLayer='HealthyPrerequisites'
-    if(-not $dns){$likelyLayer='NameResolutionOrBasicNetwork';Write-Fail (L 'Most likely layer: name resolution/basic network. Do not change printer security policies yet.' 'Lapisan yang paling mungkin bermasalah: resolusi nama/jaringan dasar. Jangan ubah kebijakan keamanan printer dulu.')}
-    elseif(-not $smb){$likelyLayer='SmbFirewallOrRouting';Write-Fail (L 'Most likely layer: SMB/firewall/routing. Do not enable SMB1 unless the target is proven SMB1-only.' 'Lapisan yang paling mungkin bermasalah: SMB/firewall/routing. Jangan aktifkan SMB1 kecuali target benar-benar terbukti hanya mendukung SMB1.')}
-    elseif(-not $rpc){$likelyLayer='RpcReachability';Write-Warn (L 'RPC reachability is suspicious. Check RPC/firewall before compatibility fallbacks.' 'Konektivitas RPC mencurigakan. Periksa RPC/firewall sebelum memakai fallback kompatibilitas.')}
-    elseif(-not $installed -and (Get-WppState).Enabled){$likelyLayer='WppCompatibility';Write-Warn (L 'WPP is enabled. If this printer depends on a legacy third-party driver, WPP compatibility is a strong candidate.' 'WPP aktif. Jika printer ini bergantung pada driver pihak ketiga yang lama, kompatibilitas WPP menjadi kandidat kuat.')}
-    elseif(-not $installed){$likelyLayer='DriverPointAndPrintCredentialsOrShare';Write-Info (L 'Basic transport is reachable. Driver installation, Point and Print policy, credentials, or the remote printer share are the next likely layers.' 'Transport dasar dapat dijangkau. Lapisan berikutnya yang paling mungkin adalah pemasangan driver, kebijakan Point and Print, kredensial, atau share printer remote.')}
-    else{Write-Ok (L 'Basic prerequisites look healthy. Printing a test page is the final functional verification.' 'Prasyarat dasar terlihat sehat. Mencetak test page adalah verifikasi fungsi terakhir.')}
-    $script:LastTargetPathDiagnostic=[pscustomobject]@{TestedAtUtc=$testedAt;DnsResolved=[bool]$dns;Smb445Reachable=[bool]$smb;Rpc135Reachable=[bool]$rpc;ShareNamespaceAccessible=[bool]$root;PrinterInstalled=[bool]$installed;LikelyLayer=$likelyLayer}
-    Write-Log "Target test [identifier omitted] dns=$dns smb445=$smb rpc135=$rpc root=$root installed=$installed likely=$likelyLayer"
+    $target=[pscustomobject]@{TestedAtUtc=$testedAt;DnsResolved=[bool]$dns;Smb445Reachable=[bool]$smb;Rpc135Reachable=[bool]$rpc;ShareNamespaceAccessible=[bool]$root;PrinterInstalled=[bool]$installed;LikelyLayer=''}
+    $diagForCorrelation=$script:LastDiagnostic
+    if($null -eq $diagForCorrelation){$diagForCorrelation=Invoke-Diagnosis -Quiet}
+    $next=Get-NextInvestigation $diagForCorrelation $target
+    $likelyLayer=switch([string]$next.Layer){
+        'LocalSpooler'{'LocalSpooler'}
+        'NameResolutionOrBasicNetwork'{'NameResolutionOrBasicNetwork'}
+        'SmbFirewallOrRouting'{'SmbFirewallOrRouting'}
+        'RpcReachability'{'RpcReachability'}
+        'ShareNamespaceOrCredentials'{'ShareNamespaceOrCredentials'}
+        'WppCompatibility'{'WppCompatibility'}
+        'FunctionalVerification'{'HealthyPrerequisites'}
+        default{'DriverPointAndPrintCredentialsOrShare'}
+    }
+    $target.LikelyLayer=$likelyLayer
+    $script:LastTargetPathDiagnostic=$target
+    Show-NextInvestigation $next
+    Write-Log "Target test [identifier omitted] dns=$dns smb445=$smb rpc135=$rpc root=$root installed=$installed likely=$likelyLayer next=$($next.Layer) reason=$($next.Reason)"
 }
 
 function Get-ManagedRegistryEntries {
@@ -798,6 +907,7 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null) {
     }
     $target=$null
     if($null -ne $TargetPath){$target=[pscustomobject]@{TestedAtUtc=[string]$TargetPath.TestedAtUtc;DnsResolved=[bool]$TargetPath.DnsResolved;Smb445Reachable=[bool]$TargetPath.Smb445Reachable;Rpc135Reachable=[bool]$TargetPath.Rpc135Reachable;ShareNamespaceAccessible=[bool]$TargetPath.ShareNamespaceAccessible;PrinterInstalled=[bool]$TargetPath.PrinterInstalled;LikelyLayer=[string]$TargetPath.LikelyLayer}}
+    $next=Get-NextInvestigation $D $TargetPath
     return [ordered]@{
         Schema='windows-printer-sharing-fix/diagnosis'
         SchemaVersion=1
@@ -815,6 +925,7 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null) {
         WPP=[ordered]@{Enabled=[bool]$D.WPP.Enabled;GroupPolicy=(& $state $D.WPP.GroupPolicy);Mode=(& $state $D.WPP.Mode);EnabledBy=(& $state $D.WPP.EnabledBy)}
         Policies=[ordered]@{RpcPrivacy=(& $state $D.RpcPrivacy);RpcUseNamedPipe=(& $state $D.RpcUseNamedPipe);RpcProtocols=(& $state $D.RpcProtocols);PointAndPrint=(& $state $D.PointAndPrint);GuestAuth=(& $state $D.GuestAuth);LmCompatibility=(& $state $D.LmCompatibility);BlankPassword=(& $state $D.BlankPassword)}
         PolicySources=$policySources
+        NextInvestigation=[ordered]@{Layer=[string]$next.Layer;Reason=[string]$next.Reason;RemoteTransportTested=[bool]$next.RemoteTransportTested;Signals=@($next.Signals);RootCauseClaimed=$false}
         SMB1Client=[string]$D.SMB1Client
         PrintServiceEvents=$events
         Findings=$findings

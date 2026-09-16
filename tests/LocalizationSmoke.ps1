@@ -32,7 +32,7 @@ $diagnostic = [pscustomobject]@{
 }
 
 $report = (& { Show-DiagnosticReport $diagnostic } 6>&1 | Out-String)
-foreach($expected in @('LAPORAN DIAGNOSIS','Peran terdeteksi: Klien','Klien SMB1','Tidak aktif','Bukti sumber kebijakan printer','Group Policy Lokal','nilai registry; sumber tidak diketahui')) {
+foreach($expected in @('LAPORAN DIAGNOSIS','Peran terdeteksi: Klien','Klien SMB1','Tidak aktif','Lapisan berikutnya untuk diperiksa','path target / transport remote','prioritas troubleshooting, bukan klaim akar penyebab','Bukti sumber kebijakan printer','Group Policy Lokal','nilai registry; sumber tidak diketahui')) {
     if($report -notmatch [regex]::Escape($expected)){throw "Indonesian diagnostic output is missing: $expected"}
 }
 if($report -match 'Detected role|Shared printers:|Network profiles:'){throw 'English diagnostic labels leaked into Indonesian mode.'}

@@ -95,6 +95,7 @@ The local diagnosis is read-only and currently inspects:
 - SMB1 client and insecure guest-auth state.
 - LAN Manager compatibility and blank-password restrictions.
 - Recent PrintService Admin warnings/errors.
+- Conservative next-layer correlation that orders existing evidence without claiming a root cause.
 
 For a specific `\\HOST\Printer` path, the optional target test checks name resolution, TCP 445/SMB, TCP 135/RPC Endpoint Mapper, the host share namespace, and whether the printer is already connected locally.
 
@@ -168,6 +169,7 @@ The project deliberately distinguishes Windows Server from Windows 11 even when 
 - [Structured diagnostic JSON](docs/DIAGNOSTIC-JSON.md)
 - [PrintService event classification](docs/PRINTSERVICE-EVENTS.md)
 - [Printer policy source evidence](docs/POLICY-SOURCES.md)
+- [Next-layer correlation](docs/CORRELATION.md)
 - [Sanitized diagnosis examples](docs/examples/README.md)
 - [Real-world test matrix](docs/TEST-MATRIX.md)
 - [Accepted real-world results](docs/REAL-WORLD-RESULTS.md)
