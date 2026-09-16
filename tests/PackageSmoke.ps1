@@ -28,6 +28,7 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\REAL-WORLD-RESULTS.md'))) { throw 'Packaged real-world results ledger is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\DIAGNOSTIC-JSON.md'))) { throw 'Packaged diagnostic JSON schema documentation is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\PRINTSERVICE-EVENTS.md'))) { throw 'Packaged PrintService event classification documentation is missing.' }
+    if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\POLICY-SOURCES.md'))) { throw 'Packaged printer policy source documentation is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\examples\README.md'))) { throw 'Packaged sanitized diagnosis examples are missing.' }
 
     $auto = Join-Path $temp 'auto-version'

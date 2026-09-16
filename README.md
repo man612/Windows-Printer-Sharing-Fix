@@ -90,6 +90,7 @@ The local diagnosis is read-only and currently inspects:
 - Active network profiles.
 - Windows Protected Print (WPP) indicators.
 - RPC printer policy, including Named Pipes compatibility state.
+- Printer-policy source evidence from RSoP plus conservative MDM-aware signals, without assuming a registry value came from a domain GPO.
 - Point and Print driver-installation protection.
 - SMB1 client and insecure guest-auth state.
 - LAN Manager compatibility and blank-password restrictions.
@@ -166,6 +167,7 @@ The project deliberately distinguishes Windows Server from Windows 11 even when 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Structured diagnostic JSON](docs/DIAGNOSTIC-JSON.md)
 - [PrintService event classification](docs/PRINTSERVICE-EVENTS.md)
+- [Printer policy source evidence](docs/POLICY-SOURCES.md)
 - [Sanitized diagnosis examples](docs/examples/README.md)
 - [Real-world test matrix](docs/TEST-MATRIX.md)
 - [Accepted real-world results](docs/REAL-WORLD-RESULTS.md)

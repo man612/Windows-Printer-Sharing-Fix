@@ -27,11 +27,12 @@ $diagnostic = [pscustomobject]@{
     PowerShell='5.1';Role='Client';Spooler=[pscustomobject]@{Status='Running'}
     Printers=@();SharedPrinters=@();Connections=@();Profiles=@()
     WPP=[pscustomobject]@{Enabled=$false};SMB1Client='Disabled'
+    PolicySources=[pscustomobject]@{RpcUseNamedPipe=[pscustomobject]@{Configured=$true;Source='LocalGroupPolicy';Evidence='RsopRegistryPolicySetting'};RpcPrivacy=[pscustomobject]@{Configured=$true;Source='RegistryOnlyOrUnknownSource';Evidence='RegistryPresence'}}
     Findings=@();PrintErrors=@()
 }
 
 $report = (& { Show-DiagnosticReport $diagnostic } 6>&1 | Out-String)
-foreach($expected in @('LAPORAN DIAGNOSIS','Peran terdeteksi: Klien','Klien SMB1','Tidak aktif')) {
+foreach($expected in @('LAPORAN DIAGNOSIS','Peran terdeteksi: Klien','Klien SMB1','Tidak aktif','Bukti sumber kebijakan printer','Group Policy Lokal','nilai registry; sumber tidak diketahui')) {
     if($report -notmatch [regex]::Escape($expected)){throw "Indonesian diagnostic output is missing: $expected"}
 }
 if($report -match 'Detected role|Shared printers:|Network profiles:'){throw 'English diagnostic labels leaked into Indonesian mode.'}

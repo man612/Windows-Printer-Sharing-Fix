@@ -27,7 +27,7 @@ The structured export is sanitized by design. It does **not** include:
 
 It does include Windows/build information, inferred host/client role, printer counts, network-profile categories/connectivity, WPP and relevant policy states, SMB1 client state, finding text, timing metadata, and sanitized PrintService event metadata.
 
-Always review a file before posting it publicly. Policy values can describe the security posture of a machine even when identity fields are omitted.
+Always review a file before posting it publicly. Policy values can describe the security posture of a machine even when identity fields are omitted. `PolicySources` contains only normalized labels such as `LocalGroupPolicy`, `GroupPolicy`, `PossibleMdmOrOtherPolicy`, or `RegistryOnlyOrUnknownSource`; raw GPO/tenant/management identifiers are intentionally omitted.
 
 ## Schema
 
@@ -59,6 +59,7 @@ Top-level fields:
 | `NetworkProfiles` | Category and IPv4/IPv6 connectivity without profile names. |
 | `WPP` | Windows Protected Print state and relevant registry state. |
 | `Policies` | Relevant RPC, Point and Print, guest, LM, and blank-password policy state. |
+| `PolicySources` | Normalized source evidence for mapped printer policies; no GPO/domain/tenant identifiers are exported. |
 | `SMB1Client` | Current Windows optional-feature state. |
 | `PrintServiceEvents` | Timestamp, event ID, level, normalized troubleshooting category, and optional Event 372 Win32 code/class; raw message text is omitted. |
 | `Findings` | Severity and human-readable diagnosis finding. |
