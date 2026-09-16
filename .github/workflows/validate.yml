@@ -41,6 +41,10 @@ jobs:
         shell: powershell
         run: .\tests\PrintEventClassificationSmoke.ps1
 
+      - name: Validate printer policy source evidence
+        shell: powershell
+        run: .\tests\PolicySourceSmoke.ps1
+
       - name: Validate sanitized diagnosis examples
         shell: powershell
         run: .\tests\ExamplesSmoke.ps1

@@ -234,6 +234,101 @@ function Get-WppState {
     return [pscustomobject]@{Enabled=(($gp.Present -and [int]$gp.Value -eq 1) -or ($mode.Present -and [int]$mode.Value -eq 1));GroupPolicy=$gp;Mode=$mode;EnabledBy=$enabledBy}
 }
 
+function Normalize-PolicyRegistryKey([string]$Path) {
+    if(-not $Path){return ''}
+    $key=$Path.Trim()
+    $key=$key -replace '^Registry::HKEY_LOCAL_MACHINE\\',''
+    $key=$key -replace '^HKEY_LOCAL_MACHINE\\',''
+    $key=$key -replace '^HKLM:\\',''
+    $key=$key.TrimStart([char]'\')
+    return $key.Replace('/','\').ToLowerInvariant()
+}
+
+function Get-ComputerRsopRegistryPolicySettings {
+    try {
+        $items=@(Get-CimInstance -Namespace 'root\RSOP\Computer' -ClassName 'RSOP_RegistryPolicySetting' -ErrorAction Stop | ForEach-Object {
+            [pscustomobject]@{RegistryKey=[string]$_.registryKey;ValueName=[string]$_.valueName;GpoId=[string]$_.GPOID;SomId=[string]$_.SOMID;Precedence=[int]$_.precedence;Deleted=[bool]$_.deleted}
+        })
+        return [pscustomobject]@{Available=$true;Settings=$items}
+    } catch {
+        return [pscustomobject]@{Available=$false;Settings=@()}
+    }
+}
+
+function Find-RsopRegistryPolicySource([object[]]$Settings,[string]$RegistryPath,[string]$ValueName) {
+    $target=Normalize-PolicyRegistryKey $RegistryPath
+    $matches=@($Settings | Where-Object {
+        $deletedProp=$_.PSObject.Properties['Deleted']
+        $deleted=if($deletedProp){[bool]$deletedProp.Value}else{$false}
+        (-not $deleted) -and ((Normalize-PolicyRegistryKey ([string]$_.RegistryKey)) -eq $target) -and ([string]$_.ValueName -eq $ValueName)
+    } | Sort-Object Precedence)
+    if(-not $matches.Count){return $null}
+    $winner=$matches[0]
+    $source=if(([string]$winner.GpoId -eq 'LocalGPO') -or ([string]$winner.SomId -eq 'Local')){'LocalGroupPolicy'}else{'GroupPolicy'}
+    return [pscustomobject]@{Source=$source;Evidence='RsopRegistryPolicySetting'}
+}
+
+function Get-MdmManagementEvidence([object[]]$OmaDmAccounts=$null,[object[]]$PolicyManagerProviders=$null) {
+    $accounts=@(if($PSBoundParameters.ContainsKey('OmaDmAccounts')){@($OmaDmAccounts)}else{try{@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Provisioning\OMADM\Accounts' -ErrorAction Stop)}catch{@()}})
+    $providers=@(if($PSBoundParameters.ContainsKey('PolicyManagerProviders')){@($PolicyManagerProviders)}else{try{@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\PolicyManager\Providers' -ErrorAction Stop)}catch{@()}})
+    $oma=($accounts.Count -gt 0);$policyManager=($providers.Count -gt 0)
+    return [pscustomobject]@{CombinedEvidence=($oma -and $policyManager);OmaDmAccountPresent=$oma;PolicyManagerProviderPresent=$policyManager}
+}
+
+function Get-PrinterPolicySourceEvidence([int]$Build,[object]$RpcPrivacy,[object]$RpcUseNamedPipe,[object]$RpcProtocols,[object]$PointAndPrint,[object]$WppGroupPolicy,[object]$RsopResult=$null,[object]$MdmEvidence=$null) {
+    if($null -eq $RsopResult){$RsopResult=Get-ComputerRsopRegistryPolicySettings}
+    $settings=@($RsopResult.Settings)
+    $targets=@(
+        [pscustomobject]@{Name='RpcPrivacy';State=$RpcPrivacy;Path='HKLM:\SYSTEM\CurrentControlSet\Control\Print';ValueName='RpcAuthnLevelPrivacyEnabled';MdmMinBuild=26100},
+        [pscustomobject]@{Name='RpcUseNamedPipe';State=$RpcUseNamedPipe;Path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC';ValueName='RpcUseNamedPipeProtocol';MdmMinBuild=22621},
+        [pscustomobject]@{Name='RpcProtocols';State=$RpcProtocols;Path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC';ValueName='RpcProtocols';MdmMinBuild=22621},
+        [pscustomobject]@{Name='PointAndPrint';State=$PointAndPrint;Path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint';ValueName='RestrictDriverInstallationToAdministrators';MdmMinBuild=22621},
+        [pscustomobject]@{Name='WppGroupPolicy';State=$WppGroupPolicy;Path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\WPP';ValueName='WindowsProtectedPrintGroupPolicyState';MdmMinBuild=26100}
+    )
+    $records=@();$needsMdm=$false
+    foreach($target in $targets){
+        $configured=($null -ne $target.State -and $target.State.Present)
+        if(-not $configured){$records+=[pscustomobject]@{Name=$target.Name;Configured=$false;Source='NotConfigured';Evidence='None';MdmEligible=$false};continue}
+        $match=Find-RsopRegistryPolicySource $settings $target.Path $target.ValueName
+        if($null -ne $match){$records+=[pscustomobject]@{Name=$target.Name;Configured=$true;Source=$match.Source;Evidence=$match.Evidence;MdmEligible=$false};continue}
+        $eligible=($Build -ge [int]$target.MdmMinBuild);if($eligible){$needsMdm=$true}
+        $records+=[pscustomobject]@{Name=$target.Name;Configured=$true;Source=$null;Evidence=$null;MdmEligible=$eligible}
+    }
+    if($needsMdm -and $null -eq $MdmEvidence){$MdmEvidence=Get-MdmManagementEvidence}
+    $combinedMdm=($null -ne $MdmEvidence -and [bool]$MdmEvidence.CombinedEvidence)
+    $out=[ordered]@{}
+    foreach($record in $records){
+        if($record.Configured -and -not $record.Source){
+            if($record.MdmEligible -and $combinedMdm){$record.Source='PossibleMdmOrOtherPolicy';$record.Evidence='MdmManagementSignals'}
+            else{$record.Source='RegistryOnlyOrUnknownSource';$record.Evidence='RegistryPresence'}
+        }
+        $out[$record.Name]=[pscustomobject]@{Configured=[bool]$record.Configured;Source=[string]$record.Source;Evidence=[string]$record.Evidence}
+    }
+    return [pscustomobject]$out
+}
+
+function Get-PrinterPolicyDisplayName([string]$Name) {
+    switch($Name){
+        'RpcPrivacy'{return (L 'RPC packet privacy' 'Privasi paket RPC')}
+        'RpcUseNamedPipe'{return (L 'RPC named-pipe connection' 'Koneksi RPC named pipe')}
+        'RpcProtocols'{return (L 'RPC listener protocols' 'Protokol listener RPC')}
+        'PointAndPrint'{return (L 'Point and Print driver installation' 'Pemasangan driver Point and Print')}
+        'WppGroupPolicy'{return (L 'Windows protected print policy' 'Kebijakan Windows protected print')}
+        default{return $Name}
+    }
+}
+
+function Get-PolicySourceLabel([string]$Source) {
+    switch($Source){
+        'LocalGroupPolicy'{return (L 'Local Group Policy' 'Group Policy Lokal')}
+        'GroupPolicy'{return 'Group Policy'}
+        'PossibleMdmOrOtherPolicy'{return (L 'possible MDM or other policy source' 'kemungkinan MDM atau sumber kebijakan lain')}
+        'RegistryOnlyOrUnknownSource'{return (L 'registry value; source unknown' 'nilai registry; sumber tidak diketahui')}
+        'NotConfigured'{return (L 'not configured' 'tidak dikonfigurasi')}
+        default{return $Source}
+    }
+}
+
 function Get-WindowsFeatureState([string]$Name) {
     try { if (Get-Command Get-WindowsOptionalFeature -ErrorAction SilentlyContinue) { return [string](Get-WindowsOptionalFeature -Online -FeatureName $Name).State } } catch {}
     return 'Unknown'
@@ -374,6 +469,7 @@ function Invoke-Diagnosis([switch]$Quiet) {
     $guest=Get-RegistryValueState 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' 'AllowInsecureGuestAuth'
     $lm=Get-RegistryValueState 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' 'LmCompatibilityLevel'
     $blank=Get-RegistryValueState 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' 'LimitBlankPasswordUse'
+    $step.Restart();$policySources=Get-PrinterPolicySourceEvidence -Build $os.Build -RpcPrivacy $rpcPrivacy -RpcUseNamedPipe $rpcPipe -RpcProtocols $rpcProtocols -PointAndPrint $point -WppGroupPolicy $wpp.GroupPolicy;$policySourcesMs=$step.ElapsedMilliseconds
     $step.Restart();$smb1=Get-WindowsFeatureState 'SMB1Protocol-Client';$smb1Ms=$step.ElapsedMilliseconds
     $findings=New-Object System.Collections.Generic.List[object]
     if(-not $spooler){$findings.Add([pscustomobject]@{Severity='FAIL';Text=(L 'Print Spooler service is missing.' 'Layanan Print Spooler tidak ditemukan.')})}elseif($spooler.Status -ne 'Running'){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'Print Spooler is not running.' 'Print Spooler sedang tidak berjalan.')})}
@@ -390,11 +486,11 @@ function Invoke-Diagnosis([switch]$Quiet) {
         $findings.Add([pscustomobject]@{Severity='INFO';Text=(L "Recent PrintService warnings/errors by layer: $eventLayers." "Peringatan/error PrintService terbaru menurut lapisan: $eventLayers.")})
     }
     $diagClock.Stop()
-    $timing=[pscustomobject]@{OS=[int64]$osMs;Spooler=[int64]$spoolerMs;Printers=[int64]$printersMs;Profiles=[int64]$profilesMs;WPP=[int64]$wppMs;PrintEvents=[int64]$eventsMs;SMB1=[int64]$smb1Ms;Total=[int64]$diagClock.ElapsedMilliseconds}
-    $result=[pscustomobject]@{CollectedAtUtc=(Get-Date).ToUniversalTime().ToString('o');OS=$os;PowerShell=$PSVersionTable.PSVersion.ToString();Role=$role;Spooler=$spooler;Printers=$printers;SharedPrinters=$shared;Connections=$connections;Profiles=$profiles;WPP=$wpp;PrintErrors=$errors;RpcPrivacy=$rpcPrivacy;RpcUseNamedPipe=$rpcPipe;RpcProtocols=$rpcProtocols;PointAndPrint=$point;GuestAuth=$guest;LmCompatibility=$lm;BlankPassword=$blank;SMB1Client=$smb1;Findings=$findings;TimingMs=$timing}
+    $timing=[pscustomobject]@{OS=[int64]$osMs;Spooler=[int64]$spoolerMs;Printers=[int64]$printersMs;Profiles=[int64]$profilesMs;WPP=[int64]$wppMs;PrintEvents=[int64]$eventsMs;PolicySources=[int64]$policySourcesMs;SMB1=[int64]$smb1Ms;Total=[int64]$diagClock.ElapsedMilliseconds}
+    $result=[pscustomobject]@{CollectedAtUtc=(Get-Date).ToUniversalTime().ToString('o');OS=$os;PowerShell=$PSVersionTable.PSVersion.ToString();Role=$role;Spooler=$spooler;Printers=$printers;SharedPrinters=$shared;Connections=$connections;Profiles=$profiles;WPP=$wpp;PrintErrors=$errors;RpcPrivacy=$rpcPrivacy;RpcUseNamedPipe=$rpcPipe;RpcProtocols=$rpcProtocols;PointAndPrint=$point;PolicySources=$policySources;GuestAuth=$guest;LmCompatibility=$lm;BlankPassword=$blank;SMB1Client=$smb1;Findings=$findings;TimingMs=$timing}
     $script:LastDiagnostic=$result
     Write-Log "Diagnosis role=$role printers=$($printers.Count) findings=$($findings.Count)"
-    Write-Log "Diagnosis timing ms: os=$osMs spooler=$spoolerMs printers=$printersMs profiles=$profilesMs wpp=$wppMs events=$eventsMs smb1=$smb1Ms total=$($diagClock.ElapsedMilliseconds)"
+    Write-Log "Diagnosis timing ms: os=$osMs spooler=$spoolerMs printers=$printersMs profiles=$profilesMs wpp=$wppMs events=$eventsMs policySources=$policySourcesMs smb1=$smb1Ms total=$($diagClock.ElapsedMilliseconds)"
     if(-not $Quiet){Show-DiagnosticReport $result}; return $result
 }
 
@@ -412,6 +508,8 @@ function Show-DiagnosticReport($D) {
     Write-Rule
     if(-not $D.Findings.Count){Write-Ok (L 'No obvious critical problem was detected.' 'Tidak ditemukan masalah kritis yang terlihat jelas.')}
     foreach($f in $D.Findings){switch($f.Severity){'FAIL'{Write-Fail $f.Text};'WARN'{Write-Warn $f.Text};default{Write-Info $f.Text}}}
+    $policySourcesProp=$D.PSObject.Properties['PolicySources']
+    if($policySourcesProp -and $policySourcesProp.Value){$configuredPolicySources=@($policySourcesProp.Value.PSObject.Properties|Where-Object{$_.Value.Configured});if($configuredPolicySources.Count){Write-Rule;Write-Host (L 'Printer policy source evidence:' 'Bukti sumber kebijakan printer:');foreach($entry in $configuredPolicySources){Write-Host ('  {0}: {1}' -f (Get-PrinterPolicyDisplayName $entry.Name),(Get-PolicySourceLabel ([string]$entry.Value.Source)))}}}
     if($D.SharedPrinters.Count){Write-Rule;Write-Host (L 'Shared printers:' 'Printer yang dishare:');foreach($p in $D.SharedPrinters){Write-Host ('  - {0} | share={1} | driver={2}' -f $p.Name,$p.ShareName,$p.DriverName)}}
     if($D.Connections.Count){Write-Rule;Write-Host (L 'Network printer connections:' 'Koneksi printer jaringan:');foreach($p in $D.Connections){Write-Host ('  - {0} | driver={1}' -f $p.Name,$p.DriverName)}}
     if($D.Profiles.Count){Write-Rule;Write-Host (L 'Network profiles:' 'Profil jaringan:');foreach($n in $D.Profiles){Write-Host ('  [{0}] {1} / {2} / IPv4={3}' -f $n.InterfaceIndex,$n.InterfaceAlias,(Localize-SystemValue ([string]$n.NetworkCategory)),(Localize-SystemValue ([string]$n.IPv4Connectivity)))}}
@@ -692,6 +790,12 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null) {
     $profiles=@($D.Profiles|ForEach-Object{[pscustomobject]@{NetworkCategory=[string]$_.NetworkCategory;IPv4Connectivity=[string]$_.IPv4Connectivity;IPv6Connectivity=[string]$_.IPv6Connectivity}})
     $events=@($D.PrintErrors|ForEach-Object{[pscustomobject]@{TimeCreatedUtc=if($_.TimeCreated){$_.TimeCreated.ToUniversalTime().ToString('o')}else{$null};Id=[int]$_.Id;Level=[string]$_.LevelDisplayName;Category=[string]$_.Category;Win32Code=if($null -ne $_.Win32Code){[int64]$_.Win32Code}else{$null};CodeClass=if($_.CodeClass){[string]$_.CodeClass}else{$null}}})
     $findings=@($D.Findings|ForEach-Object{[pscustomobject]@{Severity=[string]$_.Severity;Text=[string]$_.Text}})
+    $policySources=[ordered]@{}
+    $policySourcesProp=$D.PSObject.Properties['PolicySources']
+    foreach($name in @('RpcPrivacy','RpcUseNamedPipe','RpcProtocols','PointAndPrint','WppGroupPolicy')){
+        $entry=$null;if($policySourcesProp -and $policySourcesProp.Value){$entryProp=$policySourcesProp.Value.PSObject.Properties[$name];if($entryProp){$entry=$entryProp.Value}}
+        $policySources[$name]=if($entry){[ordered]@{Configured=[bool]$entry.Configured;Source=[string]$entry.Source;Evidence=[string]$entry.Evidence}}else{[ordered]@{Configured=$false;Source='NotConfigured';Evidence='None'}}
+    }
     $target=$null
     if($null -ne $TargetPath){$target=[pscustomobject]@{TestedAtUtc=[string]$TargetPath.TestedAtUtc;DnsResolved=[bool]$TargetPath.DnsResolved;Smb445Reachable=[bool]$TargetPath.Smb445Reachable;Rpc135Reachable=[bool]$TargetPath.Rpc135Reachable;ShareNamespaceAccessible=[bool]$TargetPath.ShareNamespaceAccessible;PrinterInstalled=[bool]$TargetPath.PrinterInstalled;LikelyLayer=[string]$TargetPath.LikelyLayer}}
     return [ordered]@{
@@ -710,6 +814,7 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null) {
         NetworkProfiles=$profiles
         WPP=[ordered]@{Enabled=[bool]$D.WPP.Enabled;GroupPolicy=(& $state $D.WPP.GroupPolicy);Mode=(& $state $D.WPP.Mode);EnabledBy=(& $state $D.WPP.EnabledBy)}
         Policies=[ordered]@{RpcPrivacy=(& $state $D.RpcPrivacy);RpcUseNamedPipe=(& $state $D.RpcUseNamedPipe);RpcProtocols=(& $state $D.RpcProtocols);PointAndPrint=(& $state $D.PointAndPrint);GuestAuth=(& $state $D.GuestAuth);LmCompatibility=(& $state $D.LmCompatibility);BlankPassword=(& $state $D.BlankPassword)}
+        PolicySources=$policySources
         SMB1Client=[string]$D.SMB1Client
         PrintServiceEvents=$events
         Findings=$findings

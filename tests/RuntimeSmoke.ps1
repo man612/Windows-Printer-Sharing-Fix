@@ -56,11 +56,17 @@ if ($null -eq $diagnostic.Findings) { throw 'Diagnostic findings collection is m
 if ($null -eq $diagnostic.Printers) { throw 'Printer inventory collection is missing.' }
 if ($null -eq $diagnostic.Profiles) { throw 'Network profile collection is missing.' }
 if ($null -eq $diagnostic.WPP) { throw 'WPP state object is missing.' }
+if ($null -eq $diagnostic.PolicySources) { throw 'Printer policy source evidence is missing.' }
+$allowedPolicySources=@('LocalGroupPolicy','GroupPolicy','PossibleMdmOrOtherPolicy','RegistryOnlyOrUnknownSource','NotConfigured')
+foreach($property in $diagnostic.PolicySources.PSObject.Properties){
+    if([string]$property.Value.Source -notin $allowedPolicySources){throw "Unexpected printer policy source label: $($property.Value.Source)"}
+}
 foreach($event in @($diagnostic.PrintErrors)){
     if(-not $event.Category){throw 'PrintService event classification is missing from a runtime event.'}
 }
 if (-not $diagnostic.CollectedAtUtc) { throw 'Diagnosis collection timestamp is missing.' }
 if ($null -eq $diagnostic.TimingMs -or $diagnostic.TimingMs.Total -lt 0) { throw 'Diagnosis timing object is missing.' }
+if ($diagnostic.TimingMs.PolicySources -lt 0) { throw 'Policy-source timing metadata is invalid.' }
 
 $timingLog = Get-Content -LiteralPath $script:CurrentLog -Raw
 if ($timingLog -notmatch 'Diagnosis timing ms:') { throw 'Diagnosis performance timing was not written to the runtime log.' }
