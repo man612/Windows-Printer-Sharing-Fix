@@ -35,6 +35,10 @@ New-Item -ItemType Directory -Path $docsTarget -Force | Out-Null
 foreach ($name in @('ARCHITECTURE.md','DIAGNOSTIC-JSON.md','TEST-MATRIX.md','REAL-WORLD-RESULTS.md','README.id.md')) {
     Copy-Item -LiteralPath (Join-Path $repo ('docs\' + $name)) -Destination (Join-Path $docsTarget $name) -Force
 }
+$examplesSource = Join-Path $repo 'docs\examples'
+$examplesTarget = Join-Path $docsTarget 'examples'
+New-Item -ItemType Directory -Path $examplesTarget -Force | Out-Null
+Copy-Item -Path (Join-Path $examplesSource '*') -Destination $examplesTarget -Force
 
 ("Windows Printer Sharing Fix v{0}`r`n" -f $cleanVersion) | Set-Content -LiteralPath (Join-Path $stage 'VERSION.txt') -Encoding ASCII
 Compress-Archive -Path $stage -DestinationPath $zip -CompressionLevel Optimal

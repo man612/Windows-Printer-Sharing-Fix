@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a bug. Run **Diagnose this PC** first when possible. **Tools and Logs** can export the latest diagnosis as sanitized JSON; review the file before posting it publicly.
+        Thanks for reporting a bug. Run **Diagnose this PC** first when possible. **Tools and Logs** can export the latest diagnosis as sanitized JSON; review the file before posting it publicly. Short synthetic examples are available in `docs/examples/`.
   - type: input
     id: version
     attributes:
