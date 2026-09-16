@@ -26,7 +26,7 @@ if ($dnsSource -notmatch 'TimeoutMs' -or $dnsSource -notmatch 'BeginGetHostAddre
 
 $firewallSource = Get-FunctionText 'Get-FirewallSharingRules'
 if ($firewallSource -notmatch "-Group '@FirewallAPI\.dll,-28502'") { throw 'Firewall discovery is not using the targeted Windows sharing-rule group.' }
-$script:Version = '4.0.3-smoke'
+$script:Version = '4.1.0-smoke'
 $script:Language = 'EN'
 $script:Text = @{ EN=@{}; ID=@{} }
 $script:CurrentLog = Join-Path $env:TEMP ('wpsf-performance-smoke-' + [Guid]::NewGuid().ToString('N') + '.log')

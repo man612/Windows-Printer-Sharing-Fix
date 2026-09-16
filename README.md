@@ -55,7 +55,7 @@ No installer is required. Windows PowerShell 5.1 is the compatibility baseline.
 
 ```text
 ==============================================================================
-  WINDOWS PRINTER SHARING FIX  v4.0.3
+  WINDOWS PRINTER SHARING FIX  v4.1.0
   Diagnosis-first repair utility
   > MAIN MENU
 ==============================================================================

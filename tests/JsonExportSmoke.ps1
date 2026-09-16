@@ -12,7 +12,7 @@ $functions = @($ast.EndBlock.Statements | Where-Object { $_ -is [System.Manageme
 
 $temp = Join-Path $env:TEMP ('wpsf-json-export-smoke-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temp -Force | Out-Null
-$script:Version = '4.0.3-smoke'
+$script:Version = '4.1.0-smoke'
 $script:Language = 'EN'
 $script:ExportRoot = $temp
 $script:CurrentLog = Join-Path $temp 'smoke.log'
@@ -58,7 +58,7 @@ try {
     $data = $jsonText | ConvertFrom-Json
     if($data.Schema -ne 'windows-printer-sharing-fix/diagnosis' -or $data.SchemaVersion -ne 1){throw 'Unexpected JSON diagnosis schema identity/version.'}
     if(-not $data.Sanitized){throw 'JSON diagnosis export must declare itself sanitized.'}
-    if($data.ToolVersion -ne '4.0.3-smoke'){throw 'JSON diagnosis export lost tool version metadata.'}
+    if($data.ToolVersion -ne '4.1.0-smoke'){throw 'JSON diagnosis export lost tool version metadata.'}
     if($data.Windows.Build -le 0 -or -not $data.Windows.Name){throw 'JSON diagnosis export is missing Windows identity.'}
     if($data.PrinterSummary.Total -ne @($diagnostic.Printers).Count){throw 'JSON printer summary does not match the reused diagnostic object.'}
     if($data.DriverSummary.TotalBindings -ne @($diagnostic.Printers).Count){throw 'JSON driver summary does not match printer bindings.'}

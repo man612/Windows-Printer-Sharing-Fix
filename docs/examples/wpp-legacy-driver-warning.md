@@ -8,7 +8,7 @@ Context: basic host transport is healthy, the printer connection is not installe
 {
   "Schema": "windows-printer-sharing-fix/diagnosis",
   "SchemaVersion": 1,
-  "ToolVersion": "4.0.3",
+  "ToolVersion": "4.1.0",
   "Windows": {"Name": "Windows 11", "DisplayVersion": "24H2", "Build": 26100},
   "Role": "Client",
   "WPP": {"Enabled": true},
