@@ -219,6 +219,79 @@ function Get-PrinterInventory {
     } catch { Write-Log $_.Exception.Message 'WARN'; return @() }
 }
 
+function Get-PrinterDriverMetadataSafe {
+    try {
+        if(Get-Command Get-PrinterDriver -ErrorAction SilentlyContinue){
+            return @(Get-PrinterDriver -ErrorAction SilentlyContinue | Select-Object Name,MajorVersion,Manufacturer,provider,InfPath,IsPackageAware,PrinterEnvironment)
+        }
+    } catch { Write-Log $_.Exception.Message 'WARN' }
+    return @()
+}
+
+function Get-NormalizedDriverModel([object[]]$Matches) {
+    $versions=@($Matches | ForEach-Object { try{[int]$_.MajorVersion}catch{0} } | Where-Object {$_ -gt 0} | Select-Object -Unique)
+    if($versions.Count -ne 1){return 'Unknown'}
+    switch([int]$versions[0]){3{return 'V3'};4{return 'V4'};default{return 'Unknown'}}
+}
+
+function Get-NormalizedDriverProviderClass([object[]]$Matches) {
+    $classes=@()
+    foreach($driver in @($Matches)){
+        $provider=if(-not [string]::IsNullOrWhiteSpace([string]$driver.provider)){[string]$driver.provider}else{[string]$driver.Manufacturer}
+        if([string]::IsNullOrWhiteSpace($provider)){$classes+='Unknown'}
+        elseif($provider.Trim() -ieq 'Microsoft'){$classes+='MicrosoftProvided'}
+        else{$classes+='ThirdParty'}
+    }
+    $positive=@($classes | Where-Object {$_ -ne 'Unknown'} | Select-Object -Unique)
+    if($positive.Count -eq 1){return [string]$positive[0]}
+    if($positive.Count -gt 1){return 'Unknown'}
+    return 'Unknown'
+}
+
+function Get-NormalizedDriverTechnology([string]$DriverName,[string]$ProviderClass,[bool]$HasMetadata) {
+    if(-not $HasMetadata -or $ProviderClass -ne 'MicrosoftProvided'){return 'OtherOrUnknown'}
+    switch($DriverName){
+        'Microsoft IPP Class Driver'{return 'MicrosoftIppClassDriver'}
+        'Universal Print Class Driver'{return 'UniversalPrintClassDriver'}
+        default{return 'OtherOrUnknown'}
+    }
+}
+
+function Get-PrinterDriverClassification([object]$Printer,[object[]]$DriverMetadata) {
+    $driverName=if($null -ne $Printer){[string]$Printer.DriverName}else{''}
+    $matches=@($DriverMetadata | Where-Object {[string]$_.Name -ieq $driverName})
+    $model=Get-NormalizedDriverModel $matches
+    $providerClass=Get-NormalizedDriverProviderClass $matches
+    $technology=Get-NormalizedDriverTechnology $driverName $providerClass ($matches.Count -gt 0)
+    return [pscustomobject]@{DriverModel=$model;ProviderClass=$providerClass;Technology=$technology;Evidence=if($matches.Count){'PrinterDriverMetadata'}else{'NoMatchingDriverMetadata'}}
+}
+function Add-PrinterDriverClassifications([object[]]$Printers,[object[]]$DriverMetadata) {
+    $out=@()
+    foreach($printer in @($Printers)){
+        $classification=Get-PrinterDriverClassification $printer $DriverMetadata
+        $out += [pscustomobject]@{
+            Name=$printer.Name;DriverName=$printer.DriverName;PortName=$printer.PortName;Shared=[bool]$printer.Shared
+            ShareName=$printer.ShareName;Type=$printer.Type;ComputerName=$printer.ComputerName
+            DriverModel=$classification.DriverModel;DriverProviderClass=$classification.ProviderClass
+            DriverTechnology=$classification.Technology;DriverEvidence=$classification.Evidence
+        }
+    }
+    return @($out)
+}
+
+function Get-PrinterDriverClassificationSummary([object[]]$Printers) {
+    $items=@($Printers)
+    $count = { param([string]$Property,[string]$Value) return @($items | Where-Object {$prop=$_.PSObject.Properties[$Property];$prop -and [string]$prop.Value -eq $Value}).Count }
+    $v3=(& $count 'DriverModel' 'V3');$v4=(& $count 'DriverModel' 'V4')
+    $microsoft=(& $count 'DriverProviderClass' 'MicrosoftProvided');$thirdParty=(& $count 'DriverProviderClass' 'ThirdParty')
+    return [pscustomobject]@{
+        Total=$items.Count
+        V3=$v3;V4=$v4;ModelUnknown=[Math]::Max(0,$items.Count-$v3-$v4)
+        MicrosoftProvided=$microsoft;ThirdParty=$thirdParty;ProviderUnknown=[Math]::Max(0,$items.Count-$microsoft-$thirdParty)
+        MicrosoftIppClassDriver=(& $count 'DriverTechnology' 'MicrosoftIppClassDriver');UniversalPrintClassDriver=(& $count 'DriverTechnology' 'UniversalPrintClassDriver')
+    }
+}
+
 function Get-NetworkProfilesSafe {
     try {
         if (Get-Command Get-NetConnectionProfile -ErrorAction SilentlyContinue) { return @(Get-NetConnectionProfile | Select-Object Name,InterfaceAlias,InterfaceIndex,NetworkCategory,IPv4Connectivity,IPv6Connectivity) }
@@ -460,6 +533,13 @@ function Get-NextInvestigationSignals($D) {
     if($eventsProp){
         foreach($category in @($eventsProp.Value|ForEach-Object{[string]$_.Category}|Where-Object{$_}|Select-Object -Unique)){$signals.Add(('PrintService:{0}' -f $category))}
     }
+    $printersProp=$D.PSObject.Properties['Printers']
+    if($printersProp){
+        $inventory=@($printersProp.Value)
+        if(@($inventory|Where-Object{$m=$_.PSObject.Properties['DriverModel'];$p=$_.PSObject.Properties['DriverProviderClass'];$m -and $p -and $m.Value -eq 'V3' -and $p.Value -eq 'ThirdParty'}).Count){$signals.Add('DriverInventory:ThirdPartyV3')}
+        if(@($inventory|Where-Object{$m=$_.PSObject.Properties['DriverModel'];$p=$_.PSObject.Properties['DriverProviderClass'];$m -and $p -and $m.Value -eq 'V4' -and $p.Value -eq 'ThirdParty'}).Count){$signals.Add('DriverInventory:ThirdPartyV4')}
+        if(@($inventory|Where-Object{$tech=$_.PSObject.Properties['DriverTechnology'];$tech -and $tech.Value -eq 'MicrosoftIppClassDriver'}).Count){$signals.Add('DriverInventory:MicrosoftIppClassDriver')}
+    }
     return @($signals)
 }
 
@@ -556,6 +636,8 @@ function Invoke-Diagnosis([switch]$Quiet) {
     $os=Get-OsInfo;$osMs=$step.ElapsedMilliseconds;$step.Restart()
     $spooler=Get-Service Spooler -ErrorAction SilentlyContinue;$spoolerMs=$step.ElapsedMilliseconds;$step.Restart()
     $printers=@(Get-PrinterInventory);$printersMs=$step.ElapsedMilliseconds;$step.Restart()
+    $driverMetadata=@(Get-PrinterDriverMetadataSafe);$printerDriversMs=$step.ElapsedMilliseconds;$step.Restart()
+    $printers=@(Add-PrinterDriverClassifications $printers $driverMetadata)
     $profiles=@(Get-NetworkProfilesSafe);$profilesMs=$step.ElapsedMilliseconds;$step.Restart()
     $wpp=Get-WppState;$wppMs=$step.ElapsedMilliseconds;$step.Restart()
     $errors=@(Get-RecentPrintErrors);$eventsMs=$step.ElapsedMilliseconds
@@ -586,11 +668,11 @@ function Invoke-Diagnosis([switch]$Quiet) {
         $findings.Add([pscustomobject]@{Severity='INFO';Text=(L "Recent PrintService warnings/errors by layer: $eventLayers." "Peringatan/error PrintService terbaru menurut lapisan: $eventLayers.")})
     }
     $diagClock.Stop()
-    $timing=[pscustomobject]@{OS=[int64]$osMs;Spooler=[int64]$spoolerMs;Printers=[int64]$printersMs;Profiles=[int64]$profilesMs;WPP=[int64]$wppMs;PrintEvents=[int64]$eventsMs;PolicySources=[int64]$policySourcesMs;SMB1=[int64]$smb1Ms;Total=[int64]$diagClock.ElapsedMilliseconds}
+    $timing=[pscustomobject]@{OS=[int64]$osMs;Spooler=[int64]$spoolerMs;Printers=[int64]$printersMs;PrinterDrivers=[int64]$printerDriversMs;Profiles=[int64]$profilesMs;WPP=[int64]$wppMs;PrintEvents=[int64]$eventsMs;PolicySources=[int64]$policySourcesMs;SMB1=[int64]$smb1Ms;Total=[int64]$diagClock.ElapsedMilliseconds}
     $result=[pscustomobject]@{CollectedAtUtc=(Get-Date).ToUniversalTime().ToString('o');OS=$os;PowerShell=$PSVersionTable.PSVersion.ToString();Role=$role;Spooler=$spooler;Printers=$printers;SharedPrinters=$shared;Connections=$connections;Profiles=$profiles;WPP=$wpp;PrintErrors=$errors;RpcPrivacy=$rpcPrivacy;RpcUseNamedPipe=$rpcPipe;RpcProtocols=$rpcProtocols;PointAndPrint=$point;PolicySources=$policySources;GuestAuth=$guest;LmCompatibility=$lm;BlankPassword=$blank;SMB1Client=$smb1;Findings=$findings;TimingMs=$timing}
     $script:LastDiagnostic=$result
     Write-Log "Diagnosis role=$role printers=$($printers.Count) findings=$($findings.Count)"
-    Write-Log "Diagnosis timing ms: os=$osMs spooler=$spoolerMs printers=$printersMs profiles=$profilesMs wpp=$wppMs events=$eventsMs policySources=$policySourcesMs smb1=$smb1Ms total=$($diagClock.ElapsedMilliseconds)"
+    Write-Log "Diagnosis timing ms: os=$osMs spooler=$spoolerMs printers=$printersMs printerDrivers=$printerDriversMs profiles=$profilesMs wpp=$wppMs events=$eventsMs policySources=$policySourcesMs smb1=$smb1Ms total=$($diagClock.ElapsedMilliseconds)"
     if(-not $Quiet){Show-DiagnosticReport $result}; return $result
 }
 
@@ -603,6 +685,9 @@ function Show-DiagnosticReport($D) {
     Write-Host ((L 'Detected role   : {0}' 'Peran terdeteksi: {0}') -f (Localize-SystemValue $D.Role))
     Write-Host ('Print Spooler   : {0}' -f $spoolerState)
     Write-Host ((L 'Printers        : {0} total / {1} shared / {2} network connection(s)' 'Printer         : {0} total / {1} dishare / {2} koneksi jaringan') -f $D.Printers.Count,$D.SharedPrinters.Count,$D.Connections.Count)
+    $driverSummary=Get-PrinterDriverClassificationSummary $D.Printers
+    Write-Host ((L 'Driver models   : V3={0} / V4={1} / Unknown={2}' 'Model driver    : V3={0} / V4={1} / Tidak diketahui={2}') -f $driverSummary.V3,$driverSummary.V4,$driverSummary.ModelUnknown)
+    Write-Host ((L 'Driver providers: Microsoft={0} / Third-party={1} / Unknown={2}' 'Penyedia driver : Microsoft={0} / Pihak ketiga={1} / Tidak diketahui={2}') -f $driverSummary.MicrosoftProvided,$driverSummary.ThirdParty,$driverSummary.ProviderUnknown)
     Write-Host ('WPP             : {0}' -f $wppState)
     Write-Host ((L 'SMB1 client     : {0}' 'Klien SMB1      : {0}') -f (Localize-SystemValue ([string]$D.SMB1Client)))
     Write-Rule
@@ -611,8 +696,8 @@ function Show-DiagnosticReport($D) {
     Show-NextInvestigation (Get-NextInvestigation $D $null)
     $policySourcesProp=$D.PSObject.Properties['PolicySources']
     if($policySourcesProp -and $policySourcesProp.Value){$configuredPolicySources=@($policySourcesProp.Value.PSObject.Properties|Where-Object{$_.Value.Configured});if($configuredPolicySources.Count){Write-Rule;Write-Host (L 'Printer policy source evidence:' 'Bukti sumber kebijakan printer:');foreach($entry in $configuredPolicySources){Write-Host ('  {0}: {1}' -f (Get-PrinterPolicyDisplayName $entry.Name),(Get-PolicySourceLabel ([string]$entry.Value.Source)))}}}
-    if($D.SharedPrinters.Count){Write-Rule;Write-Host (L 'Shared printers:' 'Printer yang dishare:');foreach($p in $D.SharedPrinters){Write-Host ('  - {0} | share={1} | driver={2}' -f $p.Name,$p.ShareName,$p.DriverName)}}
-    if($D.Connections.Count){Write-Rule;Write-Host (L 'Network printer connections:' 'Koneksi printer jaringan:');foreach($p in $D.Connections){Write-Host ('  - {0} | driver={1}' -f $p.Name,$p.DriverName)}}
+    if($D.SharedPrinters.Count){Write-Rule;Write-Host (L 'Shared printers:' 'Printer yang dishare:');foreach($p in $D.SharedPrinters){Write-Host ('  - {0} | share={1} | driver={2} | {3}/{4}' -f $p.Name,$p.ShareName,$p.DriverName,$p.DriverModel,$p.DriverProviderClass)}}
+    if($D.Connections.Count){Write-Rule;Write-Host (L 'Network printer connections:' 'Koneksi printer jaringan:');foreach($p in $D.Connections){Write-Host ('  - {0} | driver={1} | {2}/{3}' -f $p.Name,$p.DriverName,$p.DriverModel,$p.DriverProviderClass)}}
     if($D.Profiles.Count){Write-Rule;Write-Host (L 'Network profiles:' 'Profil jaringan:');foreach($n in $D.Profiles){Write-Host ('  [{0}] {1} / {2} / IPv4={3}' -f $n.InterfaceIndex,$n.InterfaceAlias,(Localize-SystemValue ([string]$n.NetworkCategory)),(Localize-SystemValue ([string]$n.IPv4Connectivity)))}}
     if($D.PrintErrors.Count){Write-Rule;Write-Host (L 'Recent PrintService events:' 'Event PrintService terbaru:');foreach($e in $D.PrintErrors|Select-Object -First 5){$m=([string]$e.Message -replace '\s+',' ');if($m.Length -gt 120){$m=$m.Substring(0,120)+'...'};$layer=Get-PrintServiceCategoryLabel ([string]$e.Category);$code='';if($null -ne $e.Win32Code){$code=' | Win32={0}/{1}' -f $e.Win32Code,(Get-PrintServiceCodeClassLabel ([string]$e.CodeClass))};Write-Host ('  {0:g} ID {1} [{2}{3}]: {4}' -f $e.TimeCreated,$e.Id,$layer,$code,$m)}}
     Write-Rule; Write-Info ('Log: {0}' -f $script:CurrentLog)
@@ -908,6 +993,7 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null) {
     $target=$null
     if($null -ne $TargetPath){$target=[pscustomobject]@{TestedAtUtc=[string]$TargetPath.TestedAtUtc;DnsResolved=[bool]$TargetPath.DnsResolved;Smb445Reachable=[bool]$TargetPath.Smb445Reachable;Rpc135Reachable=[bool]$TargetPath.Rpc135Reachable;ShareNamespaceAccessible=[bool]$TargetPath.ShareNamespaceAccessible;PrinterInstalled=[bool]$TargetPath.PrinterInstalled;LikelyLayer=[string]$TargetPath.LikelyLayer}}
     $next=Get-NextInvestigation $D $TargetPath
+    $driverSummary=Get-PrinterDriverClassificationSummary $D.Printers
     return [ordered]@{
         Schema='windows-printer-sharing-fix/diagnosis'
         SchemaVersion=1
@@ -921,6 +1007,7 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null) {
         Role=[string]$D.Role
         Spooler=[ordered]@{Present=($null -ne $D.Spooler);Status=if($D.Spooler){[string]$D.Spooler.Status}else{'Missing'}}
         PrinterSummary=[ordered]@{Total=@($D.Printers).Count;Shared=@($D.SharedPrinters).Count;NetworkConnections=@($D.Connections).Count}
+        DriverSummary=[ordered]@{TotalBindings=[int]$driverSummary.Total;Models=[ordered]@{V3=[int]$driverSummary.V3;V4=[int]$driverSummary.V4;Unknown=[int]$driverSummary.ModelUnknown};Providers=[ordered]@{MicrosoftProvided=[int]$driverSummary.MicrosoftProvided;ThirdParty=[int]$driverSummary.ThirdParty;Unknown=[int]$driverSummary.ProviderUnknown};Technologies=[ordered]@{MicrosoftIppClassDriver=[int]$driverSummary.MicrosoftIppClassDriver;UniversalPrintClassDriver=[int]$driverSummary.UniversalPrintClassDriver}}
         NetworkProfiles=$profiles
         WPP=[ordered]@{Enabled=[bool]$D.WPP.Enabled;GroupPolicy=(& $state $D.WPP.GroupPolicy);Mode=(& $state $D.WPP.Mode);EnabledBy=(& $state $D.WPP.EnabledBy)}
         Policies=[ordered]@{RpcPrivacy=(& $state $D.RpcPrivacy);RpcUseNamedPipe=(& $state $D.RpcUseNamedPipe);RpcProtocols=(& $state $D.RpcProtocols);PointAndPrint=(& $state $D.PointAndPrint);GuestAuth=(& $state $D.GuestAuth);LmCompatibility=(& $state $D.LmCompatibility);BlankPassword=(& $state $D.BlankPassword)}
@@ -961,7 +1048,7 @@ function Export-DiagnosticText {
     )
     foreach($f in $d.Findings){$lines+="[$($f.Severity)] $($f.Text)"}
     $lines+='';$lines+=(L 'Printers:' 'Printer:')
-    foreach($p in $d.Printers){$lines+="- $($p.Name) | driver=$($p.DriverName) | share=$($p.ShareName)"}
+    foreach($p in $d.Printers){$lines+="- $($p.Name) | driver=$($p.DriverName) | share=$($p.ShareName) | model=$($p.DriverModel) | provider=$($p.DriverProviderClass) | technology=$($p.DriverTechnology)"}
     $lines|Set-Content -LiteralPath $path -Encoding UTF8
     Write-Ok ((L 'Diagnostic report exported: {0}' 'Laporan diagnosis diekspor: {0}') -f $path)
 }

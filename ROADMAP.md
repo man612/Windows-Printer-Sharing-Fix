@@ -7,7 +7,6 @@ This roadmap describes direction, not a promise of release dates. Stable behavio
 ### Reliability
 
 - Expand disposable host/client testing across Windows 10, Windows 11, and Windows Server.
-- Improve printer-driver classification (IPP/inbox/v3/v4/vendor) without guessing.
 
 ### Verification
 

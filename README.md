@@ -86,6 +86,7 @@ The local diagnosis is read-only and currently inspects:
 
 - Windows product, build, and PowerShell version.
 - Print Spooler state and installed printer inventory.
+- Evidence-based printer-driver classification (v3/v4, Microsoft/third-party/unknown, and exact known Microsoft class-driver technology).
 - Shared-printer host / network-printer client role.
 - Active network profiles.
 - Windows Protected Print (WPP) indicators.
@@ -169,6 +170,7 @@ The project deliberately distinguishes Windows Server from Windows 11 even when 
 - [Structured diagnostic JSON](docs/DIAGNOSTIC-JSON.md)
 - [PrintService event classification](docs/PRINTSERVICE-EVENTS.md)
 - [Printer policy source evidence](docs/POLICY-SOURCES.md)
+- [Printer driver classification](docs/DRIVER-CLASSIFICATION.md)
 - [Next-layer correlation](docs/CORRELATION.md)
 - [Sanitized diagnosis examples](docs/examples/README.md)
 - [Real-world test matrix](docs/TEST-MATRIX.md)
