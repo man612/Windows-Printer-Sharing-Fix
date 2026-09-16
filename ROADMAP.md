@@ -15,7 +15,7 @@ This roadmap describes direction, not a promise of release dates. Stable behavio
 
 - Add optional guided test-page verification.
 - Add structured JSON diagnostic export alongside the human-readable report.
-- Grow the integration matrix with anonymized real-world hardware/driver results.
+- Grow the integration matrix with anonymized real-world hardware/driver results and track accepted evidence in `docs/REAL-WORLD-RESULTS.md`.
 
 ### Distribution and docs
 

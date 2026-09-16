@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+Testing and real-world evidence infrastructure.
+
+### Added
+
+- Structured real-world compatibility results ledger for A1-A6 validation evidence.
+- Expanded Compatibility report issue form aligned with the integration matrix.
+- Read-only `tools/Collect-LabEvidence.ps1` for sanitized local Markdown/JSON evidence.
+- Runtime smoke coverage proving evidence collection stays read-only and omits common environment identifiers.
+
+### Fixed
+
+- `tools/Build-Release.ps1` can again auto-detect the stable version when `-Version` is omitted; regression coverage now exercises this path.
+
+### Unchanged
+
+- Stable repair runtime remains v4.0.3; no repair behavior or security boundary changes are included here.
+
 ## 4.0.3
 
 Stable TUI latency and regression-test polish.

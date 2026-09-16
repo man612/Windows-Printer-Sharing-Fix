@@ -130,7 +130,7 @@ GitHub Actions runs on Windows with Windows PowerShell 5.1 and checks:
 - migration of legacy language/restore state to the external runtime workspace;
 - the end-user release ZIP and SHA256 checksum.
 
-CI is a guardrail, not a substitute for real printer hardware and host/client testing. The broader lab plan is tracked in [docs/TEST-MATRIX.md](docs/TEST-MATRIX.md).
+CI is a guardrail, not a substitute for real printer hardware and host/client testing. Planned coverage lives in [docs/TEST-MATRIX.md](docs/TEST-MATRIX.md); accepted evidence is tracked separately in [docs/REAL-WORLD-RESULTS.md](docs/REAL-WORLD-RESULTS.md).
 
 ## Data, logs, and privacy
 
@@ -163,6 +163,7 @@ The project deliberately distinguishes Windows Server from Windows 11 even when 
 - [Quick start](docs/QUICKSTART.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Real-world test matrix](docs/TEST-MATRIX.md)
+- [Accepted real-world results](docs/REAL-WORLD-RESULTS.md)
 - [Security policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
 - [Roadmap](ROADMAP.md)

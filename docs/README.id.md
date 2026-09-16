@@ -73,6 +73,7 @@ Tidak ada telemetry atau upload laporan otomatis. Test UNC hanya mengakses host/
 - [Quick Start](QUICKSTART.md)
 - [Arsitektur](ARCHITECTURE.md)
 - [Test Matrix](TEST-MATRIX.md)
+- [Hasil pengujian nyata](REAL-WORLD-RESULTS.md)
 - [Security Policy](../SECURITY.md)
 - [Panduan kontribusi](../CONTRIBUTING.md)
 - [Roadmap](../ROADMAP.md)

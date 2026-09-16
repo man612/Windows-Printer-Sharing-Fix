@@ -1,5 +1,5 @@
 name: Compatibility report
-description: Report a printer, driver, Windows-version, RPC/SMB, or legacy compatibility case.
+description: Submit a structured real-world host/client result for the v4 compatibility matrix.
 title: "[Compatibility]: "
 labels:
   - compatibility
@@ -8,28 +8,72 @@ body:
   - type: markdown
     attributes:
       value: |
-        Use this form when the stable tool works differently across Windows versions, printer drivers, host/client roles, WPP, or older network-printing environments. Do not enable risky legacy settings on an exposed production network just to gather data.
+        Use this form for real Windows/printer compatibility evidence. Prefer a disposable VM or lab when testing failure paths. Do not enable risky legacy settings on an exposed production network just to complete the matrix.
+
+        Before posting, remove hostnames, usernames, domains, credentials, IP addresses, SSIDs, printer share names, and other environment-specific identifiers.
+
+  - type: dropdown
+    id: matrix
+    attributes:
+      label: Matrix case
+      description: Choose the closest case from docs/TEST-MATRIX.md.
+      options:
+        - A1 - Windows 11 -> Windows 11, IPP/inbox, WPP off
+        - A2 - Windows 11 -> Windows 11, third-party legacy driver, WPP off
+        - A3 - Windows 11 -> Windows 10 22H2/ESU, third-party legacy driver
+        - A4 - Windows 11 -> Windows 10, legacy driver, WPP on client
+        - A5 - Windows 10 -> Windows 11, supported driver
+        - A6 - Windows 11 -> Windows 11, network printer reconnect
+        - Other / additional scenario
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Tool version / commit
+      placeholder: "v4.0.3 or commit SHA"
+    validations:
+      required: true
+
   - type: input
     id: host
     attributes:
       label: Printer host Windows version/build
-      placeholder: "Windows 11 24H2 build 26100.x / not applicable"
+      placeholder: "Windows 11 24H2 build 26100.x / Windows 10 22H2 build 19045.x"
     validations:
       required: true
+
   - type: input
     id: client
     attributes:
       label: Printer client Windows version/build
-      placeholder: "Windows 10 22H2 / Windows 11 / Server / not applicable"
+      placeholder: "Windows 11 24H2 build 26100.x / Windows 10 22H2 build 19045.x"
     validations:
       required: true
-  - type: input
-    id: printer
+
+  - type: dropdown
+    id: driver_path
     attributes:
-      label: Printer model and driver path
-      placeholder: "Model; IPP/inbox/v3/v4/vendor driver if known"
+      label: Printer / driver path
+      options:
+        - IPP / inbox driver
+        - Vendor / third-party driver
+        - Existing network printer connection
+        - Simulated / disposable queue
+        - Unknown / other
     validations:
       required: true
+
+  - type: input
+    id: printer_driver
+    attributes:
+      label: Printer model / driver family
+      description: A sanitized model or driver family is enough; do not post private share names or server names.
+      placeholder: "HP Universal Printing PCL 6 / Microsoft IPP Class Driver / vendor v3 driver"
+    validations:
+      required: true
+
   - type: dropdown
     id: wpp
     attributes:
@@ -38,37 +82,110 @@ body:
         - Disabled / not detected
         - Enabled locally
         - Enabled by policy
+        - Not applicable / unknown
+    validations:
+      required: true
+
+  - type: dropdown
+    id: network_profile
+    attributes:
+      label: Relevant network profile
+      options:
+        - Private
+        - Public
+        - DomainAuthenticated
+        - Mixed / multiple profiles
         - Unknown
     validations:
       required: true
-  - type: textarea
-    id: network
+
+  - type: dropdown
+    id: failing_layer
     attributes:
-      label: Network / authentication context
-      placeholder: "Private/Public/DomainAuthenticated; workgroup/domain; anything unusual"
-  - type: textarea
-    id: result
-    attributes:
-      label: What works and what fails?
-      description: Include the exact stage that fails and any relevant error code.
+      label: Earliest failing / relevant layer
+      options:
+        - Healthy baseline / no failure
+        - Name resolution / basic network
+        - SMB TCP 445 / firewall / routing
+        - RPC TCP 135 / RPC transport
+        - Share namespace / credentials
+        - Spooler / queue
+        - Driver / Point and Print
+        - Windows Protected Print (WPP)
+        - Legacy-only compatibility
+        - Unknown / inconclusive
     validations:
       required: true
-  - type: textarea
-    id: diagnosis
+
+  - type: dropdown
+    id: repair_tier
     attributes:
-      label: Sanitized diagnosis output
+      label: Highest repair tier needed
+      options:
+        - None - diagnosis / baseline only
+        - Safe Repair
+        - Compatibility Repair (Advanced)
+        - Legacy Compatibility (High Risk)
+        - Multiple tiers / inconclusive
+    validations:
+      required: true
+
+  - type: dropdown
+    id: restore
+    attributes:
+      label: Restore verification
+      options:
+        - Not applicable - no managed change
+        - Passed - original state restored
+        - Failed - original state not restored
+        - Not tested
+    validations:
+      required: true
+
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Result
+      options:
+        - Pass - expected behavior confirmed
+        - Partial - some expected behavior confirmed
+        - Fail - behavior differs from expected
+        - Inconclusive - more evidence needed
+    validations:
+      required: true
+
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Scenario and steps
+      description: Describe only what is needed to reproduce the case.
+      placeholder: "Host shared a disposable queue; client ran Diagnose; then ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Paste relevant Diagnose output or tools/Collect-LabEvidence.ps1 output. Remove environment-specific identifiers first.
       render: text
+    validations:
+      required: true
+
   - type: textarea
-    id: workaround
+    id: notes
     attributes:
-      label: Repair/workaround tested
-      description: State whether Safe, Advanced, or Legacy was tried and whether Restore was used afterward.
+      label: Repair / restore notes
+      description: Record the action used, whether printing worked afterward, and whether Restore returned the original state.
+
   - type: checkboxes
     id: checks
     attributes:
-      label: Safety checks
+      label: Safety and privacy checks
       options:
         - label: I did not test security downgrades on an exposed production network merely to reproduce this report.
           required: true
-        - label: Sensitive environment details have been removed.
+        - label: Hostnames, usernames, domains, credentials, IP addresses, SSIDs, and private share names have been removed.
+          required: true
+        - label: I have not marked a case as Pass unless the expected functional behavior was actually exercised.
           required: true

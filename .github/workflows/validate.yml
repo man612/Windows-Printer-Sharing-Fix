@@ -29,6 +29,10 @@ jobs:
         shell: powershell
         run: .\tests\PerformanceSmoke.ps1
 
+      - name: Validate sanitized lab evidence collector
+        shell: powershell
+        run: .\tests\EvidenceSmoke.ps1
+
       - name: Validate Indonesian localization output
         shell: powershell
         run: .\tests\LocalizationSmoke.ps1

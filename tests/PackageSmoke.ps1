@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $builder = Join-Path $repo 'tools\Build-Release.ps1'
 if (-not (Test-Path -LiteralPath $builder)) { throw 'Release builder is missing.' }
@@ -25,8 +25,14 @@ try {
 
     if (Test-Path -LiteralPath (Join-Path $root '.git')) { throw 'Release package must not contain .git metadata.' }
     if (Test-Path -LiteralPath (Join-Path $root 'tests')) { throw 'Release package should not include the repository test suite.' }
+    if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\REAL-WORLD-RESULTS.md'))) { throw 'Packaged real-world results ledger is missing.' }
 
-    Write-Host 'Package smoke passed: user ZIP and SHA256 checksum are complete.' -ForegroundColor Green
+    $auto = Join-Path $temp 'auto-version'
+    & $builder -OutputDirectory $auto | Out-Null
+    $autoZip = Join-Path $auto 'Windows-Printer-Sharing-Fix-v4.0.3.zip'
+    if (-not (Test-Path -LiteralPath $autoZip)) { throw 'Release builder failed to auto-detect stable version 4.0.3.' }
+
+    Write-Host 'Package smoke passed: user ZIP/checksum are complete and auto-version detection works.' -ForegroundColor Green
 }
 finally {
     Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue

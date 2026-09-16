@@ -1,4 +1,4 @@
-# v4 Integration Test Matrix
+﻿# v4 Integration Test Matrix
 
 Static CI protects syntax and architecture rules, but printer sharing must also be validated on real/disposable Windows machines because behavior depends on OS build, driver type, policy, network profile, host/client roles, and printer hardware.
 
@@ -22,6 +22,20 @@ Do not test SMB1, insecure guest authentication, legacy LM authentication, or RP
 | A4 | Windows 11 current | Windows 10 lab | Third-party legacy driver | On (client) | WPP detection and explanation |
 | A5 | Windows 10 lab | Windows 11 current | Supported driver | N/A | Reverse mixed-generation path |
 | A6 | Windows 11 current | Windows 11 current | Network printer connection | Off | Targeted reconnect path |
+
+## Results tracking
+
+Planned scenarios and completed validation are tracked separately. See [REAL-WORLD-RESULTS.md](REAL-WORLD-RESULTS.md) for the evidence ledger and current A1-A6 status.
+
+For each real/lab run, use the repository **Compatibility report** issue form. Record the exact Windows builds, driver/path type, WPP/network state, earliest relevant failure layer, highest repair tier used, functional outcome, and Restore result when applicable.
+
+For a sanitized machine snapshot, testers working from a repository/source checkout can run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Collect-LabEvidence.ps1 -MatrixId A1 -Side Client
+```
+
+Run it once on each relevant side. The collector creates Markdown and JSON locally, omits common machine/network identifiers, and also omits installed driver names and security-posture values by default. Add the target driver manually to the issue form; use the collector's opt-in switches only when extra detail is necessary. Review every file before posting it publicly. By default, files are written under `%TEMP%\WindowsPrinterSharingFix-Evidence`.
 
 ## Network scenarios
 
