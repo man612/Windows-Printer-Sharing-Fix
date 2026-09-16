@@ -41,7 +41,9 @@ function Get-ReadOnlyFingerprint {
 }
 
 $before = Get-ReadOnlyFingerprint
+$script:LastFunctionalVerification=[pscustomobject]@{Outcome='Printed'}
 $diagnostic = Invoke-Diagnosis -Quiet
+if($null -ne $script:LastFunctionalVerification){throw 'A fresh diagnosis must clear stale functional-verification state.'}
 $after = Get-ReadOnlyFingerprint
 
 if ($before -ne $after) {

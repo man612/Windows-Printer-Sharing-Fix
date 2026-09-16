@@ -62,6 +62,7 @@ Top-level fields:
 | `Policies` | Relevant RPC, Point and Print, guest, LM, and blank-password policy state. |
 | `PolicySources` | Normalized source evidence for mapped printer policies; no GPO/domain/tenant identifiers are exported. |
 | `NextInvestigation` | Conservative normalized next-layer priority derived from existing evidence; never a root-cause claim. |
+| `FunctionalVerification` | Optional sanitized last guided test-page result: timestamps, request/outcome status, network-connection boolean, and normalized driver classification only. |
 | `SMB1Client` | Current Windows optional-feature state. |
 | `PrintServiceEvents` | Timestamp, event ID, level, normalized troubleshooting category, and optional Event 372 Win32 code/class; raw message text is omitted. |
 | `Findings` | Severity and human-readable diagnosis finding. |

@@ -53,6 +53,10 @@ jobs:
         shell: powershell
         run: .\tests\DriverClassificationSmoke.ps1
 
+      - name: Validate guided test-page verification
+        shell: powershell
+        run: .\tests\TestPageVerificationSmoke.ps1
+
       - name: Validate sanitized diagnosis examples
         shell: powershell
         run: .\tests\ExamplesSmoke.ps1

@@ -100,6 +100,8 @@ The local diagnosis is read-only and currently inspects:
 
 For a specific `\\HOST\Printer` path, the optional target test checks name resolution, TCP 445/SMB, TCP 135/RPC Endpoint Mapper, the host share namespace, and whether the printer is already connected locally.
 
+Tools and Logs also provides an explicit guided Windows test-page verification flow. It never runs from Diagnose automatically, warns before creating a real print job, and requires the user to confirm whether physical output actually appeared.
+
 ## Repair tiers
 
 | Tier | Intended use | Examples |
@@ -172,6 +174,7 @@ The project deliberately distinguishes Windows Server from Windows 11 even when 
 - [Printer policy source evidence](docs/POLICY-SOURCES.md)
 - [Printer driver classification](docs/DRIVER-CLASSIFICATION.md)
 - [Next-layer correlation](docs/CORRELATION.md)
+- [Guided test-page verification](docs/TEST-PAGE-VERIFICATION.md)
 - [Sanitized diagnosis examples](docs/examples/README.md)
 - [Real-world test matrix](docs/TEST-MATRIX.md)
 - [Accepted real-world results](docs/REAL-WORLD-RESULTS.md)

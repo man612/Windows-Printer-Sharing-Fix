@@ -78,6 +78,7 @@ Tidak ada telemetry atau upload laporan otomatis. Test UNC hanya mengakses host/
 - [Bukti sumber kebijakan printer](POLICY-SOURCES.md)
 - [Klasifikasi driver printer](DRIVER-CLASSIFICATION.md)
 - [Korelasi lapisan troubleshooting](CORRELATION.md)
+- [Verifikasi test page terpandu](TEST-PAGE-VERIFICATION.md)
 - [Contoh diagnosis yang sudah disanitasi](examples/README.md)
 - [Test Matrix](TEST-MATRIX.md)
 - [Hasil pengujian nyata](REAL-WORLD-RESULTS.md)

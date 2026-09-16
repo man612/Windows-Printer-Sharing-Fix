@@ -32,6 +32,7 @@ Set-WorkspacePaths $preferredDataRoot
 $script:CurrentLog = $null
 $script:LastDiagnostic = $null
 $script:LastTargetPathDiagnostic = $null
+$script:LastFunctionalVerification = $null
 
 $script:Text = @{
     EN = @{
@@ -632,6 +633,7 @@ function Show-NextInvestigation($Next) {
 
 function Invoke-Diagnosis([switch]$Quiet) {
     $script:LastTargetPathDiagnostic = $null
+    $script:LastFunctionalVerification = $null
     $diagClock=[System.Diagnostics.Stopwatch]::StartNew();$step=[System.Diagnostics.Stopwatch]::StartNew()
     $os=Get-OsInfo;$osMs=$step.ElapsedMilliseconds;$step.Restart()
     $spooler=Get-Service Spooler -ErrorAction SilentlyContinue;$spoolerMs=$step.ElapsedMilliseconds;$step.Restart()
@@ -978,7 +980,81 @@ function Show-LegacyMenu {
     }
 }
 
-function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null) {
+function Invoke-PrintUiTestPageRequest([string]$PrinterName) {
+    if([string]::IsNullOrWhiteSpace($PrinterName)){return [pscustomobject]@{Submitted=$false;ExitCode=$null}}
+    if($PrinterName.Contains('"')){return [pscustomobject]@{Submitted=$false;ExitCode=$null}}
+    $exe=if($env:SystemRoot){Join-Path $env:SystemRoot 'System32\rundll32.exe'}else{'rundll32.exe'}
+    try {
+        $printerArg=('/n"{0}"' -f $PrinterName)
+        $process=Start-Process -FilePath $exe -ArgumentList @('printui.dll,PrintUIEntry','/k',$printerArg) -Wait -PassThru -ErrorAction Stop
+        return [pscustomobject]@{Submitted=([int]$process.ExitCode -eq 0);ExitCode=[int]$process.ExitCode}
+    } catch {
+        return [pscustomobject]@{Submitted=$false;ExitCode=$null}
+    }
+}
+
+function New-FunctionalVerificationRecord([object]$Printer,[string]$RequestStatus,[string]$Outcome,[string]$DiagnosticCollectedAtUtc='') {
+    $read = { param($Object,$Name,$Default) $prop=$Object.PSObject.Properties[$Name];if($prop -and $null -ne $prop.Value){return [string]$prop.Value};return $Default }
+    $name=& $read $Printer 'Name' ''
+    $type=& $read $Printer 'Type' ''
+    $network=($name -like '\\*' -or $type -eq 'Connection')
+    return [pscustomobject]@{
+        VerifiedAtUtc=(Get-Date).ToUniversalTime().ToString('o')
+        DiagnosticCollectedAtUtc=$DiagnosticCollectedAtUtc
+        RequestStatus=$RequestStatus
+        Outcome=$Outcome
+        NetworkConnection=[bool]$network
+        DriverModel=(& $read $Printer 'DriverModel' 'Unknown')
+        DriverProviderClass=(& $read $Printer 'DriverProviderClass' 'Unknown')
+        DriverTechnology=(& $read $Printer 'DriverTechnology' 'OtherOrUnknown')
+    }
+}
+
+function Invoke-GuidedTestPageVerification {
+    Write-Header (L 'GUIDED TEST-PAGE VERIFICATION' 'VERIFIKASI TEST PAGE TERPANDU')
+    if($null -eq $script:LastDiagnostic){
+        Write-Info (L 'No diagnosis is cached yet; running one read-only diagnosis first.' 'Belum ada diagnosis tersimpan; menjalankan satu diagnosis read-only terlebih dahulu.')
+        [void](Invoke-Diagnosis -Quiet)
+    }
+    $rawPrinters=@(Get-PrinterInventory)
+    if(-not $rawPrinters.Count){Write-Warn (L 'No installed printers were found.' 'Tidak ditemukan printer yang terpasang.');return}
+    $printers=@(Add-PrinterDriverClassifications $rawPrinters @(Get-PrinterDriverMetadataSafe))
+    Write-Info (L 'Choose an already-installed printer for one Windows test page.' 'Pilih printer yang sudah terpasang untuk satu test page Windows.')
+    for($i=0;$i -lt $printers.Count;$i++){
+        $p=$printers[$i]
+        Write-Host ('[{0}] {1} | {2} | {3}/{4}' -f ($i+1),$p.Name,$p.DriverName,$p.DriverModel,$p.DriverProviderClass)
+    }
+    Write-Host "[B] $(T 'Back')"
+    $allowed=@(1..$printers.Count|ForEach-Object{[string]$_})+'B'
+    $choice=Read-Choice (T 'Select') $allowed
+    if($choice -eq 'B'){return}
+    $selected=$printers[[int]$choice-1]
+    Write-Rule
+    Write-Warn (L 'This creates a real Windows test-page print job and may consume paper, labels, ink, or toner.' 'Ini membuat print job test page Windows sungguhan dan dapat memakai kertas, label, tinta, atau toner.')
+    Write-Info (L 'A successful command only means Windows accepted the request; it does not prove the physical printer produced output.' 'Perintah yang berhasil hanya berarti Windows menerima permintaan; ini bukan bukti bahwa printer fisik benar-benar mencetak.')
+    if(-not(Read-YesNo (L 'Send one Windows test page now?' 'Kirim satu test page Windows sekarang?') $true)){Write-Info (L 'Test-page request cancelled.' 'Permintaan test page dibatalkan.');return}
+    $request=Invoke-PrintUiTestPageRequest ([string]$selected.Name)
+    $diagTime=if($script:LastDiagnostic){[string]$script:LastDiagnostic.CollectedAtUtc}else{''}
+    if(-not $request.Submitted){
+        $script:LastFunctionalVerification=New-FunctionalVerificationRecord $selected 'Failed' 'NotConfirmed' $diagTime
+        Write-Fail (L 'Windows did not return a successful test-page request.' 'Windows tidak mengembalikan hasil sukses untuk permintaan test page.')
+        Write-Log 'Test-page verification [printer identifier omitted] request=Failed outcome=NotConfirmed' 'WARN'
+        return
+    }
+    Write-Ok (L 'The Windows test-page request returned successfully.' 'Permintaan test page Windows kembali dengan status sukses.')
+    Write-Info (L 'Check the printer itself. The command result is not physical-print confirmation.' 'Periksa printer secara langsung. Hasil perintah bukan konfirmasi bahwa hasil cetak fisik keluar.')
+    $physical=Read-Choice (L 'Did the test page physically print correctly? [Y] Yes / [N] No / [U] Unsure' 'Apakah test page benar-benar tercetak dengan benar? [Y] Ya / [N] Tidak / [U] Tidak yakin') @('Y','N','U')
+    $outcome=switch($physical){'Y'{'Printed'};'N'{'DidNotPrint'};default{'NotConfirmed'}}
+    $script:LastFunctionalVerification=New-FunctionalVerificationRecord $selected 'Submitted' $outcome $diagTime
+    switch($outcome){
+        'Printed'{Write-Ok (L 'Physical test page confirmed by the user.' 'Test page fisik dikonfirmasi berhasil oleh pengguna.')}
+        'DidNotPrint'{Write-Warn (L 'The request was submitted, but the user reports that the page did not print.' 'Permintaan terkirim, tetapi pengguna melaporkan halaman tidak tercetak.')}
+        default{Write-Info (L 'Physical output remains unconfirmed.' 'Hasil cetak fisik masih belum terkonfirmasi.')}
+    }
+    Write-Log ("Test-page verification [printer identifier omitted] request=Submitted outcome={0} networkConnection={1} driverModel={2} provider={3}" -f $outcome,$script:LastFunctionalVerification.NetworkConnection,$script:LastFunctionalVerification.DriverModel,$script:LastFunctionalVerification.DriverProviderClass)
+}
+
+function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null,[object]$FunctionalVerification=$null) {
     if($null -eq $D){throw 'Diagnostic object is required.'}
     $state = { param($Value) if($null -eq $Value){return [pscustomobject]@{Present=$false;Value=$null;Kind=$null}}; return [pscustomobject]@{Present=[bool]$Value.Present;Value=$Value.Value;Kind=if($Value.Kind){[string]$Value.Kind}else{$null}} }
     $profiles=@($D.Profiles|ForEach-Object{[pscustomobject]@{NetworkCategory=[string]$_.NetworkCategory;IPv4Connectivity=[string]$_.IPv4Connectivity;IPv6Connectivity=[string]$_.IPv6Connectivity}})
@@ -992,6 +1068,8 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null) {
     }
     $target=$null
     if($null -ne $TargetPath){$target=[pscustomobject]@{TestedAtUtc=[string]$TargetPath.TestedAtUtc;DnsResolved=[bool]$TargetPath.DnsResolved;Smb445Reachable=[bool]$TargetPath.Smb445Reachable;Rpc135Reachable=[bool]$TargetPath.Rpc135Reachable;ShareNamespaceAccessible=[bool]$TargetPath.ShareNamespaceAccessible;PrinterInstalled=[bool]$TargetPath.PrinterInstalled;LikelyLayer=[string]$TargetPath.LikelyLayer}}
+    $verification=$null
+    if($null -ne $FunctionalVerification){$verification=[pscustomobject]@{VerifiedAtUtc=[string]$FunctionalVerification.VerifiedAtUtc;DiagnosticCollectedAtUtc=[string]$FunctionalVerification.DiagnosticCollectedAtUtc;RequestStatus=[string]$FunctionalVerification.RequestStatus;Outcome=[string]$FunctionalVerification.Outcome;NetworkConnection=[bool]$FunctionalVerification.NetworkConnection;DriverModel=[string]$FunctionalVerification.DriverModel;DriverProviderClass=[string]$FunctionalVerification.DriverProviderClass;DriverTechnology=[string]$FunctionalVerification.DriverTechnology}}
     $next=Get-NextInvestigation $D $TargetPath
     $driverSummary=Get-PrinterDriverClassificationSummary $D.Printers
     return [ordered]@{
@@ -1018,6 +1096,7 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null) {
         Findings=$findings
         TimingMs=$D.TimingMs
         TargetPath=$target
+        FunctionalVerification=$verification
     }
 }
 
@@ -1027,7 +1106,7 @@ function Export-DiagnosticJson([object]$Diagnostic=$null,[string]$OutputPath='')
     if(-not $script:ExportRoot){throw 'Export workspace is not initialized.'}
     if(-not(Test-Path -LiteralPath $script:ExportRoot)){New-Item -ItemType Directory -Path $script:ExportRoot -Force|Out-Null}
     if(-not $OutputPath){$OutputPath=Join-Path $script:ExportRoot ('diagnostic-{0}.json' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))}
-    $payload=ConvertTo-DiagnosticExportObject $Diagnostic $script:LastTargetPathDiagnostic
+    $payload=ConvertTo-DiagnosticExportObject $Diagnostic $script:LastTargetPathDiagnostic $script:LastFunctionalVerification
     $payload|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $OutputPath -Encoding UTF8
     Write-Ok ((L 'Structured diagnostic JSON exported: {0}' 'JSON diagnosis terstruktur diekspor: {0}') -f $OutputPath)
     Write-Log "Diagnostic JSON exported: $OutputPath"
@@ -1065,9 +1144,10 @@ function Show-ToolsMenu {
         Write-Host (L '[7] Export fresh diagnostic report (.txt)' '[7] Ekspor laporan diagnosis baru (.txt)')
         Write-Host (L '[8] Export latest diagnosis as sanitized JSON' '[8] Ekspor diagnosis terakhir sebagai JSON sanitized')
         Write-Host (L '[9] Test a shared printer path' '[9] Tes path printer sharing')
+        Write-Host (L '[10] Guided Windows test-page verification' '[10] Verifikasi test page Windows terpandu')
         Write-Host "[B] $(T 'Back')"
-        $c=Read-Choice (T 'Select') @('1','2','3','4','5','6','7','8','9','B');if($c -eq 'B'){return}
-        switch($c){'1'{Start-Process 'ms-settings:printers' -ErrorAction SilentlyContinue};'2'{Start-Process 'printmanagement.msc' -ErrorAction SilentlyContinue};'3'{Start-Process 'services.msc'};'4'{Start-Process 'ncpa.cpl'};'5'{Start-Process notepad.exe -ArgumentList ('"{0}"' -f $script:CurrentLog)};'6'{Start-Process explorer.exe -ArgumentList ('"{0}"' -f $script:BackupRoot)};'7'{Export-DiagnosticText;Pause-Tui};'8'{[void](Export-DiagnosticJson);Pause-Tui};'9'{Invoke-SharedPrinterPathDiagnosis;Pause-Tui}}
+        $c=Read-Choice (T 'Select') @('1','2','3','4','5','6','7','8','9','10','B');if($c -eq 'B'){return}
+        switch($c){'1'{Start-Process 'ms-settings:printers' -ErrorAction SilentlyContinue};'2'{Start-Process 'printmanagement.msc' -ErrorAction SilentlyContinue};'3'{Start-Process 'services.msc'};'4'{Start-Process 'ncpa.cpl'};'5'{Start-Process notepad.exe -ArgumentList ('"{0}"' -f $script:CurrentLog)};'6'{Start-Process explorer.exe -ArgumentList ('"{0}"' -f $script:BackupRoot)};'7'{Export-DiagnosticText;Pause-Tui};'8'{[void](Export-DiagnosticJson);Pause-Tui};'9'{Invoke-SharedPrinterPathDiagnosis;Pause-Tui};'10'{Invoke-GuidedTestPageVerification;Pause-Tui}}
     }
 }
 
@@ -1090,7 +1170,7 @@ function Show-GuideMenu {
     Write-Host (L '5. VERIFY, THEN RESTORE IF IT DID NOT HELP' '5. VERIFIKASI, LALU RESTORE JIKA TIDAK MEMBANTU') -ForegroundColor Green
     Write-Host (L '   Print a real test page. Avoid stacking more tweaks when the previous change did not solve the problem.' '   Cetak test page nyata. Hindari menumpuk tweak jika perubahan sebelumnya tidak menyelesaikan masalah.')
     Write-Rule
-    Write-Info (L 'Tip: Tools and Logs can test a \\HOST\Printer path without changing Windows settings.' 'Tip: Alat dan Log dapat mengetes path \\HOST\Printer tanpa mengubah pengaturan Windows.')
+    Write-Info (L 'Tip: Tools and Logs can test a \\HOST\Printer path read-only, or run an explicit guided Windows test page for functional verification.' 'Tip: Alat dan Log dapat mengetes path \\HOST\Printer secara read-only, atau menjalankan test page Windows terpandu untuk verifikasi fungsi.')
     Pause-Tui
 }
 
