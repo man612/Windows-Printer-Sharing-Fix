@@ -10,7 +10,7 @@ Thanks for helping improve a small Windows troubleshooting project. Useful contr
 - For questions or working-setup notes, prefer GitHub Discussions.
 - New contributors can look for `good first issue` and `help wanted` labels.
 
-Before posting logs or diagnostics, remove credentials, usernames, internal hostnames/domains, private addresses, and any unrelated sensitive environment details.
+Before posting logs or diagnostics, prefer **Tools and Logs > Export latest diagnosis as sanitized JSON** when structured evidence is useful. Review the file before posting it publicly; do not assume sanitization makes every policy value non-sensitive.
 
 ## Development baseline
 
@@ -45,7 +45,11 @@ Run the full stable test set before opening a PR:
 ```powershell
 powershell.exe -NoProfile -File .\tests\Validate.ps1
 powershell.exe -NoProfile -File .\tests\RuntimeSmoke.ps1
+powershell.exe -NoProfile -File .\tests\PerformanceSmoke.ps1
+powershell.exe -NoProfile -File .\tests\EvidenceSmoke.ps1
+powershell.exe -NoProfile -File .\tests\JsonExportSmoke.ps1
 powershell.exe -NoProfile -File .\tests\LocalizationSmoke.ps1
+powershell.exe -NoProfile -File .\tests\WorkspaceSmoke.ps1
 powershell.exe -NoProfile -File .\tests\PackageSmoke.ps1
 ```
 
@@ -73,7 +77,7 @@ Keep PRs focused. Large unrelated cleanup mixed into a repair change makes secur
 - WPP state when relevant.
 - Network profile and workgroup/domain context.
 - Exact error code/message.
-- Sanitized diagnostic report and the smallest relevant log excerpt.
+- Sanitized diagnostic JSON/report and the smallest relevant log excerpt.
 - What changed immediately before the failure.
 - What repair was attempted and whether restore was used afterward.
 

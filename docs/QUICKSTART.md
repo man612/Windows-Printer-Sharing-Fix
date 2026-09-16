@@ -18,10 +18,10 @@
 
 ## Before sharing a diagnostic report
 
-Redact usernames, hostnames, printer share names, IPs, internal domains, credentials, and other sensitive environment details that are not needed to reproduce the problem.
+Use **Tools and Logs > Export latest diagnosis as sanitized JSON** when machine-readable evidence is useful. The JSON reuses the latest diagnosis object and omits common machine/network identifiers, printer/share names, IP addresses, and raw event messages. Review every file before posting it publicly.
 
 ## Runtime files
 
-Logs, language preference, and managed restore snapshots are stored under `%LOCALAPPDATA%\WindowsPrinterSharingFix` by default.
+Logs, structured diagnosis exports, language preference, and managed restore snapshots are stored under `%LOCALAPPDATA%\WindowsPrinterSharingFix` by default.
 
 For Bahasa Indonesia, switch language from the TUI or read [README.id.md](README.id.md).

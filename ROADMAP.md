@@ -14,7 +14,7 @@ This roadmap describes direction, not a promise of release dates. Stable behavio
 ### Verification
 
 - Add optional guided test-page verification.
-- Add structured JSON diagnostic export alongside the human-readable report.
+- Harden the versioned structured-diagnosis schema only when real consumers need additional fields.
 - Grow the integration matrix with anonymized real-world hardware/driver results and track accepted evidence in `docs/REAL-WORLD-RESULTS.md`.
 
 ### Distribution and docs

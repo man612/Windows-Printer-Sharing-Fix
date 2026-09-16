@@ -50,7 +50,7 @@ For failure-path tests, include the failure that was deliberately introduced and
 
 ## How to submit a result
 
-Open the repository's **Compatibility report** issue form. Choose the A1–A6 case, fill the structured fields, and attach only sanitized evidence. For repeatable lab collection, `tools/Collect-LabEvidence.ps1` can generate local Markdown and JSON without common machine/network identifiers. Installed driver names and security-posture values are also omitted by default; add the target driver manually in the issue form. Use `-IncludeDriverNames` or `-IncludeSecurityPosture` only when that extra detail is necessary and safe to publish.
+Open the repository's **Compatibility report** issue form. Choose the A1–A6 case, fill the structured fields, and attach only sanitized evidence. For normal runtime evidence, **Tools and Logs** can export the latest diagnosis as sanitized structured JSON. For repeatable lab collection from a source checkout, `tools/Collect-LabEvidence.ps1` can generate local Markdown and JSON without common machine/network identifiers. Installed driver names and security-posture values are also omitted by default; add the target driver manually in the issue form. Use `-IncludeDriverNames` or `-IncludeSecurityPosture` only when that extra detail is necessary and safe to publish.
 
 Accepted reports should be linked from the table above. If a report exposes a bug or regression, keep the matrix status honest and link the follow-up issue/PR rather than marking the case as validated.
 

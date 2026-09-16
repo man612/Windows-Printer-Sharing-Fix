@@ -61,6 +61,7 @@ Mulai v4.0.2, preference bahasa, log, dan snapshot restore disimpan di:
 %LOCALAPPDATA%\WindowsPrinterSharingFix\
 ├── backups\
 ├── logs\
+├── exports\
 └── language.cfg
 ```
 
@@ -72,6 +73,7 @@ Tidak ada telemetry atau upload laporan otomatis. Test UNC hanya mengakses host/
 
 - [Quick Start](QUICKSTART.md)
 - [Arsitektur](ARCHITECTURE.md)
+- [JSON diagnosis terstruktur](DIAGNOSTIC-JSON.md)
 - [Test Matrix](TEST-MATRIX.md)
 - [Hasil pengujian nyata](REAL-WORLD-RESULTS.md)
 - [Security Policy](../SECURITY.md)
@@ -81,7 +83,7 @@ Tidak ada telemetry atau upload laporan otomatis. Test UNC hanya mengakses host/
 
 ## Kontribusi dan bantuan
 
-Bug report, hasil pengujian kompatibilitas, dokumentasi, dan PR yang fokus sangat terbuka. Sebelum membuat issue, jalankan Diagnosis dan hapus hostname, username, credential, atau data sensitif dari log yang dibagikan.
+Bug report, hasil pengujian kompatibilitas, dokumentasi, dan PR yang fokus sangat terbuka. Setelah menjalankan Diagnosis, menu **Alat dan Log** dapat mengekspor diagnosis terakhir sebagai JSON sanitized. Tetap periksa file sebelum dibagikan publik.
 
 Gunakan [Issue Forms](https://github.com/man612/Windows-Printer-Sharing-Fix/issues/new/choose) untuk bug/kompatibilitas dan [Discussions](https://github.com/man612/Windows-Printer-Sharing-Fix/discussions) untuk pertanyaan atau berbagi setup yang berhasil.
 

@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a bug. Run **Diagnose this PC** first when possible and remove credentials, internal hostnames/domains, private addresses, and unrelated sensitive data before posting logs.
+        Thanks for reporting a bug. Run **Diagnose this PC** first when possible. **Tools and Logs** can export the latest diagnosis as sanitized JSON; review the file before posting it publicly.
   - type: input
     id: version
     attributes:
@@ -64,8 +64,8 @@ body:
   - type: textarea
     id: diagnosis
     attributes:
-      label: Sanitized diagnosis / relevant log excerpt
-      description: Paste only the portion needed to understand the failure. Redact sensitive environment details.
+      label: Sanitized diagnosis JSON / relevant log excerpt
+      description: Paste the structured JSON export or only the log portion needed to understand the failure. Review/redact sensitive environment details before posting.
       render: text
   - type: textarea
     id: changes
