@@ -65,11 +65,34 @@ try {
     foreach($key in @('ComputerName','MachineName','UserName','Domain','IPAddress','SSID','PortName','ShareName','PrinterName','InterfaceAlias','Message')){
         if($jsonText -match ('"'+[regex]::Escape($key)+'"\s*:')){throw "JSON export exposes forbidden field: $key"}
     }
-    $secrets=@($env:COMPUTERNAME,$env:USERNAME,$env:USERDOMAIN)
-    try{$secrets += @(Get-Printer -ErrorAction Stop | ForEach-Object {$_.Name;$_.ShareName;$_.PortName;$_.ComputerName})}catch{}
-    try{$secrets += @(Get-NetConnectionProfile -ErrorAction Stop | ForEach-Object {$_.Name;$_.InterfaceAlias})}catch{}
-    foreach($secret in @($secrets | Where-Object {$_} | Select-Object -Unique)){
-        if(([string]$secret).Length -ge 3 -and $jsonText -match [regex]::Escape([string]$secret)){throw "JSON export leaked an environment identifier: $secret"}
+    function Get-JsonStringLeaves($Value) {
+        if($null -eq $Value){return}
+        if($Value -is [string]){Write-Output ([string]$Value);return}
+        if($Value -is [System.Collections.IDictionary]){
+            foreach($key in $Value.Keys){Get-JsonStringLeaves $Value[$key]}
+            return
+        }
+        if($Value -is [System.Collections.IEnumerable]){
+            foreach($item in $Value){Get-JsonStringLeaves $item}
+            return
+        }
+        foreach($property in $Value.PSObject.Properties){Get-JsonStringLeaves $property.Value}
+    }
+    $leafStrings=@(Get-JsonStringLeaves $data)
+
+    # Strong identifiers must not appear even embedded inside another exported value.
+    $strongSecrets=@($env:COMPUTERNAME,$env:USERNAME,$env:USERDOMAIN)
+    try{$strongSecrets += @(Get-NetIPAddress -ErrorAction Stop | Select-Object -ExpandProperty IPAddress)}catch{}
+    foreach($secret in @($strongSecrets | Where-Object {$_} | Select-Object -Unique)){
+        if(([string]$secret).Length -ge 3 -and @($leafStrings | Where-Object {$_ -match [regex]::Escape([string]$secret)}).Count){throw "JSON export leaked a strong environment identifier: $secret"}
+    }
+
+    # Printer/profile labels can be generic words (for example "Network"), so require exact leaf-value leakage.
+    $labelSecrets=@()
+    try{$labelSecrets += @(Get-Printer -ErrorAction Stop | ForEach-Object {$_.Name;$_.ShareName;$_.PortName;$_.ComputerName})}catch{}
+    try{$labelSecrets += @(Get-NetConnectionProfile -ErrorAction Stop | ForEach-Object {$_.Name;$_.InterfaceAlias})}catch{}
+    foreach($secret in @($labelSecrets | Where-Object {$_} | Select-Object -Unique)){
+        if(@($leafStrings | Where-Object {$_ -eq [string]$secret}).Count){throw "JSON export leaked an environment label value: $secret"}
     }
 
     Write-Host ('JSON export smoke passed: schema v{0}, {1} printer(s), {2} network profile(s), cached diagnosis reused.' -f $data.SchemaVersion,$data.PrinterSummary.Total,$data.NetworkProfiles.Count) -ForegroundColor Green
