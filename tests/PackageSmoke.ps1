@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $builder = Join-Path $repo 'tools\Build-Release.ps1'
 if (-not (Test-Path -LiteralPath $builder)) { throw 'Release builder is missing.' }

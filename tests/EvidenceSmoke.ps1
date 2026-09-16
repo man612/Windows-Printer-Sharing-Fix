@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $collector = Join-Path $repo 'tools\Collect-LabEvidence.ps1'
 if (-not (Test-Path -LiteralPath $collector)) { throw 'Lab evidence collector is missing.' }
