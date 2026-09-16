@@ -8,7 +8,7 @@ Context: the user entered a valid shared-printer path, but the host name could n
 {
   "Schema": "windows-printer-sharing-fix/diagnosis",
   "SchemaVersion": 1,
-  "ToolVersion": "4.0.3",
+  "ToolVersion": "4.1.0",
   "Windows": {"Name": "Windows 11", "DisplayVersion": "24H2", "Build": 26100},
   "Role": "Client",
   "Spooler": {"Present": true, "Status": "Running"},

@@ -58,7 +58,7 @@ $legacy = Get-FunctionText 'Show-LegacyMenu'
 if ($legacy -match '\[[0-9]+\].*Full Fix') { throw 'One-click legacy Full Fix must not return.' }
 
 # Stable UX release guards.
-if ($source -notmatch [regex]::Escape("`$script:Version = '4.0.3'")) { throw 'Stable script version is not 4.0.3.' }
+if ($source -notmatch [regex]::Escape("`$script:Version = '4.1.0'")) { throw 'Stable script version is not 4.1.0.' }
 if ($source -notmatch "Guide='Guide'" -or $source -notmatch "Guide='Panduan'") { throw 'Guide label is not localized in both languages.' }
 $guide = Get-FunctionText 'Show-GuideMenu'
 if ($guide -notmatch 'DIAGNOSIS DULU' -or $guide -notmatch 'LEGACY ADALAH PILIHAN TERAKHIR') { throw 'Indonesian in-app guide content is incomplete.' }

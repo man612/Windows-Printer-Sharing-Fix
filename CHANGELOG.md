@@ -2,7 +2,11 @@
 
 ## Unreleased
 
-Testing, real-world evidence, and structured diagnostic export infrastructure.
+No changes yet.
+
+## 4.1.0 - 2026-09-16
+
+Evidence-first diagnostics, privacy-safe structured reporting, and explicit functional verification.
 
 ### Added
 
@@ -26,7 +30,9 @@ Testing, real-world evidence, and structured diagnostic export infrastructure.
 
 ### Unchanged
 
-- Stable repair behavior and security boundaries remain unchanged; the new JSON path is export-only and local.
+- Stable repair behavior and security boundaries remain unchanged; diagnosis/export additions do not broaden the managed Windows mutation set.
+- Real A1-A6 host/client compatibility validation remains pending and is not claimed by this release.
+- The experimental OpenTUI frontend remains separate and is not included in this stable release.
 
 ## 4.0.3
 
