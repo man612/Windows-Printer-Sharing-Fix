@@ -18,6 +18,7 @@ Testing, real-world evidence, and structured diagnostic export infrastructure.
 - Read-only printer-policy source evidence using RSoP plus conservative MDM-aware signals, with normalized privacy-safe provenance labels in structured JSON.
 - Conservative `Next layer to investigate` correlation that prioritizes the earliest failed dependency without claiming root cause or recommending security downgrades.
 - Evidence-based installed-printer driver classification using Windows driver metadata, with privacy-safe aggregate JSON counts.
+- Explicit guided Windows test-page verification with physical-output confirmation and sanitized structured-result export.
 
 ### Fixed
 
