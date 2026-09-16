@@ -291,5 +291,3 @@ $lines | Set-Content -LiteralPath $mdPath -Encoding UTF8
 Write-Host ('Evidence JSON created: {0}' -f (Split-Path -Leaf $jsonPath)) -ForegroundColor Green
 Write-Host ('Paste-ready Markdown created: {0}' -f (Split-Path -Leaf $mdPath)) -ForegroundColor Green
 Write-Host 'Files were written to the selected output directory.' -ForegroundColor DarkGray
-
-
