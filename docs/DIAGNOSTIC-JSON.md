@@ -60,7 +60,7 @@ Top-level fields:
 | `WPP` | Windows Protected Print state and relevant registry state. |
 | `Policies` | Relevant RPC, Point and Print, guest, LM, and blank-password policy state. |
 | `SMB1Client` | Current Windows optional-feature state. |
-| `PrintServiceEvents` | Timestamp, event ID, and level only; message text is omitted. |
+| `PrintServiceEvents` | Timestamp, event ID, level, normalized troubleshooting category, and optional Event 372 Win32 code/class; raw message text is omitted. |
 | `Findings` | Severity and human-readable diagnosis finding. |
 | `TimingMs` | Per-stage and total diagnosis timing from the same diagnosis run. |
 | `TargetPath` | Optional sanitized result from the latest shared-printer path test in the same diagnosis session. |

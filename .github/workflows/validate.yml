@@ -37,6 +37,10 @@ jobs:
         shell: powershell
         run: .\tests\JsonExportSmoke.ps1
 
+      - name: Validate PrintService event classification
+        shell: powershell
+        run: .\tests\PrintEventClassificationSmoke.ps1
+
       - name: Validate sanitized diagnosis examples
         shell: powershell
         run: .\tests\ExamplesSmoke.ps1
