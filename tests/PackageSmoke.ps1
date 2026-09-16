@@ -26,6 +26,7 @@ try {
     if (Test-Path -LiteralPath (Join-Path $root '.git')) { throw 'Release package must not contain .git metadata.' }
     if (Test-Path -LiteralPath (Join-Path $root 'tests')) { throw 'Release package should not include the repository test suite.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\REAL-WORLD-RESULTS.md'))) { throw 'Packaged real-world results ledger is missing.' }
+    if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\DIAGNOSTIC-JSON.md'))) { throw 'Packaged diagnostic JSON schema documentation is missing.' }
 
     $auto = Join-Path $temp 'auto-version'
     & $builder -OutputDirectory $auto | Out-Null

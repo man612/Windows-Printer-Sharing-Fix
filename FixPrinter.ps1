@@ -22,6 +22,7 @@ function Set-WorkspacePaths([string]$DataRoot) {
     $script:DataRoot = $DataRoot
     $script:BackupRoot = Join-Path $DataRoot 'backups'
     $script:LogRoot = Join-Path $DataRoot 'logs'
+    $script:ExportRoot = Join-Path $DataRoot 'exports'
     $script:LanguageFile = Join-Path $DataRoot 'language.cfg'
     $script:LatestStateFile = Join-Path $script:BackupRoot 'latest_backup.txt'
 }
@@ -30,6 +31,7 @@ $preferredDataRoot = if ($env:WPSF_DATA_ROOT) { $env:WPSF_DATA_ROOT } elseif ($e
 Set-WorkspacePaths $preferredDataRoot
 $script:CurrentLog = $null
 $script:LastDiagnostic = $null
+$script:LastTargetPathDiagnostic = $null
 
 $script:Text = @{
     EN = @{
@@ -67,13 +69,13 @@ function Localize-SystemValue([string]$Value) {
 
 function Initialize-Workspace {
     try {
-        foreach ($dir in @($script:DataRoot,$script:BackupRoot,$script:LogRoot)) {
+        foreach ($dir in @($script:DataRoot,$script:BackupRoot,$script:LogRoot,$script:ExportRoot)) {
             if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
         }
     } catch {
         $fallbackRoot = if ($env:TEMP) { Join-Path $env:TEMP 'WindowsPrinterSharingFix' } else { Join-Path $script:Root '.runtime' }
         Set-WorkspacePaths $fallbackRoot
-        foreach ($dir in @($script:DataRoot,$script:BackupRoot,$script:LogRoot)) {
+        foreach ($dir in @($script:DataRoot,$script:BackupRoot,$script:LogRoot,$script:ExportRoot)) {
             if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
         }
     }
@@ -287,6 +289,7 @@ function Test-TcpPort([string]$ComputerName,[int]$Port,[int]$TimeoutMs=2500,[Sys
 }
 
 function Invoke-Diagnosis([switch]$Quiet) {
+    $script:LastTargetPathDiagnostic = $null
     $diagClock=[System.Diagnostics.Stopwatch]::StartNew();$step=[System.Diagnostics.Stopwatch]::StartNew()
     $os=Get-OsInfo;$osMs=$step.ElapsedMilliseconds;$step.Restart()
     $spooler=Get-Service Spooler -ErrorAction SilentlyContinue;$spoolerMs=$step.ElapsedMilliseconds;$step.Restart()
@@ -316,8 +319,11 @@ function Invoke-Diagnosis([switch]$Quiet) {
     if($smb1 -match '^Enabled'){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'SMB1 client is enabled.' 'Klien SMB1 sedang aktif.')})}
     if(@($profiles|Where-Object{$_.NetworkCategory -eq 'Public' -and $_.IPv4Connectivity -ne 'Disconnected'}).Count){$findings.Add([pscustomobject]@{Severity='INFO';Text=(L 'At least one active network is Public; sharing may be intentionally restricted.' 'Setidaknya satu jaringan aktif berprofil Publik; fitur sharing mungkin memang dibatasi.')})}
     if($errors.Count){$findings.Add([pscustomobject]@{Severity='INFO';Text=(L "Recent PrintService warnings/errors found: $($errors.Count)." "Ditemukan peringatan/error PrintService terbaru: $($errors.Count).")})}
-    $result=[pscustomobject]@{OS=$os;PowerShell=$PSVersionTable.PSVersion.ToString();Role=$role;Spooler=$spooler;Printers=$printers;SharedPrinters=$shared;Connections=$connections;Profiles=$profiles;WPP=$wpp;PrintErrors=$errors;RpcPrivacy=$rpcPrivacy;RpcUseNamedPipe=$rpcPipe;RpcProtocols=$rpcProtocols;PointAndPrint=$point;GuestAuth=$guest;LmCompatibility=$lm;BlankPassword=$blank;SMB1Client=$smb1;Findings=$findings}
-    $diagClock.Stop();$script:LastDiagnostic=$result; Write-Log "Diagnosis role=$role printers=$($printers.Count) findings=$($findings.Count)"
+    $diagClock.Stop()
+    $timing=[pscustomobject]@{OS=[int64]$osMs;Spooler=[int64]$spoolerMs;Printers=[int64]$printersMs;Profiles=[int64]$profilesMs;WPP=[int64]$wppMs;PrintEvents=[int64]$eventsMs;SMB1=[int64]$smb1Ms;Total=[int64]$diagClock.ElapsedMilliseconds}
+    $result=[pscustomobject]@{CollectedAtUtc=(Get-Date).ToUniversalTime().ToString('o');OS=$os;PowerShell=$PSVersionTable.PSVersion.ToString();Role=$role;Spooler=$spooler;Printers=$printers;SharedPrinters=$shared;Connections=$connections;Profiles=$profiles;WPP=$wpp;PrintErrors=$errors;RpcPrivacy=$rpcPrivacy;RpcUseNamedPipe=$rpcPipe;RpcProtocols=$rpcProtocols;PointAndPrint=$point;GuestAuth=$guest;LmCompatibility=$lm;BlankPassword=$blank;SMB1Client=$smb1;Findings=$findings;TimingMs=$timing}
+    $script:LastDiagnostic=$result
+    Write-Log "Diagnosis role=$role printers=$($printers.Count) findings=$($findings.Count)"
     Write-Log "Diagnosis timing ms: os=$osMs spooler=$spoolerMs printers=$printersMs profiles=$profilesMs wpp=$wppMs events=$eventsMs smb1=$smb1Ms total=$($diagClock.ElapsedMilliseconds)"
     if(-not $Quiet){Show-DiagnosticReport $result}; return $result
 }
@@ -350,6 +356,7 @@ function Invoke-SharedPrinterPathDiagnosis {
     $unc=(Read-Host (L 'Enter printer path like \\PRINT-PC\OfficePrinter (blank = cancel)' 'Masukkan path printer seperti \\PC-PRINT\PrinterKantor (kosong = batal)')).Trim(); if(-not $unc){return}
     if($unc -notmatch '^\\\\([^\\]+)\\([^\\]+)$'){Write-Warn (L 'Invalid UNC printer path.' 'Path UNC printer tidak valid.');return}
     $hostName=$Matches[1]
+    $testedAt=(Get-Date).ToUniversalTime().ToString('o')
     $addresses=@(Resolve-HostAddresses $hostName 2500); $dns=($addresses.Count -gt 0)
     $smb=if($dns){Test-TcpPort $hostName 445 2500 $addresses}else{$false}; $rpc=if($dns){Test-TcpPort $hostName 135 2500 $addresses}else{$false}; $root=$false
     if($smb){try{$root=Test-Path -LiteralPath ("\\{0}\" -f $hostName) -ErrorAction SilentlyContinue}catch{}}
@@ -360,14 +367,17 @@ function Invoke-SharedPrinterPathDiagnosis {
     if($root){Write-Ok ((L 'Host share namespace accessible: \\{0}' 'Namespace share host dapat diakses: \\{0}') -f $hostName)}elseif($smb){Write-Warn (L 'SMB port is reachable but the share namespace was not accessible; credentials, sharing, or policy may be involved.' 'Port SMB dapat dijangkau tetapi namespace share tidak dapat diakses; kredensial, pengaturan sharing, atau kebijakan Windows mungkin terlibat.')}
     if($installed){Write-Ok ((L 'Printer installed locally: {0}' 'Printer sudah terpasang lokal: {0}') -f $unc)}else{Write-Info ((L 'Printer not currently installed locally: {0}' 'Printer belum terpasang lokal: {0}') -f $unc)}
     Write-Rule
-    if(-not $dns){Write-Fail (L 'Most likely layer: name resolution/basic network. Do not change printer security policies yet.' 'Lapisan yang paling mungkin bermasalah: resolusi nama/jaringan dasar. Jangan ubah kebijakan keamanan printer dulu.')}
-    elseif(-not $smb){Write-Fail (L 'Most likely layer: SMB/firewall/routing. Do not enable SMB1 unless the target is proven SMB1-only.' 'Lapisan yang paling mungkin bermasalah: SMB/firewall/routing. Jangan aktifkan SMB1 kecuali target benar-benar terbukti hanya mendukung SMB1.')}
-    elseif(-not $rpc){Write-Warn (L 'RPC reachability is suspicious. Check RPC/firewall before compatibility fallbacks.' 'Konektivitas RPC mencurigakan. Periksa RPC/firewall sebelum memakai fallback kompatibilitas.')}
-    elseif(-not $installed -and (Get-WppState).Enabled){Write-Warn (L 'WPP is enabled. If this printer depends on a legacy third-party driver, WPP compatibility is a strong candidate.' 'WPP aktif. Jika printer ini bergantung pada driver pihak ketiga yang lama, kompatibilitas WPP menjadi kandidat kuat.')}
-    elseif(-not $installed){Write-Info (L 'Basic transport is reachable. Driver installation, Point and Print policy, credentials, or the remote printer share are the next likely layers.' 'Transport dasar dapat dijangkau. Lapisan berikutnya yang paling mungkin adalah pemasangan driver, kebijakan Point and Print, kredensial, atau share printer remote.')}
+    $likelyLayer='HealthyPrerequisites'
+    if(-not $dns){$likelyLayer='NameResolutionOrBasicNetwork';Write-Fail (L 'Most likely layer: name resolution/basic network. Do not change printer security policies yet.' 'Lapisan yang paling mungkin bermasalah: resolusi nama/jaringan dasar. Jangan ubah kebijakan keamanan printer dulu.')}
+    elseif(-not $smb){$likelyLayer='SmbFirewallOrRouting';Write-Fail (L 'Most likely layer: SMB/firewall/routing. Do not enable SMB1 unless the target is proven SMB1-only.' 'Lapisan yang paling mungkin bermasalah: SMB/firewall/routing. Jangan aktifkan SMB1 kecuali target benar-benar terbukti hanya mendukung SMB1.')}
+    elseif(-not $rpc){$likelyLayer='RpcReachability';Write-Warn (L 'RPC reachability is suspicious. Check RPC/firewall before compatibility fallbacks.' 'Konektivitas RPC mencurigakan. Periksa RPC/firewall sebelum memakai fallback kompatibilitas.')}
+    elseif(-not $installed -and (Get-WppState).Enabled){$likelyLayer='WppCompatibility';Write-Warn (L 'WPP is enabled. If this printer depends on a legacy third-party driver, WPP compatibility is a strong candidate.' 'WPP aktif. Jika printer ini bergantung pada driver pihak ketiga yang lama, kompatibilitas WPP menjadi kandidat kuat.')}
+    elseif(-not $installed){$likelyLayer='DriverPointAndPrintCredentialsOrShare';Write-Info (L 'Basic transport is reachable. Driver installation, Point and Print policy, credentials, or the remote printer share are the next likely layers.' 'Transport dasar dapat dijangkau. Lapisan berikutnya yang paling mungkin adalah pemasangan driver, kebijakan Point and Print, kredensial, atau share printer remote.')}
     else{Write-Ok (L 'Basic prerequisites look healthy. Printing a test page is the final functional verification.' 'Prasyarat dasar terlihat sehat. Mencetak test page adalah verifikasi fungsi terakhir.')}
-    Write-Log "Target test $unc dns=$dns smb445=$smb rpc135=$rpc root=$root installed=$installed"
+    $script:LastTargetPathDiagnostic=[pscustomobject]@{TestedAtUtc=$testedAt;DnsResolved=[bool]$dns;Smb445Reachable=[bool]$smb;Rpc135Reachable=[bool]$rpc;ShareNamespaceAccessible=[bool]$root;PrinterInstalled=[bool]$installed;LikelyLayer=$likelyLayer}
+    Write-Log "Target test [identifier omitted] dns=$dns smb445=$smb rpc135=$rpc root=$root installed=$installed likely=$likelyLayer"
 }
+
 function Get-ManagedRegistryEntries {
     $targets=@(
         @('HKLM:\SYSTEM\CurrentControlSet\Control\Print','RpcAuthnLevelPrivacyEnabled'),
@@ -606,6 +616,51 @@ function Show-LegacyMenu {
     }
 }
 
+function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null) {
+    if($null -eq $D){throw 'Diagnostic object is required.'}
+    $state = { param($Value) if($null -eq $Value){return [pscustomobject]@{Present=$false;Value=$null;Kind=$null}}; return [pscustomobject]@{Present=[bool]$Value.Present;Value=$Value.Value;Kind=if($Value.Kind){[string]$Value.Kind}else{$null}} }
+    $profiles=@($D.Profiles|ForEach-Object{[pscustomobject]@{NetworkCategory=[string]$_.NetworkCategory;IPv4Connectivity=[string]$_.IPv4Connectivity;IPv6Connectivity=[string]$_.IPv6Connectivity}})
+    $events=@($D.PrintErrors|ForEach-Object{[pscustomobject]@{TimeCreatedUtc=if($_.TimeCreated){$_.TimeCreated.ToUniversalTime().ToString('o')}else{$null};Id=[int]$_.Id;Level=[string]$_.LevelDisplayName}})
+    $findings=@($D.Findings|ForEach-Object{[pscustomobject]@{Severity=[string]$_.Severity;Text=[string]$_.Text}})
+    $target=$null
+    if($null -ne $TargetPath){$target=[pscustomobject]@{TestedAtUtc=[string]$TargetPath.TestedAtUtc;DnsResolved=[bool]$TargetPath.DnsResolved;Smb445Reachable=[bool]$TargetPath.Smb445Reachable;Rpc135Reachable=[bool]$TargetPath.Rpc135Reachable;ShareNamespaceAccessible=[bool]$TargetPath.ShareNamespaceAccessible;PrinterInstalled=[bool]$TargetPath.PrinterInstalled;LikelyLayer=[string]$TargetPath.LikelyLayer}}
+    return [ordered]@{
+        Schema='windows-printer-sharing-fix/diagnosis'
+        SchemaVersion=1
+        ToolVersion=$script:Version
+        CollectedAtUtc=[string]$D.CollectedAtUtc
+        ExportedAtUtc=(Get-Date).ToUniversalTime().ToString('o')
+        Language=$script:Language
+        Sanitized=$true
+        Privacy='Machine/user/network identifiers, printer/share names, IP addresses, and raw event messages are omitted.'
+        Windows=[ordered]@{Name=[string]$D.OS.Name;DisplayVersion=[string]$D.OS.DisplayVersion;Build=[int]$D.OS.Build;InstallationType=[string]$D.OS.InstallationType;IsServer=[bool]$D.OS.IsServer;PowerShell=[string]$D.PowerShell}
+        Role=[string]$D.Role
+        Spooler=[ordered]@{Present=($null -ne $D.Spooler);Status=if($D.Spooler){[string]$D.Spooler.Status}else{'Missing'}}
+        PrinterSummary=[ordered]@{Total=@($D.Printers).Count;Shared=@($D.SharedPrinters).Count;NetworkConnections=@($D.Connections).Count}
+        NetworkProfiles=$profiles
+        WPP=[ordered]@{Enabled=[bool]$D.WPP.Enabled;GroupPolicy=(& $state $D.WPP.GroupPolicy);Mode=(& $state $D.WPP.Mode);EnabledBy=(& $state $D.WPP.EnabledBy)}
+        Policies=[ordered]@{RpcPrivacy=(& $state $D.RpcPrivacy);RpcUseNamedPipe=(& $state $D.RpcUseNamedPipe);RpcProtocols=(& $state $D.RpcProtocols);PointAndPrint=(& $state $D.PointAndPrint);GuestAuth=(& $state $D.GuestAuth);LmCompatibility=(& $state $D.LmCompatibility);BlankPassword=(& $state $D.BlankPassword)}
+        SMB1Client=[string]$D.SMB1Client
+        PrintServiceEvents=$events
+        Findings=$findings
+        TimingMs=$D.TimingMs
+        TargetPath=$target
+    }
+}
+
+function Export-DiagnosticJson([object]$Diagnostic=$null,[string]$OutputPath='') {
+    if($null -eq $Diagnostic){$Diagnostic=$script:LastDiagnostic}
+    if($null -eq $Diagnostic){Write-Info (L 'No diagnosis is cached yet; running one read-only diagnosis now.' 'Belum ada diagnosis tersimpan; menjalankan satu diagnosis read-only sekarang.');$Diagnostic=Invoke-Diagnosis -Quiet}
+    if(-not $script:ExportRoot){throw 'Export workspace is not initialized.'}
+    if(-not(Test-Path -LiteralPath $script:ExportRoot)){New-Item -ItemType Directory -Path $script:ExportRoot -Force|Out-Null}
+    if(-not $OutputPath){$OutputPath=Join-Path $script:ExportRoot ('diagnostic-{0}.json' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))}
+    $payload=ConvertTo-DiagnosticExportObject $Diagnostic $script:LastTargetPathDiagnostic
+    $payload|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $OutputPath -Encoding UTF8
+    Write-Ok ((L 'Structured diagnostic JSON exported: {0}' 'JSON diagnosis terstruktur diekspor: {0}') -f $OutputPath)
+    Write-Log "Diagnostic JSON exported: $OutputPath"
+    return $OutputPath
+}
+
 function Export-DiagnosticText {
     $d=Invoke-Diagnosis -Quiet
     $path=Join-Path $script:LogRoot ('diagnostic-{0}.txt' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -634,11 +689,12 @@ function Show-ToolsMenu {
         Write-Host (L '[4] Network Connections' '[4] Koneksi Jaringan')
         Write-Host (L '[5] Open current log' '[5] Buka log saat ini')
         Write-Host (L '[6] Open backup folder' '[6] Buka folder backup')
-        Write-Host (L '[7] Export fresh diagnostic report' '[7] Ekspor laporan diagnosis baru')
-        Write-Host (L '[8] Test a shared printer path' '[8] Tes path printer sharing')
+        Write-Host (L '[7] Export fresh diagnostic report (.txt)' '[7] Ekspor laporan diagnosis baru (.txt)')
+        Write-Host (L '[8] Export latest diagnosis as sanitized JSON' '[8] Ekspor diagnosis terakhir sebagai JSON sanitized')
+        Write-Host (L '[9] Test a shared printer path' '[9] Tes path printer sharing')
         Write-Host "[B] $(T 'Back')"
-        $c=Read-Choice (T 'Select') @('1','2','3','4','5','6','7','8','B');if($c -eq 'B'){return}
-        switch($c){'1'{Start-Process 'ms-settings:printers' -ErrorAction SilentlyContinue};'2'{Start-Process 'printmanagement.msc' -ErrorAction SilentlyContinue};'3'{Start-Process 'services.msc'};'4'{Start-Process 'ncpa.cpl'};'5'{Start-Process notepad.exe -ArgumentList ('"{0}"' -f $script:CurrentLog)};'6'{Start-Process explorer.exe -ArgumentList ('"{0}"' -f $script:BackupRoot)};'7'{Export-DiagnosticText;Pause-Tui};'8'{Invoke-SharedPrinterPathDiagnosis;Pause-Tui}}
+        $c=Read-Choice (T 'Select') @('1','2','3','4','5','6','7','8','9','B');if($c -eq 'B'){return}
+        switch($c){'1'{Start-Process 'ms-settings:printers' -ErrorAction SilentlyContinue};'2'{Start-Process 'printmanagement.msc' -ErrorAction SilentlyContinue};'3'{Start-Process 'services.msc'};'4'{Start-Process 'ncpa.cpl'};'5'{Start-Process notepad.exe -ArgumentList ('"{0}"' -f $script:CurrentLog)};'6'{Start-Process explorer.exe -ArgumentList ('"{0}"' -f $script:BackupRoot)};'7'{Export-DiagnosticText;Pause-Tui};'8'{[void](Export-DiagnosticJson);Pause-Tui};'9'{Invoke-SharedPrinterPathDiagnosis;Pause-Tui}}
     }
 }
 

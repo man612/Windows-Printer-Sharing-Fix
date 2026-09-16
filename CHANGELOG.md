@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Testing and real-world evidence infrastructure.
+Testing, real-world evidence, and structured diagnostic export infrastructure.
 
 ### Added
 
@@ -10,6 +10,9 @@ Testing and real-world evidence infrastructure.
 - Expanded Compatibility report issue form aligned with the integration matrix.
 - Read-only `tools/Collect-LabEvidence.ps1` for sanitized local Markdown/JSON evidence.
 - Runtime smoke coverage proving evidence collection stays read-only and omits common environment identifiers.
+- Optional sanitized structured diagnosis JSON export with schema versioning, same-run timing metadata, and optional sanitized target-path results.
+- JSON export smoke coverage proving cached diagnosis reuse, privacy omissions, and an unchanged managed-state fingerprint.
+- `docs/DIAGNOSTIC-JSON.md` documenting schema v1, privacy boundaries, storage, and evolution policy.
 
 ### Fixed
 
@@ -17,7 +20,7 @@ Testing and real-world evidence infrastructure.
 
 ### Unchanged
 
-- Stable repair runtime remains v4.0.3; no repair behavior or security boundary changes are included here.
+- Stable repair behavior and security boundaries remain unchanged; the new JSON path is export-only and local.
 
 ## 4.0.3
 

@@ -28,11 +28,13 @@ $script:Language = 'EN'
 $script:Text = @{ EN=@{}; ID=@{} }
 $script:CurrentLog = $null
 $script:LastDiagnostic = $null
+$script:LastTargetPathDiagnostic = $null
 Set-WorkspacePaths $dataRoot
 Initialize-Workspace
 
 if ($script:Language -ne 'ID') { throw 'Legacy language preference was not migrated.' }
 if (-not (Test-Path -LiteralPath $script:LanguageFile)) { throw 'Migrated language.cfg is missing.' }
+if (-not (Test-Path -LiteralPath $script:ExportRoot)) { throw 'Runtime exports directory is missing.' }
 if (-not (Test-Path -LiteralPath $script:LatestStateFile)) { throw 'Migrated restore pointer is missing.' }
 $migrated = ([string](Get-Content -LiteralPath $script:LatestStateFile | Select-Object -First 1)).Trim()
 $expected = Join-Path $script:BackupRoot $snapshotName

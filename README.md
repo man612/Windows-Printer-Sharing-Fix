@@ -126,6 +126,7 @@ GitHub Actions runs on Windows with Windows PowerShell 5.1 and checks:
 
 - syntax and static security invariants;
 - diagnosis-only execution with a before/after managed-state fingerprint;
+- structured JSON export reuse/privacy/read-only regression coverage;
 - English/Indonesian localization output;
 - migration of legacy language/restore state to the external runtime workspace;
 - the end-user release ZIP and SHA256 checksum.
@@ -142,6 +143,7 @@ Starting with v4.0.2, runtime state is stored outside the repository under:
 %LOCALAPPDATA%\WindowsPrinterSharingFix\
 |-- backups\
 |-- logs\
+|-- exports\
 |-- language.cfg
 ```
 
@@ -162,6 +164,7 @@ The project deliberately distinguishes Windows Server from Windows 11 even when 
 
 - [Quick start](docs/QUICKSTART.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Structured diagnostic JSON](docs/DIAGNOSTIC-JSON.md)
 - [Real-world test matrix](docs/TEST-MATRIX.md)
 - [Accepted real-world results](docs/REAL-WORLD-RESULTS.md)
 - [Security policy](SECURITY.md)
@@ -173,7 +176,7 @@ The project deliberately distinguishes Windows Server from Windows 11 even when 
 
 Bug reports, compatibility findings, documentation improvements, and focused code changes are welcome.
 
-Before opening a bug, run **Diagnose this PC** and include the relevant output with hostnames, usernames, credentials, and other sensitive details redacted. New contributors can look for issues labeled `good first issue` or `help wanted`.
+Before opening a bug, run **Diagnose this PC**. **Tools and Logs** can export the latest diagnosis as sanitized structured JSON; review any file before posting it publicly. New contributors can look for issues labeled `good first issue` or `help wanted`.
 
 Pull requests should explain the real-world failure scenario, what Windows state changes, the security/compatibility trade-off, how the change is tested, and how it can be restored. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
