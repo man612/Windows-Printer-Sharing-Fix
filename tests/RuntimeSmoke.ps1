@@ -17,7 +17,7 @@ $functionSource = ($functions | ForEach-Object { $_.Extent.Text }) -join "`r`n`r
 . ([scriptblock]::Create($functionSource))
 
 # Minimal script-scoped state required by the diagnostic functions.
-$script:Version = '4.0.2-smoke'
+$script:Version = '4.0.3-smoke'
 $script:Language = 'EN'
 $script:CurrentLog = Join-Path $env:TEMP ('windows-printer-fix-smoke-{0}.log' -f [Guid]::NewGuid().ToString('N'))
 $script:LastDiagnostic = $null
@@ -56,6 +56,9 @@ if ($null -eq $diagnostic.Findings) { throw 'Diagnostic findings collection is m
 if ($null -eq $diagnostic.Printers) { throw 'Printer inventory collection is missing.' }
 if ($null -eq $diagnostic.Profiles) { throw 'Network profile collection is missing.' }
 if ($null -eq $diagnostic.WPP) { throw 'WPP state object is missing.' }
+
+$timingLog = Get-Content -LiteralPath $script:CurrentLog -Raw
+if ($timingLog -notmatch 'Diagnosis timing ms:') { throw 'Diagnosis performance timing was not written to the runtime log.' }
 
 Write-Host ('Runtime smoke passed on {0} build {1}.' -f $diagnostic.OS.Name,$diagnostic.OS.Build) -ForegroundColor Green
 Write-Host ('Spooler: {0}; printers: {1}; network profiles: {2}; findings: {3}.' -f $(if($diagnostic.Spooler){$diagnostic.Spooler.Status}else{'Missing'}),$diagnostic.Printers.Count,$diagnostic.Profiles.Count,$diagnostic.Findings.Count)

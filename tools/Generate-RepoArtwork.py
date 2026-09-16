@@ -78,7 +78,7 @@ def build_artwork():
 
     px = panel_x + 38
     py = panel_y + 36
-    text(draw, (px, py), "WINDOWS PRINTER SHARING FIX  v4.0.2", BLUE, mono_bold)
+    text(draw, (px, py), "WINDOWS PRINTER SHARING FIX  v4.0.3", BLUE, mono_bold)
     text(draw, (px, py + 34), "Diagnosis-first repair utility", MUTED, mono)
     draw.line((px, py + 76, panel_right - 38, py + 76), fill=BORDER, width=2)
 
