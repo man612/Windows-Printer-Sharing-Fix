@@ -1,5 +1,26 @@
 # Changelog
 
+## 4.0.3
+
+Stable TUI latency and regression-test polish.
+
+### Added
+
+- Performance smoke coverage for bounded DNS/TCP probes and firewall-query reuse.
+- Per-stage diagnosis timing in the normal runtime log for future latency troubleshooting.
+- CI guard preventing the stable TCP probe from regressing to an OS-controlled `Test-NetConnection` timeout.
+
+### Changed
+
+- Shared-printer path diagnosis now bounds DNS resolution and TCP 445/135 connection attempts with explicit timeouts.
+- File and Printer Sharing firewall discovery queries the Windows sharing-rule group directly before using the compatibility fallback scan.
+- Safe Repair reuses the firewall inventory captured for its restore snapshot instead of enumerating the same rules a second time.
+
+### Unchanged
+
+- Diagnosis-first workflow, repair tiers, restore scope, and all existing security boundaries.
+- Stable UI remains the dependency-free Windows PowerShell 5.1 TUI; the experimental OpenTUI frontend remains separate.
+
 ## 4.0.2
 
 Repository, distribution, and runtime-data polish.

@@ -58,7 +58,7 @@ $legacy = Get-FunctionText 'Show-LegacyMenu'
 if ($legacy -match '\[[0-9]+\].*Full Fix') { throw 'One-click legacy Full Fix must not return.' }
 
 # Stable UX release guards.
-if ($source -notmatch [regex]::Escape("`$script:Version = '4.0.2'")) { throw 'Stable script version is not 4.0.2.' }
+if ($source -notmatch [regex]::Escape("`$script:Version = '4.0.3'")) { throw 'Stable script version is not 4.0.3.' }
 if ($source -notmatch "Guide='Guide'" -or $source -notmatch "Guide='Panduan'") { throw 'Guide label is not localized in both languages.' }
 $guide = Get-FunctionText 'Show-GuideMenu'
 if ($guide -notmatch 'DIAGNOSIS DULU' -or $guide -notmatch 'LEGACY ADALAH PILIHAN TERAKHIR') { throw 'Indonesian in-app guide content is incomplete.' }
@@ -67,6 +67,13 @@ if ($main -notmatch 'Show-GuideMenu') { throw 'Main menu does not expose the in-
 foreach ($fn in @('Show-DiagnosticReport','Invoke-SharedPrinterPathDiagnosis','Show-SafeRepairMenu','Show-CompatibilityMenu','Show-LegacyMenu','Show-ToolsMenu')) {
     if ((Get-FunctionText $fn) -notmatch '\bL\s') { throw "Localized UI helper is not used by $fn." }
 }
+
+# Stable performance guards.
+$tcpProbe = Get-FunctionText 'Test-TcpPort'
+if ($tcpProbe -match 'Test-NetConnection') { throw 'Stable TCP probe must keep an explicit application-controlled timeout.' }
+if ($tcpProbe -notmatch 'TimeoutMs' -or $tcpProbe -notmatch 'WaitOne') { throw 'Stable TCP probe timeout guard is missing.' }
+$firewallProbe = Get-FunctionText 'Get-FirewallSharingRules'
+if ($firewallProbe -notmatch "-Group '@FirewallAPI\.dll,-28502'") { throw 'Firewall discovery must use the targeted sharing group before fallback enumeration.' }
 
 # Runtime data should live outside the repository by default.
 if ($source -notmatch 'LOCALAPPDATA' -or $source -notmatch 'WindowsPrinterSharingFix') { throw 'Runtime workspace is not configured under LocalAppData.' }

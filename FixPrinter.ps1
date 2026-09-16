@@ -11,7 +11,7 @@ param([switch]$NoElevation)
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$script:Version = '4.0.2'
+$script:Version = '4.0.3'
 $script:ScriptPath = $PSCommandPath
 $script:Root = Split-Path -Parent $script:ScriptPath
 $script:LegacyBackupRoot = Join-Path $script:Root 'backups'
@@ -240,7 +240,11 @@ function Get-WindowsFeatureState([string]$Name) {
 function Get-FirewallSharingRules {
     try {
         if (-not (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue)) { return @() }
-        return @(Get-NetFirewallRule | Where-Object {$_.Group -eq '@FirewallAPI.dll,-28502' -or $_.DisplayGroup -eq 'File and Printer Sharing' -or $_.DisplayGroup -eq 'Berbagi File dan Printer'} | Select-Object Name,DisplayName,DisplayGroup,Enabled,Profile,Direction,Action)
+        $rules=@(Get-NetFirewallRule -Group '@FirewallAPI.dll,-28502' -ErrorAction SilentlyContinue)
+        if(-not $rules.Count){
+            $rules=@(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object {$_.Group -eq '@FirewallAPI.dll,-28502' -or $_.DisplayGroup -eq 'File and Printer Sharing' -or $_.DisplayGroup -eq 'Berbagi File dan Printer'})
+        }
+        return @($rules | Select-Object Name,DisplayName,DisplayGroup,Enabled,Profile,Direction,Action)
     } catch { Write-Log $_.Exception.Message 'WARN'; return @() }
 }
 
@@ -248,23 +252,48 @@ function Get-RecentPrintErrors {
     try { return @(Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-PrintService/Admin';Level=2,3;StartTime=(Get-Date).AddDays(-7)} -MaxEvents 8 | Select-Object TimeCreated,Id,LevelDisplayName,Message) } catch { return @() }
 }
 
-function Test-TcpPort([string]$ComputerName,[int]$Port) {
+function Resolve-HostAddresses([string]$ComputerName,[int]$TimeoutMs=2500) {
+    $async=$null
     try {
-        if (Get-Command Test-NetConnection -ErrorAction SilentlyContinue) { return [bool](Test-NetConnection -ComputerName $ComputerName -Port $Port -InformationLevel Quiet -WarningAction SilentlyContinue) }
-        $client=New-Object System.Net.Sockets.TcpClient
-        $async=$client.BeginConnect($ComputerName,$Port,$null,$null)
-        if(-not $async.AsyncWaitHandle.WaitOne(2500,$false)){$client.Close();return $false}
-        $client.EndConnect($async);$client.Close();return $true
-    } catch { return $false }
+        $async=[System.Net.Dns]::BeginGetHostAddresses($ComputerName,$null,$null)
+        if(-not $async.AsyncWaitHandle.WaitOne($TimeoutMs,$false)){return @()}
+        return @([System.Net.Dns]::EndGetHostAddresses($async))
+    } catch { return @() }
+    finally { if($async -and $async.AsyncWaitHandle){$async.AsyncWaitHandle.Close()} }
+}
+
+function Test-TcpPort([string]$ComputerName,[int]$Port,[int]$TimeoutMs=2500,[System.Net.IPAddress[]]$Addresses=$null) {
+    $targets=@(if($PSBoundParameters.ContainsKey('Addresses')){@($Addresses)}else{@(Resolve-HostAddresses $ComputerName $TimeoutMs)})
+    if(-not $targets.Count){return $false}
+    $clock=[System.Diagnostics.Stopwatch]::StartNew()
+    foreach($address in $targets){
+        $remaining=$TimeoutMs-[int]$clock.ElapsedMilliseconds
+        if($remaining -le 0){return $false}
+        $client=New-Object System.Net.Sockets.TcpClient($address.AddressFamily)
+        $async=$null
+        try {
+            $async=$client.BeginConnect($address,$Port,$null,$null)
+            if($async.AsyncWaitHandle.WaitOne($remaining,$false)){
+                $client.EndConnect($async)
+                if($client.Connected){return $true}
+            }
+        } catch {}
+        finally {
+            if($async -and $async.AsyncWaitHandle){$async.AsyncWaitHandle.Close()}
+            $client.Close()
+        }
+    }
+    return $false
 }
 
 function Invoke-Diagnosis([switch]$Quiet) {
-    $os=Get-OsInfo
-    $spooler=Get-Service Spooler -ErrorAction SilentlyContinue
-    $printers=@(Get-PrinterInventory)
-    $profiles=@(Get-NetworkProfilesSafe)
-    $wpp=Get-WppState
-    $errors=@(Get-RecentPrintErrors)
+    $diagClock=[System.Diagnostics.Stopwatch]::StartNew();$step=[System.Diagnostics.Stopwatch]::StartNew()
+    $os=Get-OsInfo;$osMs=$step.ElapsedMilliseconds;$step.Restart()
+    $spooler=Get-Service Spooler -ErrorAction SilentlyContinue;$spoolerMs=$step.ElapsedMilliseconds;$step.Restart()
+    $printers=@(Get-PrinterInventory);$printersMs=$step.ElapsedMilliseconds;$step.Restart()
+    $profiles=@(Get-NetworkProfilesSafe);$profilesMs=$step.ElapsedMilliseconds;$step.Restart()
+    $wpp=Get-WppState;$wppMs=$step.ElapsedMilliseconds;$step.Restart()
+    $errors=@(Get-RecentPrintErrors);$eventsMs=$step.ElapsedMilliseconds
     $shared=@($printers|Where-Object{$_.Shared -or $_.ShareName})
     $connections=@($printers|Where-Object{$_.Name -like '\\*' -or $_.Type -eq 'Connection'})
     $role=if($shared.Count -and $connections.Count){'Host + Client'}elseif($shared.Count){'Host'}elseif($connections.Count){'Client'}else{'Unknown / local only'}
@@ -275,7 +304,7 @@ function Invoke-Diagnosis([switch]$Quiet) {
     $guest=Get-RegistryValueState 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' 'AllowInsecureGuestAuth'
     $lm=Get-RegistryValueState 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' 'LmCompatibilityLevel'
     $blank=Get-RegistryValueState 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' 'LimitBlankPasswordUse'
-    $smb1=Get-WindowsFeatureState 'SMB1Protocol-Client'
+    $step.Restart();$smb1=Get-WindowsFeatureState 'SMB1Protocol-Client';$smb1Ms=$step.ElapsedMilliseconds
     $findings=New-Object System.Collections.Generic.List[object]
     if(-not $spooler){$findings.Add([pscustomobject]@{Severity='FAIL';Text=(L 'Print Spooler service is missing.' 'Layanan Print Spooler tidak ditemukan.')})}elseif($spooler.Status -ne 'Running'){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'Print Spooler is not running.' 'Print Spooler sedang tidak berjalan.')})}
     if($wpp.Enabled){$findings.Add([pscustomobject]@{Severity='INFO';Text=(L 'Windows Protected Print Mode appears enabled. Legacy third-party printer drivers can be removed or blocked.' 'Windows Protected Print Mode tampak aktif. Driver printer pihak ketiga yang lama dapat dihapus atau diblokir.')})}
@@ -288,7 +317,8 @@ function Invoke-Diagnosis([switch]$Quiet) {
     if(@($profiles|Where-Object{$_.NetworkCategory -eq 'Public' -and $_.IPv4Connectivity -ne 'Disconnected'}).Count){$findings.Add([pscustomobject]@{Severity='INFO';Text=(L 'At least one active network is Public; sharing may be intentionally restricted.' 'Setidaknya satu jaringan aktif berprofil Publik; fitur sharing mungkin memang dibatasi.')})}
     if($errors.Count){$findings.Add([pscustomobject]@{Severity='INFO';Text=(L "Recent PrintService warnings/errors found: $($errors.Count)." "Ditemukan peringatan/error PrintService terbaru: $($errors.Count).")})}
     $result=[pscustomobject]@{OS=$os;PowerShell=$PSVersionTable.PSVersion.ToString();Role=$role;Spooler=$spooler;Printers=$printers;SharedPrinters=$shared;Connections=$connections;Profiles=$profiles;WPP=$wpp;PrintErrors=$errors;RpcPrivacy=$rpcPrivacy;RpcUseNamedPipe=$rpcPipe;RpcProtocols=$rpcProtocols;PointAndPrint=$point;GuestAuth=$guest;LmCompatibility=$lm;BlankPassword=$blank;SMB1Client=$smb1;Findings=$findings}
-    $script:LastDiagnostic=$result; Write-Log "Diagnosis role=$role printers=$($printers.Count) findings=$($findings.Count)"
+    $diagClock.Stop();$script:LastDiagnostic=$result; Write-Log "Diagnosis role=$role printers=$($printers.Count) findings=$($findings.Count)"
+    Write-Log "Diagnosis timing ms: os=$osMs spooler=$spoolerMs printers=$printersMs profiles=$profilesMs wpp=$wppMs events=$eventsMs smb1=$smb1Ms total=$($diagClock.ElapsedMilliseconds)"
     if(-not $Quiet){Show-DiagnosticReport $result}; return $result
 }
 
@@ -320,8 +350,8 @@ function Invoke-SharedPrinterPathDiagnosis {
     $unc=(Read-Host (L 'Enter printer path like \\PRINT-PC\OfficePrinter (blank = cancel)' 'Masukkan path printer seperti \\PC-PRINT\PrinterKantor (kosong = batal)')).Trim(); if(-not $unc){return}
     if($unc -notmatch '^\\\\([^\\]+)\\([^\\]+)$'){Write-Warn (L 'Invalid UNC printer path.' 'Path UNC printer tidak valid.');return}
     $hostName=$Matches[1]
-    $dns=$false;try{$dns=([System.Net.Dns]::GetHostAddresses($hostName).Count -gt 0)}catch{}
-    $smb=if($dns){Test-TcpPort $hostName 445}else{$false}; $rpc=if($dns){Test-TcpPort $hostName 135}else{$false}; $root=$false
+    $addresses=@(Resolve-HostAddresses $hostName 2500); $dns=($addresses.Count -gt 0)
+    $smb=if($dns){Test-TcpPort $hostName 445 2500 $addresses}else{$false}; $rpc=if($dns){Test-TcpPort $hostName 135 2500 $addresses}else{$false}; $root=$false
     if($smb){try{$root=Test-Path -LiteralPath ("\\{0}\" -f $hostName) -ErrorAction SilentlyContinue}catch{}}
     $installed=@((Get-PrinterInventory)|Where-Object{$_.Name -eq $unc}).Count -gt 0
     if($dns){Write-Ok ((L 'Host resolves: {0}' 'Host berhasil di-resolve: {0}') -f $hostName)}else{Write-Fail ((L 'Host does not resolve: {0}' 'Host tidak dapat di-resolve: {0}') -f $hostName)}
@@ -351,14 +381,14 @@ function Get-ManagedRegistryEntries {
     $out=@();foreach($t in $targets){$s=Get-RegistryValueState $t[0] $t[1];$out+=[pscustomobject]@{Path=$t[0];Name=$t[1];Present=$s.Present;Value=$s.Value;Kind=$s.Kind}};return $out
 }
 
-function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Services','Network','Firewall','SMB1')) {
+function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Services','Network','Firewall','SMB1'),[object[]]$FirewallRules=$null) {
     try {
         $dir=Join-Path $script:BackupRoot ((Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[Guid]::NewGuid().ToString('N').Substring(0,6));New-Item -ItemType Directory -Path $dir -Force|Out-Null
         $registry=@();$services=@();$profiles=@();$fw=@();$features=@()
         if($Scopes -contains 'Registry'){$registry=@(Get-ManagedRegistryEntries)}
         if($Scopes -contains 'Services'){foreach($name in @('Spooler','fdPHost','FDResPub')){try{$s=Get-CimInstance Win32_Service -Filter "Name='$name'";$services+=[pscustomobject]@{Name=$name;State=$s.State;StartMode=$s.StartMode}}catch{}}}
         if($Scopes -contains 'Network'){$profiles=@(Get-NetworkProfilesSafe|ForEach-Object{[pscustomobject]@{InterfaceIndex=[int]$_.InterfaceIndex;NetworkCategory=[string]$_.NetworkCategory}})}
-        if($Scopes -contains 'Firewall'){$fw=@(Get-FirewallSharingRules|ForEach-Object{[pscustomobject]@{Name=[string]$_.Name;Enabled=[string]$_.Enabled;Profile=[string]$_.Profile}})}
+        if($Scopes -contains 'Firewall'){$sourceRules=if($PSBoundParameters.ContainsKey('FirewallRules')){@($FirewallRules)}else{@(Get-FirewallSharingRules)};$fw=@($sourceRules|ForEach-Object{[pscustomobject]@{Name=[string]$_.Name;Enabled=[string]$_.Enabled;Profile=[string]$_.Profile}})}
         if($Scopes -contains 'SMB1'){$features=@([pscustomobject]@{Name='SMB1Protocol-Client';State=(Get-WindowsFeatureState 'SMB1Protocol-Client')})}
         $state=[pscustomobject]@{Version=$script:Version;Created=(Get-Date).ToString('o');Reason=$Reason;Scopes=@($Scopes);Registry=$registry;Services=$services;NetworkProfiles=$profiles;FirewallRules=$fw;WindowsFeatures=$features}
         $state|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $dir 'managed-state.json') -Encoding UTF8;$dir|Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8;Write-Log "Snapshot: $dir reason=$Reason scopes=$($Scopes -join ',')";return $dir
@@ -405,9 +435,9 @@ function Invoke-ClearPrintQueue {
     Write-Log 'Queue cleared; irreversible.' 'WARN'
 }
 
-function Enable-PrivateFirewallSharing {
+function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null) {
     if(-not(Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue)){Write-Warn (L 'Modern firewall cmdlets unavailable.' 'Cmdlet firewall modern tidak tersedia.');return}
-    $rules=@(Get-FirewallSharingRules)
+    $rules=@(if($PSBoundParameters.ContainsKey('FirewallRules')){@($FirewallRules)}else{@(Get-FirewallSharingRules)})
     if(-not $rules.Count){Write-Warn (L 'File and Printer Sharing firewall group could not be identified.' 'Grup firewall File and Printer Sharing tidak dapat diidentifikasi.');return}
     $count=0
     foreach($r in $rules){if([string]$r.Profile -match 'Private|Domain|Any'){Set-NetFirewallRule -Name $r.Name -Enabled True -Profile Domain,Private -ErrorAction SilentlyContinue;$count++}}
@@ -454,10 +484,10 @@ function Show-SafeRepairMenu {
         try{switch($c){
             '1'{$snap=New-RestoreSnapshot 'Restart Print Spooler' @('Services');if($snap){Invoke-RestartSpooler}}
             '2'{Invoke-ClearPrintQueue}
-            '3'{$snap=New-RestoreSnapshot 'Enable sharing firewall rules' @('Firewall');if($snap){Enable-PrivateFirewallSharing}}
+            '3'{$firewallRules=@(Get-FirewallSharingRules);$snap=New-RestoreSnapshot 'Enable sharing firewall rules' @('Firewall') -FirewallRules $firewallRules;if($snap){Enable-PrivateFirewallSharing -FirewallRules $firewallRules}}
             '4'{$snap=New-RestoreSnapshot 'Change selected network profile' @('Network');if($snap){Set-OneNetworkPrivate}}
             '5'{$snap=New-RestoreSnapshot 'Start Network Discovery services' @('Services');if($snap){Start-NetworkDiscoveryServices}}
-            '6'{$snap=New-RestoreSnapshot 'Combined non-destructive Safe Repair' @('Services','Firewall');if($snap){Invoke-RestartSpooler;Enable-PrivateFirewallSharing;Start-NetworkDiscoveryServices}}
+            '6'{$firewallRules=@(Get-FirewallSharingRules);$snap=New-RestoreSnapshot 'Combined non-destructive Safe Repair' @('Services','Firewall') -FirewallRules $firewallRules;if($snap){Invoke-RestartSpooler;Enable-PrivateFirewallSharing -FirewallRules $firewallRules;Start-NetworkDiscoveryServices}}
         }}catch{Write-Fail $_.Exception.Message}
         if($snap){Write-Info ((L 'Restore snapshot: {0}' 'Snapshot restore: {0}') -f $snap)}
         Pause-Tui
