@@ -56,6 +56,9 @@ if ($null -eq $diagnostic.Findings) { throw 'Diagnostic findings collection is m
 if ($null -eq $diagnostic.Printers) { throw 'Printer inventory collection is missing.' }
 if ($null -eq $diagnostic.Profiles) { throw 'Network profile collection is missing.' }
 if ($null -eq $diagnostic.WPP) { throw 'WPP state object is missing.' }
+foreach($event in @($diagnostic.PrintErrors)){
+    if(-not $event.Category){throw 'PrintService event classification is missing from a runtime event.'}
+}
 if (-not $diagnostic.CollectedAtUtc) { throw 'Diagnosis collection timestamp is missing.' }
 if ($null -eq $diagnostic.TimingMs -or $diagnostic.TimingMs.Total -lt 0) { throw 'Diagnosis timing object is missing.' }
 

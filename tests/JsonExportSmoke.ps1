@@ -62,6 +62,16 @@ try {
     if($data.NetworkProfiles.Count -ne @($diagnostic.Profiles).Count){throw 'JSON network profile summary does not match diagnosis.'}
     if($data.TargetPath.LikelyLayer -ne 'RpcReachability' -or $data.TargetPath.Rpc135Reachable){throw 'Sanitized target-path result was not exported correctly.'}
 
+    # Prove normalized PrintService metadata survives export while raw event messages do not.
+    $cloneProps=@{}
+    foreach($property in $diagnostic.PSObject.Properties){$cloneProps[$property.Name]=$property.Value}
+    $cloneProps['PrintErrors']=@([pscustomobject]@{TimeCreated=(Get-Date);Id=372;LevelDisplayName='Error';Message='SECRET-PRINTER-NAME must never be exported';Category='PrintJob';Win32Code=1726;CodeClass='Rpc'})
+    $syntheticPayload=ConvertTo-DiagnosticExportObject ([pscustomobject]$cloneProps) $null
+    $syntheticJson=$syntheticPayload|ConvertTo-Json -Depth 10
+    $syntheticEvent=@($syntheticPayload.PrintServiceEvents)[0]
+    if($syntheticEvent.Category -ne 'PrintJob' -or $syntheticEvent.Win32Code -ne 1726 -or $syntheticEvent.CodeClass -ne 'Rpc'){throw 'Normalized PrintService event metadata was not exported.'}
+    if($syntheticJson -match 'SECRET-PRINTER-NAME'){throw 'Raw PrintService event message leaked into structured JSON.'}
+
     foreach($key in @('ComputerName','MachineName','UserName','Domain','IPAddress','SSID','PortName','ShareName','PrinterName','InterfaceAlias','Message')){
         if($jsonText -match ('"'+[regex]::Escape($key)+'"\s*:')){throw "JSON export exposes forbidden field: $key"}
     }

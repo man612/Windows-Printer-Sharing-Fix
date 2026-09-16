@@ -250,8 +250,75 @@ function Get-FirewallSharingRules {
     } catch { Write-Log $_.Exception.Message 'WARN'; return @() }
 }
 
+function Get-PrintServiceWin32CodeClass([object]$Code=$null) {
+    if($null -eq $Code){return $null}
+    try{$n=[int64]$Code}catch{return 'OtherWin32'}
+    if($n -eq 0){return 'AmbiguousSuccessCode'}
+    if($n -in @(2,3,3002)){return 'FileOrSpoolPath'}
+    if($n -in @(5,65)){return 'AccessOrPermission'}
+    if($n -in @(53,64,67)){return 'NetworkPathOrName'}
+    if($n -in @(61,62,63,72,3009,3020)){return 'QueueOrSpool'}
+    if($n -in @(1722,1726,1727)){return 'Rpc'}
+    if($n -in @(1796,1797,1798,1801,1804,1905,1906,3000,3007,3012,3013,3014,3015,3016,3019,3021,3022)){return 'PrinterOrDriverState'}
+    return 'OtherWin32'
+}
+
+function Get-PrintServiceEventClassification([int]$Id,[object]$Win32Code=$null) {
+    $category='OtherPrintService'
+    if($Id -in @(107,111,123,125,314,350,353,372,828)){$category='PrintJob'}
+    elseif($Id -in @(115,213,215,217,219,348,351,359,368,369,370,600,601,808,852,869,870) -or ($Id -ge 225 -and $Id -le 242)){$category='DriverOrPackage'}
+    elseif($Id -in @(101,119,201,205,207,211,221,224,315,371,513,514,515,516,517,518,519,520,827)){$category='SharingOrConnection'}
+    elseif($Id -in @(99,354,362,373,815,816,817,818) -or ($Id -ge 502 -and $Id -le 512)){$category='SpoolerOrRpc'}
+    elseif($Id -in @(319,320,361,364,365,367,814,820,822,824,825,867) -or ($Id -ge 701 -and $Id -le 704)){$category='PortOrProcessor'}
+    elseif($Id -in @(851,871)){$category='Policy'}
+    elseif($Id -in @(322,323,325,326,327,328,329,331,333,335,337,347)){$category='DirectoryOrGpo'}
+    return [pscustomobject]@{Category=$category;Win32Code=if($null -ne $Win32Code){[int64]$Win32Code}else{$null};CodeClass=(Get-PrintServiceWin32CodeClass $Win32Code)}
+}
+
+function Get-PrintServiceEventWin32Code($Event) {
+    if($null -eq $Event -or [int]$Event.Id -ne 372){return $null}
+    try {
+        if($Event.Properties -and $Event.Properties.Count -gt 9 -and $null -ne $Event.Properties[9].Value){return [int64]$Event.Properties[9].Value}
+    } catch {}
+    return $null
+}
+
+function Get-PrintServiceCategoryLabel([string]$Category) {
+    switch($Category){
+        'PrintJob'{return (L 'print job' 'job cetak')}
+        'DriverOrPackage'{return (L 'driver/package' 'driver/paket')}
+        'SharingOrConnection'{return (L 'sharing/connection' 'sharing/koneksi')}
+        'SpoolerOrRpc'{return 'Spooler/RPC'}
+        'PortOrProcessor'{return (L 'port/processor' 'port/processor')}
+        'Policy'{return (L 'policy' 'kebijakan')}
+        'DirectoryOrGpo'{return (L 'directory/GPO' 'direktori/GPO')}
+        default{return (L 'other' 'lainnya')}
+    }
+}
+
+function Get-PrintServiceCodeClassLabel([string]$CodeClass) {
+    switch($CodeClass){
+        'AmbiguousSuccessCode'{return (L 'ambiguous code 0' 'kode 0 ambigu')}
+        'FileOrSpoolPath'{return (L 'file/spool path' 'file/path spool')}
+        'AccessOrPermission'{return (L 'access/permission' 'akses/izin')}
+        'NetworkPathOrName'{return (L 'network path/name' 'path/nama jaringan')}
+        'QueueOrSpool'{return (L 'queue/spool' 'antrean/spool')}
+        'Rpc'{return 'RPC'}
+        'PrinterOrDriverState'{return (L 'printer/driver state' 'status printer/driver')}
+        'OtherWin32'{return (L 'other Win32 code' 'kode Win32 lain')}
+        default{return ''}
+    }
+}
+
 function Get-RecentPrintErrors {
-    try { return @(Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-PrintService/Admin';Level=2,3;StartTime=(Get-Date).AddDays(-7)} -MaxEvents 8 | Select-Object TimeCreated,Id,LevelDisplayName,Message) } catch { return @() }
+    try {
+        $events=@(Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-PrintService/Admin';Level=2,3;StartTime=(Get-Date).AddDays(-7)} -MaxEvents 8)
+        return @($events|ForEach-Object{
+            $code=Get-PrintServiceEventWin32Code $_
+            $classification=Get-PrintServiceEventClassification ([int]$_.Id) $code
+            [pscustomobject]@{TimeCreated=$_.TimeCreated;Id=[int]$_.Id;LevelDisplayName=[string]$_.LevelDisplayName;Message=[string]$_.Message;Category=$classification.Category;Win32Code=$classification.Win32Code;CodeClass=$classification.CodeClass}
+        })
+    } catch { return @() }
 }
 
 function Resolve-HostAddresses([string]$ComputerName,[int]$TimeoutMs=2500) {
@@ -318,7 +385,10 @@ function Invoke-Diagnosis([switch]$Quiet) {
     if($blank.Present -and [int]$blank.Value -eq 0){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'Remote use of blank-password local accounts is allowed. This utility will never enable that setting.' 'Penggunaan remote akun lokal tanpa password diizinkan. Utilitas ini tidak akan pernah mengaktifkan pengaturan tersebut.')})}
     if($smb1 -match '^Enabled'){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'SMB1 client is enabled.' 'Klien SMB1 sedang aktif.')})}
     if(@($profiles|Where-Object{$_.NetworkCategory -eq 'Public' -and $_.IPv4Connectivity -ne 'Disconnected'}).Count){$findings.Add([pscustomobject]@{Severity='INFO';Text=(L 'At least one active network is Public; sharing may be intentionally restricted.' 'Setidaknya satu jaringan aktif berprofil Publik; fitur sharing mungkin memang dibatasi.')})}
-    if($errors.Count){$findings.Add([pscustomobject]@{Severity='INFO';Text=(L "Recent PrintService warnings/errors found: $($errors.Count)." "Ditemukan peringatan/error PrintService terbaru: $($errors.Count).")})}
+    if($errors.Count){
+        $eventLayers=@($errors|Group-Object Category|ForEach-Object{('{0}={1}' -f (Get-PrintServiceCategoryLabel $_.Name),$_.Count)}) -join ', '
+        $findings.Add([pscustomobject]@{Severity='INFO';Text=(L "Recent PrintService warnings/errors by layer: $eventLayers." "Peringatan/error PrintService terbaru menurut lapisan: $eventLayers.")})
+    }
     $diagClock.Stop()
     $timing=[pscustomobject]@{OS=[int64]$osMs;Spooler=[int64]$spoolerMs;Printers=[int64]$printersMs;Profiles=[int64]$profilesMs;WPP=[int64]$wppMs;PrintEvents=[int64]$eventsMs;SMB1=[int64]$smb1Ms;Total=[int64]$diagClock.ElapsedMilliseconds}
     $result=[pscustomobject]@{CollectedAtUtc=(Get-Date).ToUniversalTime().ToString('o');OS=$os;PowerShell=$PSVersionTable.PSVersion.ToString();Role=$role;Spooler=$spooler;Printers=$printers;SharedPrinters=$shared;Connections=$connections;Profiles=$profiles;WPP=$wpp;PrintErrors=$errors;RpcPrivacy=$rpcPrivacy;RpcUseNamedPipe=$rpcPipe;RpcProtocols=$rpcProtocols;PointAndPrint=$point;GuestAuth=$guest;LmCompatibility=$lm;BlankPassword=$blank;SMB1Client=$smb1;Findings=$findings;TimingMs=$timing}
@@ -345,7 +415,7 @@ function Show-DiagnosticReport($D) {
     if($D.SharedPrinters.Count){Write-Rule;Write-Host (L 'Shared printers:' 'Printer yang dishare:');foreach($p in $D.SharedPrinters){Write-Host ('  - {0} | share={1} | driver={2}' -f $p.Name,$p.ShareName,$p.DriverName)}}
     if($D.Connections.Count){Write-Rule;Write-Host (L 'Network printer connections:' 'Koneksi printer jaringan:');foreach($p in $D.Connections){Write-Host ('  - {0} | driver={1}' -f $p.Name,$p.DriverName)}}
     if($D.Profiles.Count){Write-Rule;Write-Host (L 'Network profiles:' 'Profil jaringan:');foreach($n in $D.Profiles){Write-Host ('  [{0}] {1} / {2} / IPv4={3}' -f $n.InterfaceIndex,$n.InterfaceAlias,(Localize-SystemValue ([string]$n.NetworkCategory)),(Localize-SystemValue ([string]$n.IPv4Connectivity)))}}
-    if($D.PrintErrors.Count){Write-Rule;Write-Host (L 'Recent PrintService events:' 'Event PrintService terbaru:');foreach($e in $D.PrintErrors|Select-Object -First 5){$m=([string]$e.Message -replace '\s+',' ');if($m.Length -gt 120){$m=$m.Substring(0,120)+'...'};Write-Host ('  {0:g} ID {1}: {2}' -f $e.TimeCreated,$e.Id,$m)}}
+    if($D.PrintErrors.Count){Write-Rule;Write-Host (L 'Recent PrintService events:' 'Event PrintService terbaru:');foreach($e in $D.PrintErrors|Select-Object -First 5){$m=([string]$e.Message -replace '\s+',' ');if($m.Length -gt 120){$m=$m.Substring(0,120)+'...'};$layer=Get-PrintServiceCategoryLabel ([string]$e.Category);$code='';if($null -ne $e.Win32Code){$code=' | Win32={0}/{1}' -f $e.Win32Code,(Get-PrintServiceCodeClassLabel ([string]$e.CodeClass))};Write-Host ('  {0:g} ID {1} [{2}{3}]: {4}' -f $e.TimeCreated,$e.Id,$layer,$code,$m)}}
     Write-Rule; Write-Info ('Log: {0}' -f $script:CurrentLog)
     if(Read-YesNo (L 'Test a specific shared printer path now?' 'Tes path printer sharing tertentu sekarang?') $true){Invoke-SharedPrinterPathDiagnosis}
     Pause-Tui
@@ -620,7 +690,7 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null) {
     if($null -eq $D){throw 'Diagnostic object is required.'}
     $state = { param($Value) if($null -eq $Value){return [pscustomobject]@{Present=$false;Value=$null;Kind=$null}}; return [pscustomobject]@{Present=[bool]$Value.Present;Value=$Value.Value;Kind=if($Value.Kind){[string]$Value.Kind}else{$null}} }
     $profiles=@($D.Profiles|ForEach-Object{[pscustomobject]@{NetworkCategory=[string]$_.NetworkCategory;IPv4Connectivity=[string]$_.IPv4Connectivity;IPv6Connectivity=[string]$_.IPv6Connectivity}})
-    $events=@($D.PrintErrors|ForEach-Object{[pscustomobject]@{TimeCreatedUtc=if($_.TimeCreated){$_.TimeCreated.ToUniversalTime().ToString('o')}else{$null};Id=[int]$_.Id;Level=[string]$_.LevelDisplayName}})
+    $events=@($D.PrintErrors|ForEach-Object{[pscustomobject]@{TimeCreatedUtc=if($_.TimeCreated){$_.TimeCreated.ToUniversalTime().ToString('o')}else{$null};Id=[int]$_.Id;Level=[string]$_.LevelDisplayName;Category=[string]$_.Category;Win32Code=if($null -ne $_.Win32Code){[int64]$_.Win32Code}else{$null};CodeClass=if($_.CodeClass){[string]$_.CodeClass}else{$null}}})
     $findings=@($D.Findings|ForEach-Object{[pscustomobject]@{Severity=[string]$_.Severity;Text=[string]$_.Text}})
     $target=$null
     if($null -ne $TargetPath){$target=[pscustomobject]@{TestedAtUtc=[string]$TargetPath.TestedAtUtc;DnsResolved=[bool]$TargetPath.DnsResolved;Smb445Reachable=[bool]$TargetPath.Smb445Reachable;Rpc135Reachable=[bool]$TargetPath.Rpc135Reachable;ShareNamespaceAccessible=[bool]$TargetPath.ShareNamespaceAccessible;PrinterInstalled=[bool]$TargetPath.PrinterInstalled;LikelyLayer=[string]$TargetPath.LikelyLayer}}
