@@ -9,7 +9,8 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $source = Get-Content -LiteralPath (Join-Path $repo 'FixPrinter.ps1') -Raw
 if (-not $Version) {
-    $match = [regex]::Match($source, "\$script:Version\s*=\s*'([^']+)'", 'IgnoreCase')
+    $pattern = '\$script:Version\s*=\s*''([^'']+)'''
+    $match = [regex]::Match($source, $pattern, 'IgnoreCase')
     if (-not $match.Success) { throw 'Could not read version from FixPrinter.ps1.' }
     $Version = $match.Groups[1].Value
 }
@@ -31,7 +32,7 @@ foreach ($name in $rootFiles) {
 
 $docsTarget = Join-Path $stage 'docs'
 New-Item -ItemType Directory -Path $docsTarget -Force | Out-Null
-foreach ($name in @('ARCHITECTURE.md','TEST-MATRIX.md','README.id.md')) {
+foreach ($name in @('ARCHITECTURE.md','TEST-MATRIX.md','REAL-WORLD-RESULTS.md','README.id.md')) {
     Copy-Item -LiteralPath (Join-Path $repo ('docs\' + $name)) -Destination (Join-Path $docsTarget $name) -Force
 }
 
