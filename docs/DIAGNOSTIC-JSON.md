@@ -56,6 +56,7 @@ Top-level fields:
 | `Role` | Inferred `Host`, `Client`, `Host + Client`, or local/unknown role. |
 | `Spooler` | Presence and current service status. |
 | `PrinterSummary` | Total/shared/network-connection counts only. |
+| `DriverSummary` | Aggregate normalized driver-model/provider/known-technology counts; no printer/driver/provider names or INF paths. |
 | `NetworkProfiles` | Category and IPv4/IPv6 connectivity without profile names. |
 | `WPP` | Windows Protected Print state and relevant registry state. |
 | `Policies` | Relevant RPC, Point and Print, guest, LM, and blank-password policy state. |

@@ -59,6 +59,9 @@ try {
     if($data.ToolVersion -ne '4.0.3-smoke'){throw 'JSON diagnosis export lost tool version metadata.'}
     if($data.Windows.Build -le 0 -or -not $data.Windows.Name){throw 'JSON diagnosis export is missing Windows identity.'}
     if($data.PrinterSummary.Total -ne @($diagnostic.Printers).Count){throw 'JSON printer summary does not match the reused diagnostic object.'}
+    if($data.DriverSummary.TotalBindings -ne @($diagnostic.Printers).Count){throw 'JSON driver summary does not match printer bindings.'}
+    if(($data.DriverSummary.Models.V3 + $data.DriverSummary.Models.V4 + $data.DriverSummary.Models.Unknown) -ne $data.DriverSummary.TotalBindings){throw 'JSON driver-model summary counts are inconsistent.'}
+    if(($data.DriverSummary.Providers.MicrosoftProvided + $data.DriverSummary.Providers.ThirdParty + $data.DriverSummary.Providers.Unknown) -ne $data.DriverSummary.TotalBindings){throw 'JSON driver-provider summary counts are inconsistent.'}
     if($data.NetworkProfiles.Count -ne @($diagnostic.Profiles).Count){throw 'JSON network profile summary does not match diagnosis.'}
     if($data.TargetPath.LikelyLayer -ne 'RpcReachability' -or $data.TargetPath.Rpc135Reachable){throw 'Sanitized target-path result was not exported correctly.'}
     if($data.NextInvestigation.Layer -ne 'RpcReachability' -or $data.NextInvestigation.Reason -ne 'TargetRpc135Failed' -or -not $data.NextInvestigation.RemoteTransportTested -or $data.NextInvestigation.RootCauseClaimed){throw 'Normalized next-layer correlation was not exported correctly.'}
@@ -72,18 +75,23 @@ try {
     $cloneProps=@{}
     foreach($property in $diagnostic.PSObject.Properties){$cloneProps[$property.Name]=$property.Value}
     $cloneProps['PrintErrors']=@([pscustomobject]@{TimeCreated=(Get-Date);Id=372;LevelDisplayName='Error';Message='SECRET-PRINTER-NAME must never be exported';Category='PrintJob';Win32Code=1726;CodeClass='Rpc'})
+    $cloneProps['Printers']=@([pscustomobject]@{Name='SECRET-PRINTER';DriverName='SECRET-DRIVER';PortName='SECRET-PORT';Shared=$false;ShareName='SECRET-SHARE';Type='Local';ComputerName=$null;DriverModel='V3';DriverProviderClass='ThirdParty';DriverTechnology='OtherOrUnknown';DriverEvidence='SECRET-PROVIDER-METADATA'})
+    $cloneProps['SharedPrinters']=@();$cloneProps['Connections']=@()
     $cloneProps['PolicySources']=[pscustomobject]@{RpcPrivacy=[pscustomobject]@{Configured=$true;Source='GroupPolicy';Evidence='RsopRegistryPolicySetting';GpoId='SECRET-GPO-ID'}}
     $syntheticPayload=ConvertTo-DiagnosticExportObject ([pscustomobject]$cloneProps) $null
     $syntheticJson=$syntheticPayload|ConvertTo-Json -Depth 10
     $syntheticEvent=@($syntheticPayload.PrintServiceEvents)[0]
     if($syntheticEvent.Category -ne 'PrintJob' -or $syntheticEvent.Win32Code -ne 1726 -or $syntheticEvent.CodeClass -ne 'Rpc'){throw 'Normalized PrintService event metadata was not exported.'}
     if($syntheticPayload.PolicySources.RpcPrivacy.Source -ne 'GroupPolicy'){throw 'Normalized Group Policy source label was lost.'}
+    if($syntheticPayload.DriverSummary.TotalBindings -ne 1 -or $syntheticPayload.DriverSummary.Models.V3 -ne 1 -or $syntheticPayload.DriverSummary.Providers.ThirdParty -ne 1){throw 'Normalized synthetic driver summary was not exported.'}
+    if(($syntheticPayload.NextInvestigation.Signals -join '|') -notmatch 'DriverInventory:ThirdPartyV3'){throw 'Normalized third-party v3 inventory signal was not preserved.'}
     if($syntheticJson -match 'SECRET-PRINTER-NAME'){throw 'Raw PrintService event message leaked into structured JSON.'}
     if($syntheticJson -match 'SECRET-GPO-ID'){throw 'Internal RSoP/GPO identifier leaked into structured JSON.'}
+    if($syntheticJson -match 'SECRET-DRIVER|SECRET-PORT|SECRET-SHARE|SECRET-PROVIDER-METADATA|SECRET-PRINTER'){throw 'Raw printer/driver metadata leaked into structured JSON.'}
     if(($syntheticPayload.NextInvestigation.Signals -join '|') -match 'SECRET-PRINTER-NAME|SECRET-GPO-ID'){throw 'Raw identifiers leaked into next-layer supporting signals.'}
     if($syntheticPayload.NextInvestigation.RootCauseClaimed){throw 'Structured correlation must never claim root cause.'}
 
-    foreach($key in @('ComputerName','MachineName','UserName','Domain','IPAddress','SSID','PortName','ShareName','PrinterName','InterfaceAlias','Message','GpoId','SOMID','TenantId','MdmUrl','ProviderId','ManagementUrl')){
+    foreach($key in @('ComputerName','MachineName','UserName','Domain','IPAddress','SSID','PortName','ShareName','PrinterName','DriverName','InfPath','Manufacturer','Provider','InterfaceAlias','Message','GpoId','SOMID','TenantId','MdmUrl','ProviderId','ManagementUrl')){
         if($jsonText -match ('"'+[regex]::Escape($key)+'"\s*:')){throw "JSON export exposes forbidden field: $key"}
     }
     function Get-JsonStringLeaves($Value) {

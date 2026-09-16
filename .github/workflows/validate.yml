@@ -49,6 +49,10 @@ jobs:
         shell: powershell
         run: .\tests\CorrelationSmoke.ps1
 
+      - name: Validate printer driver classification
+        shell: powershell
+        run: .\tests\DriverClassificationSmoke.ps1
+
       - name: Validate sanitized diagnosis examples
         shell: powershell
         run: .\tests\ExamplesSmoke.ps1
