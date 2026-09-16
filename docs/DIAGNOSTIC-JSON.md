@@ -60,6 +60,7 @@ Top-level fields:
 | `WPP` | Windows Protected Print state and relevant registry state. |
 | `Policies` | Relevant RPC, Point and Print, guest, LM, and blank-password policy state. |
 | `PolicySources` | Normalized source evidence for mapped printer policies; no GPO/domain/tenant identifiers are exported. |
+| `NextInvestigation` | Conservative normalized next-layer priority derived from existing evidence; never a root-cause claim. |
 | `SMB1Client` | Current Windows optional-feature state. |
 | `PrintServiceEvents` | Timestamp, event ID, level, normalized troubleshooting category, and optional Event 372 Win32 code/class; raw message text is omitted. |
 | `Findings` | Severity and human-readable diagnosis finding. |

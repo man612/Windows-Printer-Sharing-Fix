@@ -61,6 +61,7 @@ try {
     if($data.PrinterSummary.Total -ne @($diagnostic.Printers).Count){throw 'JSON printer summary does not match the reused diagnostic object.'}
     if($data.NetworkProfiles.Count -ne @($diagnostic.Profiles).Count){throw 'JSON network profile summary does not match diagnosis.'}
     if($data.TargetPath.LikelyLayer -ne 'RpcReachability' -or $data.TargetPath.Rpc135Reachable){throw 'Sanitized target-path result was not exported correctly.'}
+    if($data.NextInvestigation.Layer -ne 'RpcReachability' -or $data.NextInvestigation.Reason -ne 'TargetRpc135Failed' -or -not $data.NextInvestigation.RemoteTransportTested -or $data.NextInvestigation.RootCauseClaimed){throw 'Normalized next-layer correlation was not exported correctly.'}
     foreach($name in @('RpcPrivacy','RpcUseNamedPipe','RpcProtocols','PointAndPrint','WppGroupPolicy')){
         $actual=$data.PolicySources.PSObject.Properties[$name].Value
         $expected=$diagnostic.PolicySources.PSObject.Properties[$name].Value
@@ -79,6 +80,8 @@ try {
     if($syntheticPayload.PolicySources.RpcPrivacy.Source -ne 'GroupPolicy'){throw 'Normalized Group Policy source label was lost.'}
     if($syntheticJson -match 'SECRET-PRINTER-NAME'){throw 'Raw PrintService event message leaked into structured JSON.'}
     if($syntheticJson -match 'SECRET-GPO-ID'){throw 'Internal RSoP/GPO identifier leaked into structured JSON.'}
+    if(($syntheticPayload.NextInvestigation.Signals -join '|') -match 'SECRET-PRINTER-NAME|SECRET-GPO-ID'){throw 'Raw identifiers leaked into next-layer supporting signals.'}
+    if($syntheticPayload.NextInvestigation.RootCauseClaimed){throw 'Structured correlation must never claim root cause.'}
 
     foreach($key in @('ComputerName','MachineName','UserName','Domain','IPAddress','SSID','PortName','ShareName','PrinterName','InterfaceAlias','Message','GpoId','SOMID','TenantId','MdmUrl','ProviderId','ManagementUrl')){
         if($jsonText -match ('"'+[regex]::Escape($key)+'"\s*:')){throw "JSON export exposes forbidden field: $key"}

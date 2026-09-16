@@ -61,6 +61,9 @@ $allowedPolicySources=@('LocalGroupPolicy','GroupPolicy','PossibleMdmOrOtherPoli
 foreach($property in $diagnostic.PolicySources.PSObject.Properties){
     if([string]$property.Value.Source -notin $allowedPolicySources){throw "Unexpected printer policy source label: $($property.Value.Source)"}
 }
+$next=Get-NextInvestigation $diagnostic $null
+if($null -eq $next -or $next.RootCauseClaimed){throw 'Next-layer correlation is missing or claimed root cause.'}
+if($diagnostic.Spooler -and [string]$diagnostic.Spooler.Status -eq 'Running' -and $next.Layer -ne 'RemoteTransportUntested'){throw 'Healthy local diagnosis without target test must keep remote transport explicitly untested.'}
 foreach($event in @($diagnostic.PrintErrors)){
     if(-not $event.Category){throw 'PrintService event classification is missing from a runtime event.'}
 }
