@@ -13,6 +13,7 @@ Testing, real-world evidence, and structured diagnostic export infrastructure.
 - Optional sanitized structured diagnosis JSON export with schema versioning, same-run timing metadata, and optional sanitized target-path results.
 - JSON export smoke coverage proving cached diagnosis reuse, privacy omissions, and an unchanged managed-state fingerprint.
 - `docs/DIAGNOSTIC-JSON.md` documenting schema v1, privacy boundaries, storage, and evolution policy.
+- Synthetic sanitized diagnosis examples for healthy, DNS, SMB 445, WPP/legacy-driver, and legacy-security scenarios, with CI privacy/JSON guards.
 
 ### Fixed
 

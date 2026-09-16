@@ -165,6 +165,7 @@ The project deliberately distinguishes Windows Server from Windows 11 even when 
 - [Quick start](docs/QUICKSTART.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Structured diagnostic JSON](docs/DIAGNOSTIC-JSON.md)
+- [Sanitized diagnosis examples](docs/examples/README.md)
 - [Real-world test matrix](docs/TEST-MATRIX.md)
 - [Accepted real-world results](docs/REAL-WORLD-RESULTS.md)
 - [Security policy](SECURITY.md)

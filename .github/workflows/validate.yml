@@ -37,6 +37,10 @@ jobs:
         shell: powershell
         run: .\tests\JsonExportSmoke.ps1
 
+      - name: Validate sanitized diagnosis examples
+        shell: powershell
+        run: .\tests\ExamplesSmoke.ps1
+
       - name: Validate Indonesian localization output
         shell: powershell
         run: .\tests\LocalizationSmoke.ps1

@@ -10,7 +10,7 @@ Thanks for helping improve a small Windows troubleshooting project. Useful contr
 - For questions or working-setup notes, prefer GitHub Discussions.
 - New contributors can look for `good first issue` and `help wanted` labels.
 
-Before posting logs or diagnostics, prefer **Tools and Logs > Export latest diagnosis as sanitized JSON** when structured evidence is useful. Review the file before posting it publicly; do not assume sanitization makes every policy value non-sensitive.
+Before posting logs or diagnostics, prefer **Tools and Logs > Export latest diagnosis as sanitized JSON** when structured evidence is useful. Review the file before posting it publicly; do not assume sanitization makes every policy value non-sensitive. See [docs/examples/](docs/examples/README.md) for short synthetic reports that show the expected level of detail.
 
 ## Development baseline
 
@@ -48,6 +48,7 @@ powershell.exe -NoProfile -File .\tests\RuntimeSmoke.ps1
 powershell.exe -NoProfile -File .\tests\PerformanceSmoke.ps1
 powershell.exe -NoProfile -File .\tests\EvidenceSmoke.ps1
 powershell.exe -NoProfile -File .\tests\JsonExportSmoke.ps1
+powershell.exe -NoProfile -File .\tests\ExamplesSmoke.ps1
 powershell.exe -NoProfile -File .\tests\LocalizationSmoke.ps1
 powershell.exe -NoProfile -File .\tests\WorkspaceSmoke.ps1
 powershell.exe -NoProfile -File .\tests\PackageSmoke.ps1

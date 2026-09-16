@@ -18,7 +18,7 @@
 
 ## Before sharing a diagnostic report
 
-Use **Tools and Logs > Export latest diagnosis as sanitized JSON** when machine-readable evidence is useful. The JSON reuses the latest diagnosis object and omits common machine/network identifiers, printer/share names, IP addresses, and raw event messages. Review every file before posting it publicly.
+Use **Tools and Logs > Export latest diagnosis as sanitized JSON** when machine-readable evidence is useful. The JSON reuses the latest diagnosis object and omits common machine/network identifiers, printer/share names, IP addresses, and raw event messages. Review every file before posting it publicly. For short examples of what useful sanitized evidence looks like, see [examples/README.md](examples/README.md).
 
 ## Runtime files
 
