@@ -66,6 +66,10 @@ try {
     if($data.DriverSummary.TotalBindings -ne @($diagnostic.Printers).Count){throw 'JSON driver summary does not match printer bindings.'}
     if(($data.DriverSummary.Models.V3 + $data.DriverSummary.Models.V4 + $data.DriverSummary.Models.Unknown) -ne $data.DriverSummary.TotalBindings){throw 'JSON driver-model summary counts are inconsistent.'}
     if(($data.DriverSummary.Providers.MicrosoftProvided + $data.DriverSummary.Providers.ThirdParty + $data.DriverSummary.Providers.Unknown) -ne $data.DriverSummary.TotalBindings){throw 'JSON driver-provider summary counts are inconsistent.'}
+    if($data.WppReadiness.TotalBindings -ne @($diagnostic.Printers).Count -or $data.WppReadiness.LocalBindingState -ne $diagnostic.WppReadiness.LocalBindingState){throw 'JSON WPP readiness summary does not match diagnosis.'}
+    if(($data.WppReadiness.KnownWindowsReadyPrintBindings+$data.WppReadiness.ThirdPartyDriverBindings+$data.WppReadiness.UnknownOrOtherBindings) -ne $data.WppReadiness.TotalBindings){throw 'JSON WPP readiness bucket counts are inconsistent.'}
+    if($data.WppReadiness.DeviceCompatibilityProven){throw 'JSON WPP readiness must never claim device compatibility.'}
+    if($data.WppReadiness.EvidenceScope -ne 'InstalledPrinterBindingsOnly'){throw 'JSON WPP readiness evidence scope changed unexpectedly.'}
     if($data.NetworkProfiles.Count -ne @($diagnostic.Profiles).Count){throw 'JSON network profile summary does not match diagnosis.'}
     if($null -eq $data.SmbSecurity -or [bool]$data.SmbSecurity.Client.Available -ne [bool]$diagnostic.SmbSecurity.Client.Available){throw 'JSON SMB security posture does not match diagnosis.'}
     if($data.TargetPath.LikelyLayer -ne 'RpcReachability' -or $data.TargetPath.Rpc135Reachable){throw 'Sanitized target-path result was not exported correctly.'}
@@ -92,6 +96,8 @@ try {
     if($syntheticEvent.Category -ne 'PrintJob' -or $syntheticEvent.Win32Code -ne 1726 -or $syntheticEvent.CodeClass -ne 'Rpc'){throw 'Normalized PrintService event metadata was not exported.'}
     if($syntheticPayload.PolicySources.RpcPrivacy.Source -ne 'GroupPolicy'){throw 'Normalized Group Policy source label was lost.'}
     if($syntheticPayload.DriverSummary.TotalBindings -ne 1 -or $syntheticPayload.DriverSummary.Models.V3 -ne 1 -or $syntheticPayload.DriverSummary.Providers.ThirdParty -ne 1){throw 'Normalized synthetic driver summary was not exported.'}
+    if($syntheticPayload.WppReadiness.TotalBindings -ne 1 -or $syntheticPayload.WppReadiness.ThirdPartyDriverBindings -ne 1 -or $syntheticPayload.WppReadiness.LocalBindingState -ne 'ThirdPartyDriverDependenciesPresent'){throw 'Synthetic WPP readiness was not recomputed from the exported binding inventory.'}
+    if($syntheticPayload.WppReadiness.DeviceCompatibilityProven){throw 'Synthetic WPP readiness claimed device compatibility.'}
     if(($syntheticPayload.NextInvestigation.Signals -join '|') -notmatch 'DriverInventory:ThirdPartyV3'){throw 'Normalized third-party v3 inventory signal was not preserved.'}
     if($syntheticJson -match 'SECRET-PRINTER-NAME'){throw 'Raw PrintService event message leaked into structured JSON.'}
     if($syntheticJson -match 'SECRET-GPO-ID'){throw 'Internal RSoP/GPO identifier leaked into structured JSON.'}

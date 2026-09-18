@@ -78,6 +78,7 @@ Tidak ada telemetry atau upload laporan otomatis. Test UNC hanya mengakses host/
 - [Klasifikasi event PrintService](PRINTSERVICE-EVENTS.md)
 - [Bukti sumber kebijakan printer](POLICY-SOURCES.md)
 - [Klasifikasi driver printer](DRIVER-CLASSIFICATION.md)
+- [Bukti kesiapan Windows Protected Print](WPP-READINESS.md)
 - [Korelasi lapisan troubleshooting](CORRELATION.md)
 - [Diagnosis SMB/RPC modern](MODERN-SMB-RPC.md)
 - [Integritas dan provenance release](RELEASE-INTEGRITY.md)

@@ -33,7 +33,7 @@ The local diagnostic gathers evidence before recommending compatibility changes:
 - Shared-printer host role.
 - Network-printer client role.
 - Network profile category.
-- WPP indicators.
+- WPP indicators plus privacy-safe local Windows Ready Print / third-party binding readiness evidence.
 - RPC policy state, including explicit print-RPC TCP port, Kerberos listener enforcement, and remote Spooler RPC endpoint state.
 - Point and Print policy state.
 - Modern SMB client/server signing and encryption posture.

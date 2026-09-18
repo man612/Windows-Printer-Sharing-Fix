@@ -39,7 +39,7 @@ The structured export is sanitized by design. It does **not** include:
 - printer names, share names, UNC paths, port names, or interface aliases;
 - raw PrintService event messages.
 
-It does include Windows/build information (base build, UBR revision when available, and normalized full build), inferred host/client role, printer counts, network-profile categories/connectivity, WPP and relevant policy states, SMB1 client state, finding text, timing metadata, and sanitized PrintService event metadata.
+It does include Windows/build information (base build, UBR revision when available, and normalized full build), inferred host/client role, printer counts, network-profile categories/connectivity, WPP state/readiness aggregates and relevant policy states, SMB1 client state, finding text, timing metadata, and sanitized PrintService event metadata.
 
 Always review a file before posting it publicly. Policy values can describe the security posture of a machine even when identity fields are omitted. `PolicySources` contains only normalized labels such as `LocalGroupPolicy`, `GroupPolicy`, `PossibleMdmOrOtherPolicy`, or `RegistryOnlyOrUnknownSource`; raw GPO/tenant/management identifiers are intentionally omitted.
 
@@ -73,6 +73,7 @@ Top-level fields:
 | `DriverSummary` | Aggregate normalized driver-model/provider/known-technology counts; no printer/driver/provider names or INF paths. |
 | `NetworkProfiles` | Category and IPv4/IPv6 connectivity without profile names. |
 | `WPP` | Windows Protected Print state and relevant registry state. |
+| `WppReadiness` | Aggregate installed-binding evidence for Windows Ready Print/third-party dependency/unknown buckets. It never proves physical-device compatibility and contains no printer or driver names. |
 | `SmbSecurity` | Effective SMB client/server signing and encryption posture from the Windows SMB provider; no server/share identifiers. |
 | `Policies` | Relevant RPC (including explicit TCP port, Kerberos/listener state), Point and Print, guest, LM, and blank-password policy state. |
 | `PolicySources` | Normalized source evidence for mapped printer policies; no GPO/domain/tenant identifiers are exported. |

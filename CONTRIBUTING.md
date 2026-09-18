@@ -56,6 +56,7 @@ powershell.exe -NoProfile -File .\tests\PolicySourceSmoke.ps1
 powershell.exe -NoProfile -File .\tests\ModernSmbRpcSmoke.ps1
 powershell.exe -NoProfile -File .\tests\CorrelationSmoke.ps1
 powershell.exe -NoProfile -File .\tests\DriverClassificationSmoke.ps1
+powershell.exe -NoProfile -File .\tests\WppReadinessSmoke.ps1
 powershell.exe -NoProfile -File .\tests\TestPageVerificationSmoke.ps1
 powershell.exe -NoProfile -File .\tests\ExamplesSmoke.ps1
 powershell.exe -NoProfile -File .\tests\LocalizationSmoke.ps1

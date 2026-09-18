@@ -67,6 +67,15 @@ foreach($printer in @($diagnostic.Printers)){
     if([string]$printer.DriverTechnology -notin $allowedDriverTechnologies){throw "Unexpected printer driver technology: $($printer.DriverTechnology)"}
 }
 if ($null -eq $diagnostic.WPP) { throw 'WPP state object is missing.' }
+if ($null -eq $diagnostic.WppReadiness) { throw 'WPP readiness evidence is missing.' }
+$allowedWppReadiness=@('NoInstalledPrinters','WindowsReadyPrintBindingsOnly','ThirdPartyDriverDependenciesPresent','MixedOrUnknown')
+if([string]$diagnostic.WppReadiness.LocalBindingState -notin $allowedWppReadiness){throw "Unexpected WPP readiness state: $($diagnostic.WppReadiness.LocalBindingState)"}
+if([int]$diagnostic.WppReadiness.TotalBindings -ne @($diagnostic.Printers).Count){throw 'WPP readiness total does not match installed printer bindings.'}
+if(($diagnostic.WppReadiness.KnownWindowsReadyPrintBindings+$diagnostic.WppReadiness.ThirdPartyDriverBindings+$diagnostic.WppReadiness.UnknownOrOtherBindings) -ne $diagnostic.WppReadiness.TotalBindings){throw 'WPP readiness bucket counts are inconsistent.'}
+if($diagnostic.WppReadiness.DeviceCompatibilityProven){throw 'WPP readiness must never claim physical-device compatibility.'}
+$expectedWppOsSupport=($diagnostic.OS.Build -ge 26100 -and -not $diagnostic.OS.IsServer)
+if([bool]$diagnostic.WppReadiness.OsSupportsWpp -ne [bool]$expectedWppOsSupport){throw 'WPP OS support evidence is inconsistent with Windows build/server state.'}
+if([bool]$diagnostic.WppReadiness.WppEnabled -ne [bool]$diagnostic.WPP.Enabled){throw 'WPP readiness lost current WPP enabled state.'}
 if ($null -eq $diagnostic.SmbSecurity -or $null -eq $diagnostic.SmbSecurity.Client -or $null -eq $diagnostic.SmbSecurity.Server) { throw 'Modern SMB security posture is missing.' }
 if ($diagnostic.SmbSecurity.Client.Available -and $null -eq $diagnostic.SmbSecurity.Client.RequireSigning) { throw 'Available SMB client posture lost signing state.' }
 if ($null -eq $diagnostic.PolicySources) { throw 'Printer policy source evidence is missing.' }
