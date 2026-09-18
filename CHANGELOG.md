@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed
+
+- Stable tag publication now requires the exact tagged commit to remain on `main` and to have a successful `Validate Windows Printer Fix` push run before release creation.
+- Same-tag release runs are serialized, release state is preflighted before provenance signing, and uploaded ZIP/checksum bytes are re-downloaded and hash-verified before publication.
+- Release verification guidance now pins the expected signer workflow/source commit and documents immutable-release plus release-asset attestation verification.
+
 ## 4.2.0 - 2026-09-18
 
 Modern Windows printing diagnostics, automation, release integrity, and engineering hardening.
