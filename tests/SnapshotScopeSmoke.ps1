@@ -108,7 +108,7 @@ try {
         param([int]$InterfaceIndex,[string]$NetworkCategory)
         $script:NetworkSetCalls += [pscustomobject]@{InterfaceIndex=$InterfaceIndex;NetworkCategory=$NetworkCategory}
     }
-    Set-OneNetworkPrivate -Profile $selected
+    Set-OneNetworkPrivate -SelectedProfile $selected
     if($script:NetworkSetCalls.Count -ne 1 -or $script:NetworkSetCalls[0].InterfaceIndex -ne 7 -or $script:NetworkSetCalls[0].NetworkCategory -ne 'Private'){throw 'Selected-network repair did not mutate only the supplied interface.'}
 
     'previous-pointer' | Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8
