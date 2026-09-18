@@ -53,7 +53,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = '${{ github.ref_name }}'
-          $releases = @(gh release list --limit 100 --json tagName,isDraft,url | ConvertFrom-Json)
+          $releases = @(gh release list --limit 100 --json tagName,isDraft | ConvertFrom-Json)
           if ($LASTEXITCODE -ne 0) { throw 'Could not list existing releases.' }
           $release = @($releases | Where-Object { $_.tagName -eq $tag }) | Select-Object -First 1
           if ($release) {
