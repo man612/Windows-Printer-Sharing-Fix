@@ -41,6 +41,8 @@ for($i=1;$i -lt $positions.Count;$i++){
     if($positions[$i] -le $positions[$i-1]){throw 'Release workflow step ordering is unsafe.'}
 }
 
+if($release -match 'gh release view'){throw 'Release workflow must not use a missing-release lookup that exits nonzero under PowerShell Stop semantics.'}
+if($release -notmatch 'gh release list.+--json tagName,isDraft,url'){throw 'Release workflow must use a zero-exit release-list lookup before draft creation.'}
 if($release -notmatch 'gh release create.+--verify-tag.+--draft'){throw 'Draft release creation must verify the tag and stay draft initially.'}
 if($release -notmatch 'gh release upload'){throw 'Release asset upload step is missing.'}
 if($release -notmatch 'gh release edit.+--draft=false'){throw 'Release must be published only after the draft is populated.'}
