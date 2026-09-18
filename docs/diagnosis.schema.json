@@ -1,0 +1,870 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/man612/Windows-Printer-Sharing-Fix/main/docs/diagnosis.schema.json",
+  "title": "Windows Printer Sharing Fix sanitized diagnosis",
+  "description": "Machine-validatable schema for windows-printer-sharing-fix/diagnosis schema version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "Schema",
+    "SchemaVersion",
+    "ToolVersion",
+    "CollectedAtUtc",
+    "ExportedAtUtc",
+    "Language",
+    "Sanitized",
+    "Privacy",
+    "Windows",
+    "Role",
+    "Spooler",
+    "PrinterSummary",
+    "DriverSummary",
+    "NetworkProfiles",
+    "WPP",
+    "SmbSecurity",
+    "Policies",
+    "PolicySources",
+    "NextInvestigation",
+    "SMB1Client",
+    "PrintServiceEvents",
+    "Findings",
+    "TimingMs",
+    "TargetPath",
+    "FunctionalVerification"
+  ],
+  "properties": {
+    "Schema": {
+      "const": "windows-printer-sharing-fix/diagnosis"
+    },
+    "SchemaVersion": {
+      "const": 1
+    },
+    "ToolVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "CollectedAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ExportedAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "Language": {
+      "enum": [
+        "EN",
+        "ID"
+      ]
+    },
+    "Sanitized": {
+      "const": true
+    },
+    "Privacy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "Windows": {
+      "$ref": "#/$defs/windows"
+    },
+    "Role": {
+      "type": "string",
+      "minLength": 1
+    },
+    "Spooler": {
+      "$ref": "#/$defs/spooler"
+    },
+    "PrinterSummary": {
+      "$ref": "#/$defs/printerSummary"
+    },
+    "DriverSummary": {
+      "$ref": "#/$defs/driverSummary"
+    },
+    "NetworkProfiles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/networkProfile"
+      }
+    },
+    "WPP": {
+      "$ref": "#/$defs/wpp"
+    },
+    "SmbSecurity": {
+      "$ref": "#/$defs/smbSecurity"
+    },
+    "Policies": {
+      "$ref": "#/$defs/policies"
+    },
+    "PolicySources": {
+      "$ref": "#/$defs/policySources"
+    },
+    "NextInvestigation": {
+      "$ref": "#/$defs/nextInvestigation"
+    },
+    "SMB1Client": {
+      "type": "string"
+    },
+    "PrintServiceEvents": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/printServiceEvent"
+      }
+    },
+    "Findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "TimingMs": {
+      "$ref": "#/$defs/timing"
+    },
+    "TargetPath": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/targetPath"
+        }
+      ]
+    },
+    "FunctionalVerification": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/functionalVerification"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "windows": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Name",
+        "DisplayVersion",
+        "Build",
+        "Revision",
+        "FullBuild",
+        "InstallationType",
+        "IsServer",
+        "PowerShell"
+      ],
+      "properties": {
+        "Name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "DisplayVersion": {
+          "type": "string"
+        },
+        "Build": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "Revision": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "FullBuild": {
+          "type": "string",
+          "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+        },
+        "InstallationType": {
+          "type": "string"
+        },
+        "IsServer": {
+          "type": "boolean"
+        },
+        "PowerShell": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "spooler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Present",
+        "Status"
+      ],
+      "properties": {
+        "Present": {
+          "type": "boolean"
+        },
+        "Status": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "printerSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Total",
+        "Shared",
+        "NetworkConnections"
+      ],
+      "properties": {
+        "Total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "Shared": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "NetworkConnections": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "driverSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "TotalBindings",
+        "Models",
+        "Providers",
+        "Technologies"
+      ],
+      "properties": {
+        "TotalBindings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "Models": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "V3",
+            "V4",
+            "Unknown"
+          ],
+          "properties": {
+            "V3": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "V4": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "Unknown": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "Providers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "MicrosoftProvided",
+            "ThirdParty",
+            "Unknown"
+          ],
+          "properties": {
+            "MicrosoftProvided": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "ThirdParty": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "Unknown": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "Technologies": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "MicrosoftIppClassDriver",
+            "UniversalPrintClassDriver"
+          ],
+          "properties": {
+            "MicrosoftIppClassDriver": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "UniversalPrintClassDriver": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "networkProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "NetworkCategory",
+        "IPv4Connectivity",
+        "IPv6Connectivity"
+      ],
+      "properties": {
+        "NetworkCategory": {
+          "type": "string"
+        },
+        "IPv4Connectivity": {
+          "type": "string"
+        },
+        "IPv6Connectivity": {
+          "type": "string"
+        }
+      }
+    },
+    "registryState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Present",
+        "Value",
+        "Kind"
+      ],
+      "properties": {
+        "Present": {
+          "type": "boolean"
+        },
+        "Value": {
+          "type": [
+            "string",
+            "integer",
+            "number",
+            "boolean",
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "integer",
+              "number",
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "Kind": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "wpp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Enabled",
+        "GroupPolicy",
+        "Mode",
+        "EnabledBy"
+      ],
+      "properties": {
+        "Enabled": {
+          "type": "boolean"
+        },
+        "GroupPolicy": {
+          "$ref": "#/$defs/registryState"
+        },
+        "Mode": {
+          "$ref": "#/$defs/registryState"
+        },
+        "EnabledBy": {
+          "$ref": "#/$defs/registryState"
+        }
+      }
+    },
+    "smbSecurity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Client",
+        "Server"
+      ],
+      "properties": {
+        "Client": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "Available",
+            "RequireSigning",
+            "RequireEncryption",
+            "InsecureGuestAllowed",
+            "AuditServerDoesNotSupportSigning",
+            "AuditServerDoesNotSupportEncryption"
+          ],
+          "properties": {
+            "Available": {
+              "type": "boolean"
+            },
+            "RequireSigning": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "RequireEncryption": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "InsecureGuestAllowed": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "AuditServerDoesNotSupportSigning": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "AuditServerDoesNotSupportEncryption": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "Server": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "Available",
+            "RequireSigning",
+            "EncryptData",
+            "RejectUnencryptedAccess",
+            "AuditClientDoesNotSupportSigning",
+            "AuditClientDoesNotSupportEncryption"
+          ],
+          "properties": {
+            "Available": {
+              "type": "boolean"
+            },
+            "RequireSigning": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "EncryptData": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "RejectUnencryptedAccess": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "AuditClientDoesNotSupportSigning": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "AuditClientDoesNotSupportEncryption": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "RpcPrivacy",
+        "RpcUseNamedPipe",
+        "RpcProtocols",
+        "RpcTcpPort",
+        "ForceKerberosForRpc",
+        "RemoteRpcEndpoint",
+        "PointAndPrint",
+        "GuestAuth",
+        "LmCompatibility",
+        "BlankPassword"
+      ],
+      "properties": {
+        "RpcPrivacy": {
+          "$ref": "#/$defs/registryState"
+        },
+        "RpcUseNamedPipe": {
+          "$ref": "#/$defs/registryState"
+        },
+        "RpcProtocols": {
+          "$ref": "#/$defs/registryState"
+        },
+        "RpcTcpPort": {
+          "$ref": "#/$defs/registryState"
+        },
+        "ForceKerberosForRpc": {
+          "$ref": "#/$defs/registryState"
+        },
+        "RemoteRpcEndpoint": {
+          "$ref": "#/$defs/registryState"
+        },
+        "PointAndPrint": {
+          "$ref": "#/$defs/registryState"
+        },
+        "GuestAuth": {
+          "$ref": "#/$defs/registryState"
+        },
+        "LmCompatibility": {
+          "$ref": "#/$defs/registryState"
+        },
+        "BlankPassword": {
+          "$ref": "#/$defs/registryState"
+        }
+      }
+    },
+    "policySource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Configured",
+        "Source",
+        "Evidence"
+      ],
+      "properties": {
+        "Configured": {
+          "type": "boolean"
+        },
+        "Source": {
+          "enum": [
+            "LocalGroupPolicy",
+            "GroupPolicy",
+            "PossibleMdmOrOtherPolicy",
+            "RegistryOnlyOrUnknownSource",
+            "NotConfigured"
+          ]
+        },
+        "Evidence": {
+          "type": "string"
+        }
+      }
+    },
+    "policySources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "RpcPrivacy",
+        "RpcUseNamedPipe",
+        "RpcProtocols",
+        "RpcTcpPort",
+        "ForceKerberosForRpc",
+        "RemoteRpcEndpoint",
+        "PointAndPrint",
+        "WppGroupPolicy"
+      ],
+      "properties": {
+        "RpcPrivacy": {
+          "$ref": "#/$defs/policySource"
+        },
+        "RpcUseNamedPipe": {
+          "$ref": "#/$defs/policySource"
+        },
+        "RpcProtocols": {
+          "$ref": "#/$defs/policySource"
+        },
+        "RpcTcpPort": {
+          "$ref": "#/$defs/policySource"
+        },
+        "ForceKerberosForRpc": {
+          "$ref": "#/$defs/policySource"
+        },
+        "RemoteRpcEndpoint": {
+          "$ref": "#/$defs/policySource"
+        },
+        "PointAndPrint": {
+          "$ref": "#/$defs/policySource"
+        },
+        "WppGroupPolicy": {
+          "$ref": "#/$defs/policySource"
+        }
+      }
+    },
+    "nextInvestigation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Layer",
+        "Reason",
+        "RemoteTransportTested",
+        "Signals",
+        "RootCauseClaimed"
+      ],
+      "properties": {
+        "Layer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "RemoteTransportTested": {
+          "type": "boolean"
+        },
+        "Signals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "RootCauseClaimed": {
+          "const": false
+        }
+      }
+    },
+    "printServiceEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "TimeCreatedUtc",
+        "Id",
+        "Level",
+        "Category",
+        "Win32Code",
+        "CodeClass"
+      ],
+      "properties": {
+        "TimeCreatedUtc": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "Id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "Level": {
+          "type": "string"
+        },
+        "Category": {
+          "type": "string"
+        },
+        "Win32Code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "CodeClass": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Severity",
+        "Text"
+      ],
+      "properties": {
+        "Severity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Text": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "OS",
+        "Spooler",
+        "Printers",
+        "PrinterDrivers",
+        "Profiles",
+        "WPP",
+        "SmbSecurity",
+        "PrintEvents",
+        "PolicySources",
+        "SMB1",
+        "Total"
+      ],
+      "properties": {
+        "OS": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "Spooler": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "Printers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "PrinterDrivers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "Profiles": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "WPP": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "SmbSecurity": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "PrintEvents": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "PolicySources": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "SMB1": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "Total": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "targetPath": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "TestedAtUtc",
+        "DnsResolved",
+        "Smb445Reachable",
+        "Rpc135Reachable",
+        "RpcConfiguredPort",
+        "RpcConfiguredPortReachable",
+        "ShareNamespaceAccessible",
+        "PrinterInstalled",
+        "SmbSecuritySignals",
+        "LikelyLayer"
+      ],
+      "properties": {
+        "TestedAtUtc": {
+          "type": "string"
+        },
+        "DnsResolved": {
+          "type": "boolean"
+        },
+        "Smb445Reachable": {
+          "type": "boolean"
+        },
+        "Rpc135Reachable": {
+          "type": "boolean"
+        },
+        "RpcConfiguredPort": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "RpcConfiguredPortReachable": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "ShareNamespaceAccessible": {
+          "type": "boolean"
+        },
+        "PrinterInstalled": {
+          "type": "boolean"
+        },
+        "SmbSecuritySignals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "LikelyLayer": {
+          "type": "string"
+        }
+      }
+    },
+    "functionalVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "VerifiedAtUtc",
+        "DiagnosticCollectedAtUtc",
+        "RequestStatus",
+        "Outcome",
+        "NetworkConnection",
+        "DriverModel",
+        "DriverProviderClass",
+        "DriverTechnology"
+      ],
+      "properties": {
+        "VerifiedAtUtc": {
+          "type": "string"
+        },
+        "DiagnosticCollectedAtUtc": {
+          "type": "string"
+        },
+        "RequestStatus": {
+          "type": "string"
+        },
+        "Outcome": {
+          "type": "string"
+        },
+        "NetworkConnection": {
+          "type": "boolean"
+        },
+        "DriverModel": {
+          "type": "string"
+        },
+        "DriverProviderClass": {
+          "type": "string"
+        },
+        "DriverTechnology": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

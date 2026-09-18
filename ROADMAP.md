@@ -10,7 +10,7 @@ This roadmap describes direction, not a promise of release dates. Stable behavio
 
 ### Verification
 
-- Harden the versioned structured-diagnosis schema only when real consumers need additional fields.
+- Keep the published diagnosis schema backward-compatible within schema version 1; use an explicit schema-version change for future breaking contracts.
 - Grow the integration matrix with anonymized real-world hardware/driver results and track accepted evidence in `docs/REAL-WORLD-RESULTS.md`.
 
 ### Distribution and docs

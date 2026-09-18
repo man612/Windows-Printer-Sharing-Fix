@@ -6,7 +6,12 @@ English is the default language. Indonesian is optional.
 #>
 
 [CmdletBinding()]
-param([switch]$NoElevation)
+param(
+    [switch]$NoElevation,
+    [switch]$DiagnoseOnly,
+    [Alias('Json')]
+    [string]$JsonOutput = ''
+)
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
@@ -1181,7 +1186,8 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null,[object]$
     $target=$null
     if($null -ne $TargetPath){
         $rpcPortProp=$TargetPath.PSObject.Properties['RpcConfiguredPort'];$rpcPortReachableProp=$TargetPath.PSObject.Properties['RpcConfiguredPortReachable'];$smbSignalsProp=$TargetPath.PSObject.Properties['SmbSecuritySignals']
-        $target=[pscustomobject]@{TestedAtUtc=[string]$TargetPath.TestedAtUtc;DnsResolved=[bool]$TargetPath.DnsResolved;Smb445Reachable=[bool]$TargetPath.Smb445Reachable;Rpc135Reachable=[bool]$TargetPath.Rpc135Reachable;RpcConfiguredPort=if($rpcPortProp -and $null -ne $rpcPortProp.Value){[int]$rpcPortProp.Value}else{$null};RpcConfiguredPortReachable=if($rpcPortReachableProp -and $null -ne $rpcPortReachableProp.Value){[bool]$rpcPortReachableProp.Value}else{$null};ShareNamespaceAccessible=[bool]$TargetPath.ShareNamespaceAccessible;PrinterInstalled=[bool]$TargetPath.PrinterInstalled;SmbSecuritySignals=if($smbSignalsProp){@($smbSignalsProp.Value)}else{@()};LikelyLayer=[string]$TargetPath.LikelyLayer}
+        [object[]]$smbSignals=@();if($smbSignalsProp){[object[]]$smbSignals=@($smbSignalsProp.Value)}
+        $target=[pscustomobject]@{TestedAtUtc=[string]$TargetPath.TestedAtUtc;DnsResolved=[bool]$TargetPath.DnsResolved;Smb445Reachable=[bool]$TargetPath.Smb445Reachable;Rpc135Reachable=[bool]$TargetPath.Rpc135Reachable;RpcConfiguredPort=if($rpcPortProp -and $null -ne $rpcPortProp.Value){[int]$rpcPortProp.Value}else{$null};RpcConfiguredPortReachable=if($rpcPortReachableProp -and $null -ne $rpcPortReachableProp.Value){[bool]$rpcPortReachableProp.Value}else{$null};ShareNamespaceAccessible=[bool]$TargetPath.ShareNamespaceAccessible;PrinterInstalled=[bool]$TargetPath.PrinterInstalled;SmbSecuritySignals=$smbSignals;LikelyLayer=[string]$TargetPath.LikelyLayer}
     }
     $verification=$null
     if($null -ne $FunctionalVerification){$verification=[pscustomobject]@{VerifiedAtUtc=[string]$FunctionalVerification.VerifiedAtUtc;DiagnosticCollectedAtUtc=[string]$FunctionalVerification.DiagnosticCollectedAtUtc;RequestStatus=[string]$FunctionalVerification.RequestStatus;Outcome=[string]$FunctionalVerification.Outcome;NetworkConnection=[bool]$FunctionalVerification.NetworkConnection;DriverModel=[string]$FunctionalVerification.DriverModel;DriverProviderClass=[string]$FunctionalVerification.DriverProviderClass;DriverTechnology=[string]$FunctionalVerification.DriverTechnology}}
@@ -1332,11 +1338,31 @@ function Show-MainMenu {
         switch($c){'1'{[void](Invoke-Diagnosis)};'2'{Show-SafeRepairMenu};'3'{Show-CompatibilityMenu};'4'{Show-LegacyMenu};'5'{Invoke-RestoreLatest};'6'{Show-ToolsMenu};'7'{Show-GuideMenu};'8'{Show-LanguageMenu};'9'{return}}
     }
 }
+$headlessIntent = $DiagnoseOnly -or -not [string]::IsNullOrWhiteSpace($JsonOutput)
 try {
     Initialize-Workspace
+    if($JsonOutput -and -not $DiagnoseOnly){throw '-JsonOutput/-Json can only be used with -DiagnoseOnly.'}
+    if($DiagnoseOnly){
+        if(-not(Test-IsAdministrator)){
+            [Console]::Error.WriteLine('Headless diagnosis requires an elevated PowerShell session. No UAC prompt is opened in -DiagnoseOnly mode.')
+            exit 5
+        }
+        $outputPath=if($JsonOutput){[IO.Path]::GetFullPath($JsonOutput)}else{Join-Path $script:ExportRoot 'diagnostic-headless.json'}
+        $outputParent=Split-Path -Parent $outputPath
+        if($outputParent -and -not(Test-Path -LiteralPath $outputParent)){New-Item -ItemType Directory -Path $outputParent -Force|Out-Null}
+        $diagnostic=Invoke-Diagnosis -Quiet
+        [void](Export-DiagnosticJson -Diagnostic $diagnostic -OutputPath $outputPath)
+        Write-Output $outputPath
+        exit 0
+    }
     if(-not(Ensure-Administrator)){if(-not(Test-IsAdministrator)){exit 0}}
     Show-MainMenu
 } catch {
+    if($headlessIntent){
+        [Console]::Error.WriteLine(('Headless diagnosis failed: {0}' -f $_.Exception.Message))
+        try{Write-Log $_.Exception.ToString() 'FATAL'}catch{}
+        exit 1
+    }
     Write-Host ((L 'Fatal error: {0}' 'Error fatal: {0}') -f $_.Exception.Message) -ForegroundColor Red
     Write-Log $_.Exception.ToString() 'FATAL'
     Pause-Tui

@@ -74,6 +74,7 @@ Tidak ada telemetry atau upload laporan otomatis. Test UNC hanya mengakses host/
 - [Quick Start](QUICKSTART.md)
 - [Arsitektur](ARCHITECTURE.md)
 - [JSON diagnosis terstruktur](DIAGNOSTIC-JSON.md)
+- [Schema JSON diagnosis](diagnosis.schema.json)
 - [Klasifikasi event PrintService](PRINTSERVICE-EVENTS.md)
 - [Bukti sumber kebijakan printer](POLICY-SOURCES.md)
 - [Klasifikasi driver printer](DRIVER-CLASSIFICATION.md)

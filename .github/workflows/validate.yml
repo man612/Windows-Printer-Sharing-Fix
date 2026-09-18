@@ -41,6 +41,14 @@ jobs:
         shell: powershell
         run: .\tests\JsonExportSmoke.ps1
 
+      - name: Validate headless diagnosis CLI
+        shell: powershell
+        run: .\tests\HeadlessSmoke.ps1
+
+      - name: Validate formal diagnosis JSON Schema
+        shell: powershell
+        run: .\tests\JsonSchemaSmoke.ps1 -RequireValidator
+
       - name: Validate PrintService event classification
         shell: powershell
         run: .\tests\PrintEventClassificationSmoke.ps1
