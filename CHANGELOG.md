@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Restore now rejects snapshots outside the managed backup root and validates action scopes plus registry, service, network, firewall, and SMB1 targets before the first restore mutation.
 - Workspace initialization now falls back to the isolated temp workspace when the configured data root collides with an existing file instead of failing later while opening the runtime log.
 
 ## 4.2.0 - 2026-09-18

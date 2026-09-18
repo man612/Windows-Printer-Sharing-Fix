@@ -115,7 +115,9 @@ Managed state currently includes:
 
 Restore changes only those managed states. It does not import an old copy of the complete Windows Print registry tree.
 
-This reduces the chance of rolling unrelated printers or newer Windows configuration backwards.
+Before any restore mutation, the latest pointer and snapshot are treated as untrusted input. The snapshot directory must be a normal direct child of the managed backup root, the recorded reason and scopes must match a known v4 action, and every registry/service/network/firewall/SMB1 entry is validated against the corresponding managed allowlist or current Windows inventory. Validation completes before the confirmation prompt and before the first state-changing command.
+
+This reduces the chance of rolling unrelated printers or newer Windows configuration backwards, and prevents a damaged or edited snapshot from expanding Restore beyond state that the tool is designed to manage.
 
 ## Irreversible actions
 
@@ -138,6 +140,7 @@ Legacy compatibility remains available for real old environments, but is no long
 The stable PowerShell implementation is guarded by layered tests rather than a single lint pass:
 
 - runtime/state-fingerprint smoke tests prove diagnosis paths do not mutate managed Windows state;
+- restore-safety smoke tests reject out-of-root, malformed, scope-mismatched, and unmanaged snapshot targets before confirmation or mutation;
 - PSScriptAnalyzer 1.25.0 runs Error/Warning analysis using the documented repository profile;
 - intentional TUI/style conflicts are explicitly excluded, while actionable diagnostics are fixed rather than hidden;
 - repository-hygiene tests require governance files, explicit workflow permissions, full-SHA GitHub Action pinning, and weekly GitHub Actions Dependabot configuration;

@@ -956,16 +956,139 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
 
 function Restore-ServiceStartMode([string]$Name,[string]$Mode){$map=@{Auto='Automatic';Automatic='Automatic';Manual='Manual';Disabled='Disabled'};if($map.ContainsKey($Mode)){Set-Service -Name $Name -StartupType $map[$Mode] -ErrorAction SilentlyContinue}}
 
+function Get-ValidatedRestoreSnapshot([string]$Directory) {
+    if (-not $Directory) { throw 'Restore snapshot pointer is empty.' }
+    $backupFull=[IO.Path]::GetFullPath([string]$script:BackupRoot).TrimEnd([char]'\',[char]'/')
+    $dirFull=[IO.Path]::GetFullPath($Directory).TrimEnd([char]'\',[char]'/')
+    $parent=[IO.Path]::GetDirectoryName($dirFull).TrimEnd([char]'\',[char]'/')
+    if (-not [string]::Equals($parent,$backupFull,[StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Restore snapshot is outside the managed backup root.'
+    }
+    $leaf=[IO.Path]::GetFileName($dirFull)
+    if ($leaf -notmatch '^\d{8}-\d{6}-[0-9a-fA-F]{6}$') { throw 'Restore snapshot directory name is invalid.' }
+    $dirItem=Get-Item -LiteralPath $dirFull -Force -ErrorAction Stop
+    if (-not $dirItem.PSIsContainer -or (($dirItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+        throw 'Restore snapshot directory is not a normal managed directory.'
+    }
+
+    $file=Join-Path $dirFull 'managed-state.json'
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw 'Restore snapshot state file is missing.' }
+    $state=Get-Content -LiteralPath $file -Raw -ErrorAction Stop | ConvertFrom-Json
+    $required=@('Version','Reason','Scopes','Registry','Services','NetworkProfiles','FirewallRules','WindowsFeatures')
+    foreach($property in $required){
+        if($property -notin @($state.PSObject.Properties.Name)){throw "Restore snapshot is missing required field: $property"}
+    }
+    if ([string]$state.Version -notmatch '^4(?:\.|$)') { throw 'Restore snapshot was not created by a compatible v4 release.' }
+
+    $reasonScopes=@{
+        'Restart Print Spooler'=@('Services')
+        'Enable sharing firewall rules'=@('Firewall')
+        'Change selected network profile'=@('Network')
+        'Start Network Discovery services'=@('Services')
+        'Combined non-destructive Safe Repair'=@('Services','Firewall')
+        'RPC Named Pipes compatibility fallback'=@('Registry')
+        'Temporary Point and Print relaxation'=@('Registry')
+        'High-risk RPC privacy workaround'=@('Registry')
+        'Enable SMB1 client'=@('SMB1')
+        'Enable insecure SMB guest'=@('Registry')
+        'Legacy LAN Manager level'=@('Registry')
+    }
+    $reason=[string]$state.Reason
+    if (-not $reasonScopes.ContainsKey($reason)) { throw 'Restore snapshot reason is not recognized.' }
+    $scopes=@($state.Scopes | ForEach-Object {[string]$_})
+    $expectedScopes=@($reasonScopes[$reason])
+    if (@($scopes | Select-Object -Unique).Count -ne $scopes.Count -or $scopes.Count -ne $expectedScopes.Count -or @($scopes | Where-Object {$_ -notin $expectedScopes}).Count) {
+        throw 'Restore snapshot scopes do not match the recorded managed action.'
+    }
+
+    $collections=@{
+        Registry=@($state.Registry)
+        Services=@($state.Services)
+        Network=@($state.NetworkProfiles)
+        Firewall=@($state.FirewallRules)
+        SMB1=@($state.WindowsFeatures)
+    }
+    foreach($scopeName in $collections.Keys){
+        if($scopeName -notin $scopes -and @($collections[$scopeName]).Count){throw "Restore snapshot contains state outside its declared scope: $scopeName"}
+    }
+
+    $allowedRegistry=@{}
+    foreach($managed in @(Get-ManagedRegistryEntries)){
+        $key=(([string]$managed.Path).TrimEnd([char]'\').ToUpperInvariant()+'|'+([string]$managed.Name).ToUpperInvariant())
+        $allowedRegistry[$key]=$true
+    }
+    $seenRegistry=@{}
+    foreach($entry in @($state.Registry)){
+        $key=(([string]$entry.Path).TrimEnd([char]'\').ToUpperInvariant()+'|'+([string]$entry.Name).ToUpperInvariant())
+        if(-not $allowedRegistry.ContainsKey($key)){throw "Restore snapshot contains unmanaged registry state: $($entry.Path)\\$($entry.Name)"}
+        if($seenRegistry.ContainsKey($key)){throw 'Restore snapshot contains duplicate registry state.'}
+        $seenRegistry[$key]=$true
+        if(-not ($entry.Present -is [bool])){throw 'Restore snapshot registry presence value is invalid.'}
+        if($entry.Present -and [string]$entry.Kind -notin @('DWord','QWord','String','ExpandString','MultiString','Binary')){throw 'Restore snapshot registry value kind is invalid.'}
+    }
+
+    $allowedServices=@('Spooler','fdPHost','FDResPub')
+    $seenServices=@{}
+    foreach($service in @($state.Services)){
+        $name=[string]$service.Name
+        if($name -notin $allowedServices){throw "Restore snapshot contains unmanaged service state: $name"}
+        $key=$name.ToUpperInvariant()
+        if($seenServices.ContainsKey($key)){throw 'Restore snapshot contains duplicate service state.'}
+        $seenServices[$key]=$true
+        if([string]$service.StartMode -notin @('Auto','Automatic','Manual','Disabled')){throw "Restore snapshot has an invalid service start mode: $name"}
+        if([string]$service.State -notin @('Running','Stopped')){throw "Restore snapshot has an unsupported service state: $name"}
+    }
+
+    $currentProfiles=@{}
+    foreach($networkProfile in @(Get-NetworkProfilesSafe)){$currentProfiles[[int]$networkProfile.InterfaceIndex]=$true}
+    $seenProfiles=@{}
+    foreach($networkProfile in @($state.NetworkProfiles)){
+        $index=[int]$networkProfile.InterfaceIndex
+        if($index -le 0 -or -not $currentProfiles.ContainsKey($index)){throw "Restore snapshot references an unavailable network profile: $index"}
+        if($seenProfiles.ContainsKey($index)){throw 'Restore snapshot contains duplicate network profile state.'}
+        $seenProfiles[$index]=$true
+        if([string]$networkProfile.NetworkCategory -notin @('Public','Private','DomainAuthenticated')){throw "Restore snapshot has an invalid network category: $($networkProfile.NetworkCategory)"}
+    }
+
+    $sharingRuleNames=@{}
+    foreach($rule in @(Get-FirewallSharingRules)){$sharingRuleNames[([string]$rule.Name).ToUpperInvariant()]=$true}
+    $seenRules=@{}
+    foreach($rule in @($state.FirewallRules)){
+        $name=[string]$rule.Name
+        $key=$name.ToUpperInvariant()
+        if(-not $sharingRuleNames.ContainsKey($key)){throw "Restore snapshot contains a firewall rule outside File and Printer Sharing: $name"}
+        if($seenRules.ContainsKey($key)){throw 'Restore snapshot contains duplicate firewall rule state.'}
+        $seenRules[$key]=$true
+        if([string]$rule.Enabled -notin @('True','False')){throw "Restore snapshot has an invalid firewall enabled state: $name"}
+        $profiles=@(([string]$rule.Profile -split ',') | ForEach-Object {$_.Trim()} | Where-Object {$_})
+        if(-not $profiles.Count -or @($profiles | Where-Object {$_ -notin @('Domain','Private','Public','Any')}).Count){throw "Restore snapshot has an invalid firewall profile: $name"}
+    }
+
+    foreach($feature in @($state.WindowsFeatures)){
+        if([string]$feature.Name -ne 'SMB1Protocol-Client'){throw "Restore snapshot contains an unmanaged Windows feature: $($feature.Name)"}
+        if([string]$feature.State -notmatch '^(Enabled|Disabled|Unknown)'){throw 'Restore snapshot has an invalid SMB1 client state.'}
+    }
+
+    return [pscustomobject]@{Directory=$dirFull;State=$state}
+}
+
 function Invoke-RestoreLatest {
     Write-Header (L 'RESTORE' 'KEMBALIKAN PERUBAHAN')
     Write-Warn (L 'Restore reverts only the states captured for the latest v4 action. Deleted print jobs and removed printer connections cannot be recreated automatically.' 'Restore hanya mengembalikan kondisi yang disimpan oleh tindakan v4 terakhir. Print job yang sudah dihapus dan koneksi printer yang sudah dilepas tidak dapat dibuat ulang otomatis.')
     if(-not(Test-Path -LiteralPath $script:LatestStateFile)){Write-Warn (L 'No v4 restore snapshot exists yet.' 'Belum ada snapshot restore v4.');Pause-Tui;return}
-    $dir=(Get-Content -LiteralPath $script:LatestStateFile|Select-Object -First 1).Trim()
-    $file=Join-Path $dir 'managed-state.json'
-    if(-not(Test-Path -LiteralPath $file)){Write-Fail (L 'Latest snapshot is missing or damaged.' 'Snapshot terakhir tidak ditemukan atau rusak.');Pause-Tui;return}
+    $dir=([string](Get-Content -LiteralPath $script:LatestStateFile|Select-Object -First 1)).Trim()
+    try{
+        $validated=Get-ValidatedRestoreSnapshot $dir
+        $dir=[string]$validated.Directory
+        $state=$validated.State
+    }catch{
+        Write-Fail ((L 'Restore snapshot rejected: {0}' 'Snapshot restore ditolak: {0}') -f $_.Exception.Message)
+        Write-Log ("Restore snapshot rejected: {0}" -f $_.Exception.Message) 'ERROR'
+        Pause-Tui
+        return
+    }
     if(-not(Read-YesNo ((L 'Restore state from {0}?' 'Kembalikan kondisi dari {0}?') -f $dir) $true)){return}
     try{
-        $state=Get-Content -LiteralPath $file -Raw|ConvertFrom-Json
         foreach($r in @($state.Registry)){Restore-RegistryValue $r}
         foreach($f in @($state.FirewallRules)){if(Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue){Set-NetFirewallRule -Name $f.Name -Enabled ([string]$f.Enabled) -Profile ([string]$f.Profile) -ErrorAction SilentlyContinue}}
         foreach($n in @($state.NetworkProfiles)){if(Get-Command Set-NetConnectionProfile -ErrorAction SilentlyContinue){Set-NetConnectionProfile -InterfaceIndex ([int]$n.InterfaceIndex) -NetworkCategory ([string]$n.NetworkCategory) -ErrorAction SilentlyContinue}}
