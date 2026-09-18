@@ -958,9 +958,9 @@ function Restore-ServiceStartMode([string]$Name,[string]$Mode){$map=@{Auto='Auto
 
 function Get-ValidatedRestoreSnapshot([string]$Directory) {
     if (-not $Directory) { throw 'Restore snapshot pointer is empty.' }
-    $backupFull=[IO.Path]::GetFullPath([string]$script:BackupRoot).TrimEnd([char]'\\',[char]'/')
-    $dirFull=[IO.Path]::GetFullPath($Directory).TrimEnd([char]'\\',[char]'/')
-    $parent=[IO.Path]::GetDirectoryName($dirFull).TrimEnd([char]'\\',[char]'/')
+    $backupFull=[IO.Path]::GetFullPath([string]$script:BackupRoot).TrimEnd([char]'\',[char]'/')
+    $dirFull=[IO.Path]::GetFullPath($Directory).TrimEnd([char]'\',[char]'/')
+    $parent=[IO.Path]::GetDirectoryName($dirFull).TrimEnd([char]'\',[char]'/')
     if (-not [string]::Equals($parent,$backupFull,[StringComparison]::OrdinalIgnoreCase)) {
         throw 'Restore snapshot is outside the managed backup root.'
     }
@@ -1014,12 +1014,12 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
 
     $allowedRegistry=@{}
     foreach($managed in @(Get-ManagedRegistryEntries)){
-        $key=(([string]$managed.Path).TrimEnd('\\').ToUpperInvariant()+'|'+([string]$managed.Name).ToUpperInvariant())
+        $key=(([string]$managed.Path).TrimEnd([char]'\').ToUpperInvariant()+'|'+([string]$managed.Name).ToUpperInvariant())
         $allowedRegistry[$key]=$true
     }
     $seenRegistry=@{}
     foreach($entry in @($state.Registry)){
-        $key=(([string]$entry.Path).TrimEnd('\\').ToUpperInvariant()+'|'+([string]$entry.Name).ToUpperInvariant())
+        $key=(([string]$entry.Path).TrimEnd([char]'\').ToUpperInvariant()+'|'+([string]$entry.Name).ToUpperInvariant())
         if(-not $allowedRegistry.ContainsKey($key)){throw "Restore snapshot contains unmanaged registry state: $($entry.Path)\\$($entry.Name)"}
         if($seenRegistry.ContainsKey($key)){throw 'Restore snapshot contains duplicate registry state.'}
         $seenRegistry[$key]=$true
