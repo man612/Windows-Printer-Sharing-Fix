@@ -20,7 +20,7 @@ New-Item -ItemType Directory -Path $snapshotDir -Force | Out-Null
 '{}' | Set-Content -LiteralPath (Join-Path $snapshotDir 'managed-state.json') -Encoding UTF8
 $snapshotDir | Set-Content -LiteralPath (Join-Path $legacyBackups 'latest_backup.txt') -Encoding UTF8
 'ID' | Set-Content -LiteralPath (Join-Path $legacyRoot 'language.cfg') -Encoding ASCII
-$script:Version = '4.1.0-smoke'
+$script:Version = '4.2.0-smoke'
 $script:Root = $legacyRoot
 $script:LegacyBackupRoot = $legacyBackups
 $script:LegacyLanguageFile = Join-Path $legacyRoot 'language.cfg'

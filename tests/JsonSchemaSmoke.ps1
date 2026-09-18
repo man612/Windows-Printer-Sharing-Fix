@@ -22,7 +22,7 @@ $functions=@($ast.EndBlock.Statements|Where-Object{$_ -is [System.Management.Aut
 
 $temp=Join-Path $env:TEMP ('wpsf-schema-smoke-'+[Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temp -Force|Out-Null
-$script:Version='4.1.0-smoke'
+$script:Version='4.2.0-smoke'
 $script:Language='EN'
 $script:ExportRoot=$temp
 $script:CurrentLog=Join-Path $temp 'schema-smoke.log'

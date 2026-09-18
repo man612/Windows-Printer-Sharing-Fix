@@ -40,8 +40,8 @@ try {
 
     $auto = Join-Path $temp 'auto-version'
     & $builder -OutputDirectory $auto | Out-Null
-    $autoZip = Join-Path $auto 'Windows-Printer-Sharing-Fix-v4.1.0.zip'
-    if (-not (Test-Path -LiteralPath $autoZip)) { throw 'Release builder failed to auto-detect stable version 4.1.0.' }
+    $autoZip = Join-Path $auto 'Windows-Printer-Sharing-Fix-v4.2.0.zip'
+    if (-not (Test-Path -LiteralPath $autoZip)) { throw 'Release builder failed to auto-detect stable version 4.2.0.' }
 
     Write-Host 'Package smoke passed: user ZIP/checksum are complete and auto-version detection works.' -ForegroundColor Green
 }

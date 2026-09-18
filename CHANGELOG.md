@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 4.2.0 - 2026-09-18
+
+Modern Windows printing diagnostics, automation, release integrity, and engineering hardening.
+
 ### Added
 
 - Read-only modern SMB/RPC diagnostics for effective SMB signing/encryption posture, additional print-RPC policies, explicit configured RPC-port reachability, and normalized SMB security-event evidence without automatic security downgrades.

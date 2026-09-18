@@ -17,7 +17,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $script:NoElevationRequested = [bool]$NoElevation
 
-$script:Version = '4.1.0'
+$script:Version = '4.2.0'
 $script:ScriptPath = $PSCommandPath
 $script:Root = Split-Path -Parent $script:ScriptPath
 $script:LegacyBackupRoot = Join-Path $script:Root 'backups'
