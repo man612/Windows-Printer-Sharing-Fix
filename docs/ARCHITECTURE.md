@@ -119,6 +119,8 @@ Before any restore mutation, the latest pointer and snapshot are treated as untr
 
 This reduces the chance of rolling unrelated printers or newer Windows configuration backwards, and prevents a damaged or edited snapshot from expanding Restore beyond state that the tool is designed to manage.
 
+Temporary Point and Print compatibility uses a managed snapshot as an emergency rollback anchor while protection is lowered. After the original registry state is restored successfully, the temporary snapshot is removed and the previous `Restore latest` pointer is reinstated. If rollback cannot be confirmed, the emergency snapshot is deliberately retained as the latest recovery state.
+
 ## Irreversible actions
 
 Some state cannot be recreated by a troubleshooting script. Queue deletion is the clearest example. The UI therefore requires a warning/confirmation before deleting pending print jobs.

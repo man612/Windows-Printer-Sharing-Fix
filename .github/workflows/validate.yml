@@ -117,6 +117,10 @@ jobs:
         shell: powershell
         run: .\tests\RestoreSafetySmoke.ps1
 
+      - name: Validate temporary Point and Print rollback history
+        shell: powershell
+        run: .\tests\PointAndPrintSafetySmoke.ps1
+
       - name: Validate reproducible release package
         shell: powershell
         run: .\tests\ReproduciblePackageSmoke.ps1
