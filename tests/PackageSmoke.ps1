@@ -27,6 +27,7 @@ try {
     if (Test-Path -LiteralPath (Join-Path $root 'tests')) { throw 'Release package should not include the repository test suite.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\REAL-WORLD-RESULTS.md'))) { throw 'Packaged real-world results ledger is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\DIAGNOSTIC-JSON.md'))) { throw 'Packaged diagnostic JSON schema documentation is missing.' }
+    if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\diagnosis.schema.json'))) { throw 'Packaged formal diagnosis JSON Schema is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\PRINTSERVICE-EVENTS.md'))) { throw 'Packaged PrintService event classification documentation is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\POLICY-SOURCES.md'))) { throw 'Packaged printer policy source documentation is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\CORRELATION.md'))) { throw 'Packaged next-layer correlation documentation is missing.' }

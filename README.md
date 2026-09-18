@@ -31,6 +31,14 @@ It inspects the actual failure layer first — Spooler, network profile, SMB/RPC
 5. Choose **Diagnose this PC** first.
 6. Escalate to Safe, Advanced, or Legacy repair only when the diagnosis points there.
 
+For automation from an already-elevated PowerShell session:
+
+```powershell
+.\FixPrinter.ps1 -DiagnoseOnly -Json C:\Temp\printer-diagnosis.json
+```
+
+This runs the same read-only diagnosis and sanitized serializer without entering the TUI. If `-Json` is omitted, the deterministic output is `%LOCALAPPDATA%\WindowsPrinterSharingFix\exports\diagnostic-headless.json`.
+
 Stable releases also publish `SHA256SUMS.txt`. Releases produced by the hardened workflow include GitHub build-provenance attestations; verification commands are documented in [Release integrity](docs/RELEASE-INTEGRITY.md).
 
 Or clone the repository:
@@ -134,6 +142,7 @@ GitHub Actions runs on Windows with Windows PowerShell 5.1 and checks:
 - syntax and static security invariants;
 - diagnosis-only execution with a before/after managed-state fingerprint;
 - structured JSON export reuse/privacy/read-only regression coverage;
+- headless diagnosis CLI behavior and the formal Draft 2020-12 diagnosis schema;
 - English/Indonesian localization output;
 - migration of legacy language/restore state to the external runtime workspace;
 - the end-user release ZIP and SHA256 checksum;
@@ -174,6 +183,7 @@ The project deliberately distinguishes Windows Server from Windows 11 even when 
 - [Quick start](docs/QUICKSTART.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Structured diagnostic JSON](docs/DIAGNOSTIC-JSON.md)
+- [Formal diagnosis JSON Schema](docs/diagnosis.schema.json)
 - [PrintService event classification](docs/PRINTSERVICE-EVENTS.md)
 - [Printer policy source evidence](docs/POLICY-SOURCES.md)
 - [Printer driver classification](docs/DRIVER-CLASSIFICATION.md)

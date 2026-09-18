@@ -1,8 +1,22 @@
 # Structured Diagnostic JSON
 
+The machine-readable contract is published as [`diagnosis.schema.json`](diagnosis.schema.json) using JSON Schema Draft 2020-12.
+
 Windows Printer Sharing Fix can export the **latest in-memory diagnosis** as machine-readable JSON from **Tools and Logs > Export latest diagnosis as sanitized JSON**.
 
 The export does not run a second diagnosis when a cached diagnosis already exists. If no diagnosis has been run in the current session, the export command runs one read-only diagnosis and serializes that result.
+
+## Headless export
+
+From an already-elevated Windows PowerShell session:
+
+```powershell
+.\FixPrinter.ps1 -DiagnoseOnly -Json C:\Temp\printer-diagnosis.json
+```
+
+`-JsonOutput` is the canonical parameter name and `-Json` is its alias. With no output path, headless mode writes `%LOCALAPPDATA%\WindowsPrinterSharingFix\exports\diagnostic-headless.json`. It does not enter the menu or self-elevate; non-elevated use exits with code `5`.
+
+The headless path reuses `Invoke-Diagnosis -Quiet` plus `Export-DiagnosticJson`; it is not a second diagnosis implementation.
 
 ## Storage
 
@@ -40,7 +54,7 @@ Current identity:
 }
 ```
 
-Schema v1 is versioned so future changes can be detected. During the current v4 development line, treat the schema as **documented but evolvable**, not as a permanent external API contract.
+Schema v1 is now machine-validated against `diagnosis.schema.json`. Existing v1 fields keep their documented types and meaning; a future breaking shape change requires an explicit `SchemaVersion` change rather than silently changing the contract.
 
 Top-level fields:
 

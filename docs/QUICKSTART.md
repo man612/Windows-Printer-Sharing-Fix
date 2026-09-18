@@ -13,6 +13,18 @@
 
 Stable releases include `SHA256SUMS.txt`; releases produced by the current hardened workflow also carry GitHub build-provenance attestations. See [RELEASE-INTEGRITY.md](RELEASE-INTEGRITY.md) for copy-paste verification commands before running the ZIP.
 
+## Headless / automation
+
+From an already-elevated PowerShell session, the stable script can run the same read-only diagnosis without opening the TUI:
+
+```powershell
+.\FixPrinter.ps1 -DiagnoseOnly -Json C:\Temp\printer-diagnosis.json
+```
+
+`-JsonOutput` is the canonical parameter name and `-Json` is its alias. If no path is provided, the tool overwrites the deterministic headless file at `%LOCALAPPDATA%\WindowsPrinterSharingFix\exports\diagnostic-headless.json`. Headless mode never launches its own UAC prompt; a non-elevated invocation exits with code `5`. Other failures exit nonzero instead of waiting for menu input.
+
+The output follows [`diagnosis.schema.json`](diagnosis.schema.json).
+
 ## Reading the menu
 
 - **Safe Repair**: first-line repair; must not lower printer/network security protections.

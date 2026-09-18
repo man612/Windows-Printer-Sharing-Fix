@@ -7,6 +7,8 @@
 - Read-only modern SMB/RPC diagnostics for effective SMB signing/encryption posture, additional print-RPC policies, explicit configured RPC-port reachability, and normalized SMB security-event evidence without automatic security downgrades.
 - Deterministic release ZIP construction, reproducibility regression coverage, pinned GitHub Actions, provenance attestation, and draft-before-publish release sequencing.
 - Exact Windows servicing-build reporting using the base build plus UBR revision across diagnosis, structured JSON, and lab evidence.
+- Headless read-only diagnosis export (`-DiagnoseOnly -Json`) plus a packaged JSON Schema Draft 2020-12 contract for schema version 1.
+- Stable target-path `SmbSecuritySignals` JSON serialization as an array even when exactly one normalized signal is present.
 
 ## 4.1.0 - 2026-09-16
 
