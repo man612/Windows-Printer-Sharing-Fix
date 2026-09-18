@@ -74,16 +74,29 @@ function Localize-SystemValue([string]$Value) {
     return $Value
 }
 
+function Ensure-WorkspaceDirectory([string]$Path) {
+    if (Test-Path -LiteralPath $Path) {
+        if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+            throw "Workspace path is not a directory: $Path"
+        }
+        return
+    }
+    New-Item -ItemType Directory -Path $Path -Force -ErrorAction Stop | Out-Null
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+        throw "Workspace directory could not be created: $Path"
+    }
+}
+
 function Initialize-Workspace {
     try {
         foreach ($dir in @($script:DataRoot,$script:BackupRoot,$script:LogRoot,$script:ExportRoot)) {
-            if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+            Ensure-WorkspaceDirectory $dir
         }
     } catch {
         $fallbackRoot = if ($env:TEMP) { Join-Path $env:TEMP 'WindowsPrinterSharingFix' } else { Join-Path $script:Root '.runtime' }
         Set-WorkspacePaths $fallbackRoot
         foreach ($dir in @($script:DataRoot,$script:BackupRoot,$script:LogRoot,$script:ExportRoot)) {
-            if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+            Ensure-WorkspaceDirectory $dir
         }
     }
 
