@@ -113,6 +113,10 @@ jobs:
         shell: powershell
         run: .\tests\WorkspaceSmoke.ps1
 
+      - name: Validate restore snapshot trust boundary
+        shell: powershell
+        run: .\tests\RestoreSafetySmoke.ps1
+
       - name: Validate reproducible release package
         shell: powershell
         run: .\tests\ReproduciblePackageSmoke.ps1
