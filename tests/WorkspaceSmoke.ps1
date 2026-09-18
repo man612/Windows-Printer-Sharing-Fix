@@ -41,5 +41,27 @@ $expected = Join-Path $script:BackupRoot $snapshotName
 if ($migrated -ne $expected) { throw "Restore pointer was not rewritten. Expected $expected but got $migrated" }
 if (-not (Test-Path -LiteralPath (Join-Path $expected 'managed-state.json'))) { throw 'Legacy managed-state.json was not migrated.' }
 
+$oldTemp = $env:TEMP
+try {
+    $fallbackTemp = Join-Path $base 'fallback-temp'
+    New-Item -ItemType Directory -Path $fallbackTemp -Force | Out-Null
+    $env:TEMP = $fallbackTemp
+    $collisionRoot = Join-Path $base 'workspace-root-is-a-file'
+    'not a directory' | Set-Content -LiteralPath $collisionRoot -Encoding ASCII
+
+    Set-WorkspacePaths $collisionRoot
+    $script:CurrentLog = $null
+    Initialize-Workspace
+
+    $expectedFallback = Join-Path $fallbackTemp 'WindowsPrinterSharingFix'
+    if ($script:DataRoot -ne $expectedFallback) { throw "File-collision workspace did not fall back. Expected $expectedFallback but got $($script:DataRoot)" }
+    foreach ($dir in @($script:DataRoot,$script:BackupRoot,$script:LogRoot,$script:ExportRoot)) {
+        if (-not (Test-Path -LiteralPath $dir -PathType Container)) { throw "Fallback workspace directory is missing: $dir" }
+    }
+    if (-not (Test-Path -LiteralPath $script:CurrentLog -PathType Leaf)) { throw 'Fallback workspace log was not created.' }
+} finally {
+    $env:TEMP = $oldTemp
+}
+
 Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
-Write-Host 'Workspace smoke passed: legacy language and restore state migrate outside the repo.' -ForegroundColor Green
+Write-Host 'Workspace smoke passed: legacy migration and file-collision fallback stay outside the repo.' -ForegroundColor Green
