@@ -72,14 +72,14 @@ $fakeRules = @([pscustomobject]@{
     Name='WPSF-Performance-Smoke'; DisplayName='Smoke'; DisplayGroup='File and Printer Sharing';
     Enabled='False'; Profile='Private'; Direction='Inbound'; Action='Allow'
 })
-$snapshot = New-RestoreSnapshot 'Performance smoke' @('Firewall') -FirewallRules $fakeRules
+$snapshot = New-RestoreSnapshot 'Enable sharing firewall rules' @('Firewall') -FirewallRules $fakeRules
 if (-not $snapshot) { throw 'Preloaded firewall snapshot failed.' }
 if ($script:FirewallQueryCount -ne 0) { throw 'Snapshot re-queried firewall despite receiving preloaded rules.' }
 Enable-PrivateFirewallSharing -FirewallRules $fakeRules
 if ($script:FirewallQueryCount -ne 0) { throw 'Safe firewall repair re-queried firewall despite receiving preloaded rules.' }
 if ($script:FirewallSetCount -ne 1) { throw "Expected one stubbed firewall update, got $($script:FirewallSetCount)." }
 
-$emptySnapshot = New-RestoreSnapshot 'Empty firewall inventory smoke' @('Firewall') -FirewallRules @()
+$emptySnapshot = New-RestoreSnapshot 'Enable sharing firewall rules' @('Firewall') -FirewallRules @()
 if (-not $emptySnapshot) { throw 'Empty preloaded firewall snapshot failed.' }
 Enable-PrivateFirewallSharing -FirewallRules @()
 if ($script:FirewallQueryCount -ne 0) { throw 'Empty preloaded firewall inventory triggered an unexpected re-query.' }
