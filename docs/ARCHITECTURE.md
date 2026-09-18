@@ -105,13 +105,13 @@ Each legacy behavior is isolated:
 
 Before repair changes, v4 writes a timestamped `managed-state.json` snapshot under the runtime data root (`%LOCALAPPDATA%\WindowsPrinterSharingFix` by default). Existing repository-local v4 backup state is migrated when possible so an upgrade does not silently discard the latest managed restore state.
 
-Managed state currently includes:
+Managed state currently includes only the subset relevant to the action being performed:
 
-- Registry values that v4 can modify.
-- Relevant service running/startup state.
-- Network category by InterfaceIndex.
-- File and Printer Sharing firewall-rule enabled/profile state.
-- SMB1 client optional-feature state.
+- only the registry values that action can modify;
+- only the services that action can stop/start or reconfigure;
+- only the selected network profile when changing a network category;
+- only File and Printer Sharing firewall rules that the repair can actually rewrite;
+- the SMB1 client optional-feature state only for the SMB1 client action.
 
 Restore changes only those managed states. It does not import an old copy of the complete Windows Print registry tree.
 
