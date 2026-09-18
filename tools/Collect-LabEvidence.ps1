@@ -11,7 +11,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$collectorVersion = '1.0'
+$collectorVersion = '1.1'
 $repo = Split-Path -Parent $PSScriptRoot
 
 function Get-RegistryValueState([string]$Path,[string]$Name) {
@@ -30,6 +30,13 @@ function Get-OsInfo {
     try {
         $key = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
         $build = [int]$key.CurrentBuild
+        $revision = $null
+        $revisionProperty = $key.PSObject.Properties['UBR']
+        if($revisionProperty -and $null -ne $revisionProperty.Value){
+            $parsedRevision=0
+            if([int]::TryParse([string]$revisionProperty.Value,[ref]$parsedRevision) -and $parsedRevision -ge 0){$revision=$parsedRevision}
+        }
+        $fullBuild=if($null -ne $revision){"$build.$revision"}else{[string]$build}
         $product = [string]$key.ProductName
         $installType = [string]$key.InstallationType
         $display = if ($key.DisplayVersion) {[string]$key.DisplayVersion} else {[string]$key.ReleaseId}
@@ -42,9 +49,9 @@ function Get-OsInfo {
         } else {
             $product
         }
-        return [pscustomobject]@{Name=$name;ProductName=$product;DisplayVersion=$display;Build=$build;InstallationType=$installType}
+        return [pscustomobject]@{Name=$name;ProductName=$product;DisplayVersion=$display;Build=$build;Revision=$revision;FullBuild=$fullBuild;InstallationType=$installType}
     } catch {
-        return [pscustomobject]@{Name='Unknown';ProductName='Unknown';DisplayVersion='';Build=0;InstallationType=''}
+        return [pscustomobject]@{Name='Unknown';ProductName='Unknown';DisplayVersion='';Build=0;Revision=$null;FullBuild='';InstallationType=''}
     }
 }
 
@@ -217,7 +224,7 @@ $lines.Add('> Privacy: common machine/network identifiers are omitted. Driver na
 $lines.Add('')
 $lines.Add('## Windows')
 $lines.Add('')
-$lines.Add(('- OS: {0} {1} build {2}' -f (ConvertTo-MarkdownCell $os.Name),(ConvertTo-MarkdownCell $os.DisplayVersion),$os.Build))
+$lines.Add(('- OS: {0} {1} build {2}' -f (ConvertTo-MarkdownCell $os.Name),(ConvertTo-MarkdownCell $os.DisplayVersion),(ConvertTo-MarkdownCell $os.FullBuild)))
 $lines.Add(('- Installation type: {0}' -f (ConvertTo-MarkdownCell $os.InstallationType)))
 $lines.Add(('- PowerShell: {0}' -f $report.PowerShell))
 $lines.Add(('- Spooler: {0}; start mode: {1}' -f $report.Spooler.Status,$report.Spooler.StartMode))

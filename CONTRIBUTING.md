@@ -47,6 +47,7 @@ powershell.exe -NoProfile -File .\tests\Validate.ps1
 powershell.exe -NoProfile -File .\tests\RuntimeSmoke.ps1
 powershell.exe -NoProfile -File .\tests\PerformanceSmoke.ps1
 powershell.exe -NoProfile -File .\tests\EvidenceSmoke.ps1
+powershell.exe -NoProfile -File .\tests\ExactBuildSmoke.ps1
 powershell.exe -NoProfile -File .\tests\JsonExportSmoke.ps1
 powershell.exe -NoProfile -File .\tests\PrintEventClassificationSmoke.ps1
 powershell.exe -NoProfile -File .\tests\PolicySourceSmoke.ps1

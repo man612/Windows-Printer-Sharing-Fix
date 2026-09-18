@@ -9,7 +9,7 @@ Context: diagnosis finds that legacy SMB compatibility settings are already enab
   "Schema": "windows-printer-sharing-fix/diagnosis",
   "SchemaVersion": 1,
   "ToolVersion": "4.1.0",
-  "Windows": {"Name": "Windows 11", "DisplayVersion": "24H2", "Build": 26100},
+  "Windows": {"Name": "Windows 11", "DisplayVersion": "24H2", "Build": 26100, "Revision": 4061, "FullBuild": "26100.4061"},
   "SMB1Client": "Enabled",
   "Policies": {
     "GuestAuth": {"Present": true, "Value": 1, "Kind": "DWord"}

@@ -86,7 +86,7 @@ The stable UI intentionally uses normal Windows PowerShell console primitives. I
 
 The local diagnosis is read-only and currently inspects:
 
-- Windows product, build, and PowerShell version.
+- Windows product, exact servicing build (base build + UBR when available), and PowerShell version.
 - Print Spooler state and installed printer inventory.
 - Evidence-based printer-driver classification (v3/v4, Microsoft/third-party/unknown, and exact known Microsoft class-driver technology).
 - Shared-printer host / network-printer client role.

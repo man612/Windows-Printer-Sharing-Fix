@@ -44,7 +44,7 @@ For failure-path tests, include the failure that was deliberately introduced and
 - CI passing by itself.
 - Reading the source and concluding that a path should work.
 - A diagnosis-only run on one PC with no host/client printer-sharing path exercised.
-- A screenshot with no exact Windows build or driver context.
+- A screenshot with no exact Windows build (base build + UBR when available) or driver context.
 - A report that only says a workaround worked but does not identify which state changed.
 - Enabling SMB1, insecure guest auth, LAN Manager downgrade, or RPC privacy downgrade on an exposed production network merely to fill a matrix row.
 

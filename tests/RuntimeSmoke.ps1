@@ -52,6 +52,9 @@ if ($before -ne $after) {
 
 if ($null -eq $diagnostic) { throw 'Invoke-Diagnosis returned no result.' }
 if ($diagnostic.OS.Build -le 0) { throw "Invalid Windows build detected: $($diagnostic.OS.Build)" }
+if(-not $diagnostic.OS.FullBuild -or [string]$diagnostic.OS.FullBuild -notmatch ('^'+[regex]::Escape([string]$diagnostic.OS.Build)+'(?:\.\d+)?$')){throw "Invalid Windows full build detected: $($diagnostic.OS.FullBuild)"}
+$ubr=(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue).UBR
+if($null -ne $ubr -and ([int]$diagnostic.OS.Revision -ne [int]$ubr -or [string]$diagnostic.OS.FullBuild -ne ("{0}.{1}" -f $diagnostic.OS.Build,[int]$ubr))){throw 'Runtime diagnosis did not preserve the exact Windows UBR/full build.'}
 if (-not $diagnostic.OS.Name) { throw 'Windows name was not detected.' }
 if (-not $diagnostic.Role) { throw 'Host/client role classification returned an empty value.' }
 if ($null -eq $diagnostic.Findings) { throw 'Diagnostic findings collection is missing.' }
@@ -86,7 +89,7 @@ if ($diagnostic.TimingMs.SmbSecurity -lt 0) { throw 'SMB-security timing metadat
 $timingLog = Get-Content -LiteralPath $script:CurrentLog -Raw
 if ($timingLog -notmatch 'Diagnosis timing ms:') { throw 'Diagnosis performance timing was not written to the runtime log.' }
 
-Write-Host ('Runtime smoke passed on {0} build {1}.' -f $diagnostic.OS.Name,$diagnostic.OS.Build) -ForegroundColor Green
+Write-Host ('Runtime smoke passed on {0} build {1}.' -f $diagnostic.OS.Name,$diagnostic.OS.FullBuild) -ForegroundColor Green
 Write-Host ('Spooler: {0}; printers: {1}; network profiles: {2}; findings: {3}.' -f $(if($diagnostic.Spooler){$diagnostic.Spooler.Status}else{'Missing'}),$diagnostic.Printers.Count,$diagnostic.Profiles.Count,$diagnostic.Findings.Count)
 Write-Host 'Diagnosis-only state fingerprint was unchanged.' -ForegroundColor Green
 

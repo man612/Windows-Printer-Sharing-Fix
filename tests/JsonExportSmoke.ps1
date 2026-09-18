@@ -60,6 +60,8 @@ try {
     if(-not $data.Sanitized){throw 'JSON diagnosis export must declare itself sanitized.'}
     if($data.ToolVersion -ne '4.1.0-smoke'){throw 'JSON diagnosis export lost tool version metadata.'}
     if($data.Windows.Build -le 0 -or -not $data.Windows.Name){throw 'JSON diagnosis export is missing Windows identity.'}
+    if(-not $data.Windows.FullBuild -or [string]$data.Windows.FullBuild -notmatch ('^'+[regex]::Escape([string]$data.Windows.Build)+'(?:\.\d+)?$')){throw 'JSON diagnosis export is missing normalized full-build metadata.'}
+    if($null -ne $diagnostic.OS.Revision -and ([int]$data.Windows.Revision -ne [int]$diagnostic.OS.Revision -or [string]$data.Windows.FullBuild -ne [string]$diagnostic.OS.FullBuild)){throw 'JSON diagnosis export lost Windows build revision metadata.'}
     if($data.PrinterSummary.Total -ne @($diagnostic.Printers).Count){throw 'JSON printer summary does not match the reused diagnostic object.'}
     if($data.DriverSummary.TotalBindings -ne @($diagnostic.Printers).Count){throw 'JSON driver summary does not match printer bindings.'}
     if(($data.DriverSummary.Models.V3 + $data.DriverSummary.Models.V4 + $data.DriverSummary.Models.Unknown) -ne $data.DriverSummary.TotalBindings){throw 'JSON driver-model summary counts are inconsistent.'}

@@ -65,6 +65,10 @@ try {
     if ($data.MatrixId -ne 'A1' -or $data.Side -ne 'Client') { throw 'Evidence metadata did not preserve the requested matrix case/side.' }
     if ($data.ToolVersion -ne '4.1.0') { throw "Evidence collector did not detect stable tool version: $($data.ToolVersion)" }
     if (-not $data.OS.Name -or $data.OS.Build -le 0) { throw 'Evidence collector did not capture a valid Windows identity.' }
+    if([string]$data.CollectorVersion -ne '1.1'){throw 'Evidence collector version was not bumped for exact-build metadata.'}
+    if(-not $data.OS.FullBuild -or [string]$data.OS.FullBuild -notmatch ('^'+[regex]::Escape([string]$data.OS.Build)+'(?:\.\d+)?$')){throw 'Evidence collector did not capture normalized full-build metadata.'}
+    $ubr=(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue).UBR
+    if($null -ne $ubr -and ([int]$data.OS.Revision -ne [int]$ubr -or [string]$data.OS.FullBuild -ne ("{0}.{1}" -f $data.OS.Build,[int]$ubr))){throw 'Evidence collector lost the exact Windows UBR/full build.'}
 
     if ($data.IncludedDriverNames -or $data.IncludedSecurityPosture) {
         throw 'Evidence collector default unexpectedly included opt-in privacy-sensitive fields.'
@@ -110,7 +114,7 @@ try {
     $afterOptIn = Get-ManagedFingerprint
     if ($before -ne $afterOptIn) { throw 'Opt-in evidence collection changed managed Windows state.' }
 
-    Write-Host ('Evidence smoke passed: read-only collection produced sanitized JSON/Markdown for {0} build {1}.' -f $data.OS.Name,$data.OS.Build) -ForegroundColor Green
+    Write-Host ('Evidence smoke passed: read-only collection produced sanitized JSON/Markdown for {0} build {1}.' -f $data.OS.Name,$data.OS.FullBuild) -ForegroundColor Green
 }
 finally {
     Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue

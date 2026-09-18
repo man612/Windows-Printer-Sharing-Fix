@@ -23,7 +23,7 @@ $script:Text = @{
 function Pause-Tui {}
 function Read-YesNo([string]$Prompt,[bool]$DefaultNo=$true) { return $false }
 $diagnostic = [pscustomobject]@{
-    OS=[pscustomobject]@{Name='Windows 11';DisplayVersion='24H2';Build=26100}
+    OS=[pscustomobject]@{Name='Windows 11';DisplayVersion='24H2';Build=26100;Revision=4061;FullBuild='26100.4061'}
     PowerShell='5.1';Role='Client';Spooler=[pscustomobject]@{Status='Running'}
     Printers=@();SharedPrinters=@();Connections=@();Profiles=@()
     WPP=[pscustomobject]@{Enabled=$false};SMB1Client='Disabled'
@@ -33,7 +33,7 @@ $diagnostic = [pscustomobject]@{
 }
 
 $report = (& { Show-DiagnosticReport $diagnostic } 6>&1 | Out-String)
-foreach($expected in @('LAPORAN DIAGNOSIS','Peran terdeteksi: Klien','Model driver','Penyedia driver','Klien SMB1','Keamanan SMB kli','signing=wajib','enkripsi=tidak diwajibkan','Tidak aktif','Lapisan berikutnya untuk diperiksa','path target / transport remote','prioritas troubleshooting, bukan klaim akar penyebab','Bukti sumber kebijakan printer','Group Policy Lokal','nilai registry; sumber tidak diketahui')) {
+foreach($expected in @('LAPORAN DIAGNOSIS','26100.4061','Peran terdeteksi: Klien','Model driver','Penyedia driver','Klien SMB1','Keamanan SMB kli','signing=wajib','enkripsi=tidak diwajibkan','Tidak aktif','Lapisan berikutnya untuk diperiksa','path target / transport remote','prioritas troubleshooting, bukan klaim akar penyebab','Bukti sumber kebijakan printer','Group Policy Lokal','nilai registry; sumber tidak diketahui')) {
     if($report -notmatch [regex]::Escape($expected)){throw "Indonesian diagnostic output is missing: $expected"}
 }
 if($report -match 'Detected role|Shared printers:|Network profiles:'){throw 'English diagnostic labels leaked into Indonesian mode.'}
