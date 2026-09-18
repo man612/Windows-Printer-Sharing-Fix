@@ -86,8 +86,8 @@ foreach($property in $diagnostic.PolicySources.PSObject.Properties){
 $next=Get-NextInvestigation $diagnostic $null
 if($null -eq $next -or $next.RootCauseClaimed){throw 'Next-layer correlation is missing or claimed root cause.'}
 if($diagnostic.Spooler -and [string]$diagnostic.Spooler.Status -eq 'Running' -and $next.Layer -ne 'RemoteTransportUntested'){throw 'Healthy local diagnosis without target test must keep remote transport explicitly untested.'}
-foreach($event in @($diagnostic.PrintErrors)){
-    if(-not $event.Category){throw 'PrintService event classification is missing from a runtime event.'}
+foreach($printEvent in @($diagnostic.PrintErrors)){
+    if(-not $printEvent.Category){throw 'PrintService event classification is missing from a runtime event.'}
 }
 if (-not $diagnostic.CollectedAtUtc) { throw 'Diagnosis collection timestamp is missing.' }
 if ($null -eq $diagnostic.TimingMs -or $diagnostic.TimingMs.Total -lt 0) { throw 'Diagnosis timing object is missing.' }

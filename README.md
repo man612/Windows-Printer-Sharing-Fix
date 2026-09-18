@@ -140,6 +140,8 @@ Point and Print relaxation, when explicitly selected, is temporary around one co
 GitHub Actions runs on Windows with Windows PowerShell 5.1 and checks:
 
 - syntax and static security invariants;
+- PSScriptAnalyzer 1.25.0 Error/Warning diagnostics under the documented repo profile;
+- repository governance/hygiene, full-SHA GitHub Action pinning, Dependabot configuration, and relative documentation links;
 - diagnosis-only execution with a before/after managed-state fingerprint;
 - structured JSON export reuse/privacy/read-only regression coverage;
 - headless diagnosis CLI behavior and the formal Draft 2020-12 diagnosis schema;
@@ -182,6 +184,7 @@ The project deliberately distinguishes Windows Server from Windows 11 even when 
 
 - [Quick start](docs/QUICKSTART.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Contribution and engineering checks](CONTRIBUTING.md)
 - [Structured diagnostic JSON](docs/DIAGNOSTIC-JSON.md)
 - [Formal diagnosis JSON Schema](docs/diagnosis.schema.json)
 - [PrintService event classification](docs/PRINTSERVICE-EVENTS.md)

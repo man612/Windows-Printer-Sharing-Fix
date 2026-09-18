@@ -60,7 +60,7 @@ function Get-WindowsFeatureState([string]$Name) {
         if (Get-Command Get-WindowsOptionalFeature -ErrorAction SilentlyContinue) {
             return [string](Get-WindowsOptionalFeature -Online -FeatureName $Name -ErrorAction Stop).State
         }
-    } catch {}
+    } catch { Write-Verbose ('Windows optional feature query failed for {0}: {1}' -f $Name,$_.Exception.Message) }
     return 'Unknown'
 }
 
@@ -145,7 +145,7 @@ if (Test-Path -LiteralPath $fixScript) {
 $os = Get-OsInfo
 $spooler = Get-Service Spooler -ErrorAction SilentlyContinue
 $spoolerCim = $null
-try { $spoolerCim = Get-CimInstance Win32_Service -Filter "Name='Spooler'" -ErrorAction Stop } catch {}
+try { $spoolerCim = Get-CimInstance Win32_Service -Filter "Name='Spooler'" -ErrorAction Stop } catch { Write-Verbose ('Spooler CIM query failed: {0}' -f $_.Exception.Message) }
 $printers = @(Get-SafePrinterInventory)
 $profiles = @(Get-SafeNetworkProfiles)
 $events = @(Get-SafePrintEvents)
@@ -249,8 +249,8 @@ $lines.Add('')
 $lines.Add('| Category | IPv4 | IPv6 |')
 $lines.Add('| --- | --- | --- |')
 if ($profiles.Count) {
-    foreach ($profile in $profiles) {
-        $lines.Add(('| {0} | {1} | {2} |' -f $profile.NetworkCategory,$profile.IPv4Connectivity,$profile.IPv6Connectivity))
+    foreach ($networkProfile in $profiles) {
+        $lines.Add(('| {0} | {1} | {2} |' -f $networkProfile.NetworkCategory,$networkProfile.IPv4Connectivity,$networkProfile.IPv6Connectivity))
     }
 } else {
     $lines.Add('| Unknown | Unknown | Unknown |')
@@ -278,8 +278,8 @@ $lines.Add('')
 if ($events.Count) {
     $lines.Add('| UTC/local timestamp | Event ID | Level |')
     $lines.Add('| --- | --- | --- |')
-    foreach ($event in $events) {
-        $lines.Add(('| {0} | {1} | {2} |' -f $event.TimeCreated.ToString('s'),$event.Id,(ConvertTo-MarkdownCell $event.LevelDisplayName)))
+    foreach ($printEvent in $events) {
+        $lines.Add(('| {0} | {1} | {2} |' -f $printEvent.TimeCreated.ToString('s'),$printEvent.Id,(ConvertTo-MarkdownCell $printEvent.LevelDisplayName)))
     }
 } else {
     $lines.Add('No recent PrintService warning/error metadata was available.')
