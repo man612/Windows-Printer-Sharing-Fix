@@ -9,6 +9,7 @@
 - Exact Windows servicing-build reporting using the base build plus UBR revision across diagnosis, structured JSON, and lab evidence.
 - Headless read-only diagnosis export (`-DiagnoseOnly -Json`) plus a packaged JSON Schema Draft 2020-12 contract for schema version 1.
 - Stable target-path `SmbSecuritySignals` JSON serialization as an array even when exactly one normalized signal is present.
+- Conservative Windows Protected Print readiness evidence from installed bindings, with aggregate privacy-safe JSON counts and no physical-device compatibility claim.
 
 ## 4.1.0 - 2026-09-16
 

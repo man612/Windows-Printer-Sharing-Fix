@@ -58,6 +58,10 @@ try {
     $fallback.Windows.FullBuild=[string]$fallback.Windows.Build
     $fallbackPath=Write-Payload $fallback 'revision-null.json'
 
+    $legacyV1=($basePayload|ConvertTo-Json -Depth 10|ConvertFrom-Json)
+    [void]$legacyV1.PSObject.Properties.Remove('WppReadiness')
+    $legacyV1Path=Write-Payload $legacyV1 'legacy-v1-without-wpp-readiness.json'
+
     $pwsh=Get-Command pwsh -ErrorAction SilentlyContinue
     if(-not $pwsh){
         if($RequireValidator){throw 'PowerShell 7.4+ (pwsh) is required for Draft 2020-12 schema validation in CI.'}
@@ -73,7 +77,7 @@ try {
         return
     }
 
-    foreach($jsonPath in @($basePath,$fullPath,$fallbackPath)){
+    foreach($jsonPath in @($basePath,$fullPath,$fallbackPath,$legacyV1Path)){
         $escapedJson=$jsonPath.Replace("'","''")
         $escapedSchema=$schemaFile.Replace("'","''")
         $command="if(-not(Test-Json -LiteralPath '$escapedJson' -SchemaFile '$escapedSchema' -ErrorAction Stop)){exit 2}"
@@ -90,7 +94,7 @@ try {
     & $pwsh.Source -NoProfile -Command $negative
     if($LASTEXITCODE -ne 0){throw 'Formal schema did not reject an invalid SchemaVersion.'}
 
-    Write-Host 'JSON Schema smoke passed: base, populated optional objects, nullable revision, and negative version validation are stable.' -ForegroundColor Green
+    Write-Host 'JSON Schema smoke passed: current payloads, legacy v1 additive compatibility, nullable revision, and negative version validation are stable.' -ForegroundColor Green
 } finally {
     Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
 }

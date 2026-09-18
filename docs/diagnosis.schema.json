@@ -89,6 +89,9 @@
     "WPP": {
       "$ref": "#/$defs/wpp"
     },
+    "WppReadiness": {
+      "$ref": "#/$defs/wppReadiness"
+    },
     "SmbSecurity": {
       "$ref": "#/$defs/smbSecurity"
     },
@@ -389,6 +392,69 @@
         },
         "EnabledBy": {
           "$ref": "#/$defs/registryState"
+        }
+      }
+    },
+    "wppReadiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "OsSupportsWpp",
+        "WppEnabled",
+        "EvidenceScope",
+        "LocalBindingState",
+        "TotalBindings",
+        "KnownWindowsReadyPrintBindings",
+        "MicrosoftIppClassDriverBindings",
+        "UniversalPrintClassDriverBindings",
+        "ThirdPartyDriverBindings",
+        "UnknownOrOtherBindings",
+        "DeviceCompatibilityProven"
+      ],
+      "properties": {
+        "OsSupportsWpp": {
+          "type": "boolean"
+        },
+        "WppEnabled": {
+          "type": "boolean"
+        },
+        "EvidenceScope": {
+          "const": "InstalledPrinterBindingsOnly"
+        },
+        "LocalBindingState": {
+          "enum": [
+            "NoInstalledPrinters",
+            "WindowsReadyPrintBindingsOnly",
+            "ThirdPartyDriverDependenciesPresent",
+            "MixedOrUnknown"
+          ]
+        },
+        "TotalBindings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "KnownWindowsReadyPrintBindings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "MicrosoftIppClassDriverBindings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "UniversalPrintClassDriverBindings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ThirdPartyDriverBindings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "UnknownOrOtherBindings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "DeviceCompatibilityProven": {
+          "const": false
         }
       }
     },

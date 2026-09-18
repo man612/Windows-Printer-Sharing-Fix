@@ -69,6 +69,10 @@ jobs:
         shell: powershell
         run: .\tests\DriverClassificationSmoke.ps1
 
+      - name: Validate Windows Protected Print readiness evidence
+        shell: powershell
+        run: .\tests\WppReadinessSmoke.ps1
+
       - name: Validate guided test-page verification
         shell: powershell
         run: .\tests\TestPageVerificationSmoke.ps1

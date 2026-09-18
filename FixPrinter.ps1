@@ -303,6 +303,46 @@ function Get-PrinterDriverClassificationSummary([object[]]$Printers) {
     }
 }
 
+function Get-WppReadinessEvidence([object]$OS,[object]$Wpp,[object[]]$Printers) {
+    $items=@($Printers)
+    $ipp=@($items|Where-Object{$t=$_.PSObject.Properties['DriverTechnology'];$p=$_.PSObject.Properties['DriverProviderClass'];$t -and $p -and [string]$t.Value -eq 'MicrosoftIppClassDriver' -and [string]$p.Value -eq 'MicrosoftProvided'})
+    $universal=@($items|Where-Object{$t=$_.PSObject.Properties['DriverTechnology'];$p=$_.PSObject.Properties['DriverProviderClass'];$t -and $p -and [string]$t.Value -eq 'UniversalPrintClassDriver' -and [string]$p.Value -eq 'MicrosoftProvided'})
+    $readyCount=$ipp.Count+$universal.Count
+    $thirdParty=@($items|Where-Object{$p=$_.PSObject.Properties['DriverProviderClass'];$p -and [string]$p.Value -eq 'ThirdParty'})
+    $unknown=[Math]::Max(0,$items.Count-$readyCount-$thirdParty.Count)
+    $state=if($items.Count -eq 0){'NoInstalledPrinters'}elseif($thirdParty.Count -gt 0){'ThirdPartyDriverDependenciesPresent'}elseif($readyCount -eq $items.Count){'WindowsReadyPrintBindingsOnly'}else{'MixedOrUnknown'}
+    $build=0;$isServer=$false
+    if($OS){
+        $buildProp=$OS.PSObject.Properties['Build'];if($buildProp){$build=[int]$buildProp.Value}
+        $serverProp=$OS.PSObject.Properties['IsServer'];if($serverProp){$isServer=[bool]$serverProp.Value}
+    }
+    $wppEnabled=$false
+    if($Wpp){$enabledProp=$Wpp.PSObject.Properties['Enabled'];if($enabledProp){$wppEnabled=[bool]$enabledProp.Value}}
+    return [pscustomobject]@{
+        OsSupportsWpp=($build -ge 26100 -and -not $isServer)
+        WppEnabled=$wppEnabled
+        EvidenceScope='InstalledPrinterBindingsOnly'
+        LocalBindingState=$state
+        TotalBindings=$items.Count
+        KnownWindowsReadyPrintBindings=$readyCount
+        MicrosoftIppClassDriverBindings=$ipp.Count
+        UniversalPrintClassDriverBindings=$universal.Count
+        ThirdPartyDriverBindings=$thirdParty.Count
+        UnknownOrOtherBindings=$unknown
+        DeviceCompatibilityProven=$false
+    }
+}
+
+function Get-WppReadinessStateLabel([string]$State) {
+    switch($State){
+        'NoInstalledPrinters'{return (L 'no installed printer bindings' 'tidak ada binding printer terpasang')}
+        'WindowsReadyPrintBindingsOnly'{return (L 'known Windows Ready Print bindings only' 'hanya binding Windows Ready Print yang diketahui')}
+        'ThirdPartyDriverDependenciesPresent'{return (L 'third-party driver dependencies present' 'ada dependensi driver pihak ketiga')}
+        'MixedOrUnknown'{return (L 'mixed or unknown local evidence' 'bukti lokal campuran atau belum diketahui')}
+        default{return $State}
+    }
+}
+
 function Get-NetworkProfilesSafe {
     try {
         if (Get-Command Get-NetConnectionProfile -ErrorAction SilentlyContinue) { return @(Get-NetConnectionProfile | Select-Object Name,InterfaceAlias,InterfaceIndex,NetworkCategory,IPv4Connectivity,IPv6Connectivity) }
@@ -718,6 +758,7 @@ function Invoke-Diagnosis([switch]$Quiet) {
     $printers=@(Add-PrinterDriverClassifications $printers $driverMetadata)
     $profiles=@(Get-NetworkProfilesSafe);$profilesMs=$step.ElapsedMilliseconds;$step.Restart()
     $wpp=Get-WppState;$wppMs=$step.ElapsedMilliseconds;$step.Restart()
+    $wppReadiness=Get-WppReadinessEvidence $os $wpp $printers
     $smbSecurity=Get-SmbSecurityPosture;$smbSecurityMs=$step.ElapsedMilliseconds;$step.Restart()
     $errors=@(Get-RecentPrintErrors);$eventsMs=$step.ElapsedMilliseconds
     $shared=@($printers|Where-Object{$_.Shared -or $_.ShareName})
@@ -737,7 +778,14 @@ function Invoke-Diagnosis([switch]$Quiet) {
     $step.Restart();$smb1=Get-WindowsFeatureState 'SMB1Protocol-Client';$smb1Ms=$step.ElapsedMilliseconds
     $findings=New-Object System.Collections.Generic.List[object]
     if(-not $spooler){$findings.Add([pscustomobject]@{Severity='FAIL';Text=(L 'Print Spooler service is missing.' 'Layanan Print Spooler tidak ditemukan.')})}elseif($spooler.Status -ne 'Running'){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'Print Spooler is not running.' 'Print Spooler sedang tidak berjalan.')})}
-    if($wpp.Enabled){$findings.Add([pscustomobject]@{Severity='INFO';Text=(L 'Windows Protected Print Mode appears enabled. Legacy third-party printer drivers can be removed or blocked.' 'Windows Protected Print Mode tampak aktif. Driver printer pihak ketiga yang lama dapat dihapus atau diblokir.')})}
+    if($wpp.Enabled){$findings.Add([pscustomobject]@{Severity='INFO';Text=(L 'Windows Protected Print Mode appears enabled and restricts printing to Windows Ready Print paths.' 'Windows Protected Print Mode tampak aktif dan membatasi pencetakan ke jalur Windows Ready Print.')})}
+    if($wppReadiness.OsSupportsWpp -and $wppReadiness.ThirdPartyDriverBindings -gt 0){
+        if($wpp.Enabled){
+            $findings.Add([pscustomobject]@{Severity='WARN';Text=((L '{0} installed printer binding(s) still classify as third-party-driver based while WPP appears enabled. Microsoft documents that WPP removes printers using third-party drivers; treat this as pending/stale local evidence and verify policy/application state.' '{0} binding printer terpasang masih terklasifikasi memakai driver pihak ketiga saat WPP tampak aktif. Microsoft mendokumentasikan bahwa WPP menghapus printer yang memakai driver pihak ketiga; anggap ini sebagai bukti lokal yang mungkin masih pending/usang dan periksa penerapan kebijakan.') -f $wppReadiness.ThirdPartyDriverBindings)})
+        } else {
+            $findings.Add([pscustomobject]@{Severity='INFO';Text=((L '{0} installed printer binding(s) currently depend on third-party drivers. If WPP is enabled, those current bindings would be removed; this does not prove the physical devices are incompatible because supported devices may be reinstalled through Windows Ready Print.' '{0} binding printer terpasang saat ini bergantung pada driver pihak ketiga. Jika WPP diaktifkan, binding tersebut akan dihapus; ini tidak membuktikan perangkat fisiknya tidak kompatibel karena perangkat yang didukung dapat dipasang ulang melalui Windows Ready Print.') -f $wppReadiness.ThirdPartyDriverBindings)})
+        }
+    }
     if($rpcPrivacy.Present -and [int]$rpcPrivacy.Value -eq 0){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'RPC packet privacy hardening is disabled (RpcAuthnLevelPrivacyEnabled=0).' 'Penguatan privasi paket RPC sedang dinonaktifkan (RpcAuthnLevelPrivacyEnabled=0).')})}
     if($remoteRpcEndpoint.Present -and [int]$remoteRpcEndpoint.Value -eq 0){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'Print Spooler remote RPC endpoint policy is disabled; this PC will not accept remote print clients.' 'Kebijakan endpoint RPC remote Print Spooler dinonaktifkan; PC ini tidak akan menerima klien cetak remote.')})}
     if($rpcTcpPort.Present){
@@ -759,7 +807,7 @@ function Invoke-Diagnosis([switch]$Quiet) {
     }
     $diagClock.Stop()
     $timing=[pscustomobject]@{OS=[int64]$osMs;Spooler=[int64]$spoolerMs;Printers=[int64]$printersMs;PrinterDrivers=[int64]$printerDriversMs;Profiles=[int64]$profilesMs;WPP=[int64]$wppMs;SmbSecurity=[int64]$smbSecurityMs;PrintEvents=[int64]$eventsMs;PolicySources=[int64]$policySourcesMs;SMB1=[int64]$smb1Ms;Total=[int64]$diagClock.ElapsedMilliseconds}
-    $result=[pscustomobject]@{CollectedAtUtc=(Get-Date).ToUniversalTime().ToString('o');OS=$os;PowerShell=$PSVersionTable.PSVersion.ToString();Role=$role;Spooler=$spooler;Printers=$printers;SharedPrinters=$shared;Connections=$connections;Profiles=$profiles;WPP=$wpp;SmbSecurity=$smbSecurity;PrintErrors=$errors;RpcPrivacy=$rpcPrivacy;RpcUseNamedPipe=$rpcPipe;RpcProtocols=$rpcProtocols;RpcTcpPort=$rpcTcpPort;ForceKerberosForRpc=$forceKerberos;RemoteRpcEndpoint=$remoteRpcEndpoint;PointAndPrint=$point;PolicySources=$policySources;GuestAuth=$guest;LmCompatibility=$lm;BlankPassword=$blank;SMB1Client=$smb1;Findings=$findings;TimingMs=$timing}
+    $result=[pscustomobject]@{CollectedAtUtc=(Get-Date).ToUniversalTime().ToString('o');OS=$os;PowerShell=$PSVersionTable.PSVersion.ToString();Role=$role;Spooler=$spooler;Printers=$printers;SharedPrinters=$shared;Connections=$connections;Profiles=$profiles;WPP=$wpp;WppReadiness=$wppReadiness;SmbSecurity=$smbSecurity;PrintErrors=$errors;RpcPrivacy=$rpcPrivacy;RpcUseNamedPipe=$rpcPipe;RpcProtocols=$rpcProtocols;RpcTcpPort=$rpcTcpPort;ForceKerberosForRpc=$forceKerberos;RemoteRpcEndpoint=$remoteRpcEndpoint;PointAndPrint=$point;PolicySources=$policySources;GuestAuth=$guest;LmCompatibility=$lm;BlankPassword=$blank;SMB1Client=$smb1;Findings=$findings;TimingMs=$timing}
     $script:LastDiagnostic=$result
     Write-Log "Diagnosis role=$role printers=$($printers.Count) findings=$($findings.Count)"
     Write-Log "Diagnosis timing ms: os=$osMs spooler=$spoolerMs printers=$printersMs printerDrivers=$printerDriversMs profiles=$profilesMs wpp=$wppMs smbSecurity=$smbSecurityMs events=$eventsMs policySources=$policySourcesMs smb1=$smb1Ms total=$($diagClock.ElapsedMilliseconds)"
@@ -780,6 +828,12 @@ function Show-DiagnosticReport($D) {
     Write-Host ((L 'Driver models   : V3={0} / V4={1} / Unknown={2}' 'Model driver    : V3={0} / V4={1} / Tidak diketahui={2}') -f $driverSummary.V3,$driverSummary.V4,$driverSummary.ModelUnknown)
     Write-Host ((L 'Driver providers: Microsoft={0} / Third-party={1} / Unknown={2}' 'Penyedia driver : Microsoft={0} / Pihak ketiga={1} / Tidak diketahui={2}') -f $driverSummary.MicrosoftProvided,$driverSummary.ThirdParty,$driverSummary.ProviderUnknown)
     Write-Host ('WPP             : {0}' -f $wppState)
+    $wppReadinessProp=$D.PSObject.Properties['WppReadiness']
+    if($wppReadinessProp -and $wppReadinessProp.Value){
+        $wr=$wppReadinessProp.Value
+        $osSupport=if($wr.OsSupportsWpp){L 'OS supports WPP' 'OS mendukung WPP'}else{L 'WPP not supported on this OS' 'WPP tidak didukung pada OS ini'}
+        Write-Host ((L 'WPP readiness   : {0}; {1} | Ready Print={2} / third-party={3} / unknown={4}' 'Kesiapan WPP    : {0}; {1} | Ready Print={2} / pihak ketiga={3} / belum diketahui={4}') -f (Get-WppReadinessStateLabel ([string]$wr.LocalBindingState)),$osSupport,$wr.KnownWindowsReadyPrintBindings,$wr.ThirdPartyDriverBindings,$wr.UnknownOrOtherBindings)
+    }
     Write-Host ((L 'SMB1 client     : {0}' 'Klien SMB1      : {0}') -f (Localize-SystemValue ([string]$D.SMB1Client)))
     $smbSecurityProp=$D.PSObject.Properties['SmbSecurity']
     if($smbSecurityProp -and $smbSecurityProp.Value.Client.Available){
@@ -1193,6 +1247,7 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null,[object]$
     if($null -ne $FunctionalVerification){$verification=[pscustomobject]@{VerifiedAtUtc=[string]$FunctionalVerification.VerifiedAtUtc;DiagnosticCollectedAtUtc=[string]$FunctionalVerification.DiagnosticCollectedAtUtc;RequestStatus=[string]$FunctionalVerification.RequestStatus;Outcome=[string]$FunctionalVerification.Outcome;NetworkConnection=[bool]$FunctionalVerification.NetworkConnection;DriverModel=[string]$FunctionalVerification.DriverModel;DriverProviderClass=[string]$FunctionalVerification.DriverProviderClass;DriverTechnology=[string]$FunctionalVerification.DriverTechnology}}
     $next=Get-NextInvestigation $D $TargetPath
     $driverSummary=Get-PrinterDriverClassificationSummary $D.Printers
+    $wppReadiness=Get-WppReadinessEvidence $D.OS $D.WPP $D.Printers
     return [ordered]@{
         Schema='windows-printer-sharing-fix/diagnosis'
         SchemaVersion=1
@@ -1209,6 +1264,7 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null,[object]$
         DriverSummary=[ordered]@{TotalBindings=[int]$driverSummary.Total;Models=[ordered]@{V3=[int]$driverSummary.V3;V4=[int]$driverSummary.V4;Unknown=[int]$driverSummary.ModelUnknown};Providers=[ordered]@{MicrosoftProvided=[int]$driverSummary.MicrosoftProvided;ThirdParty=[int]$driverSummary.ThirdParty;Unknown=[int]$driverSummary.ProviderUnknown};Technologies=[ordered]@{MicrosoftIppClassDriver=[int]$driverSummary.MicrosoftIppClassDriver;UniversalPrintClassDriver=[int]$driverSummary.UniversalPrintClassDriver}}
         NetworkProfiles=$profiles
         WPP=[ordered]@{Enabled=[bool]$D.WPP.Enabled;GroupPolicy=(& $state $D.WPP.GroupPolicy);Mode=(& $state $D.WPP.Mode);EnabledBy=(& $state $D.WPP.EnabledBy)}
+        WppReadiness=[ordered]@{OsSupportsWpp=[bool]$wppReadiness.OsSupportsWpp;WppEnabled=[bool]$wppReadiness.WppEnabled;EvidenceScope=[string]$wppReadiness.EvidenceScope;LocalBindingState=[string]$wppReadiness.LocalBindingState;TotalBindings=[int]$wppReadiness.TotalBindings;KnownWindowsReadyPrintBindings=[int]$wppReadiness.KnownWindowsReadyPrintBindings;MicrosoftIppClassDriverBindings=[int]$wppReadiness.MicrosoftIppClassDriverBindings;UniversalPrintClassDriverBindings=[int]$wppReadiness.UniversalPrintClassDriverBindings;ThirdPartyDriverBindings=[int]$wppReadiness.ThirdPartyDriverBindings;UnknownOrOtherBindings=[int]$wppReadiness.UnknownOrOtherBindings;DeviceCompatibilityProven=$false}
         SmbSecurity=[ordered]@{Client=[ordered]@{Available=[bool]$D.SmbSecurity.Client.Available;RequireSigning=$D.SmbSecurity.Client.RequireSigning;RequireEncryption=$D.SmbSecurity.Client.RequireEncryption;InsecureGuestAllowed=$D.SmbSecurity.Client.InsecureGuestAllowed;AuditServerDoesNotSupportSigning=$D.SmbSecurity.Client.AuditServerDoesNotSupportSigning;AuditServerDoesNotSupportEncryption=$D.SmbSecurity.Client.AuditServerDoesNotSupportEncryption};Server=[ordered]@{Available=[bool]$D.SmbSecurity.Server.Available;RequireSigning=$D.SmbSecurity.Server.RequireSigning;EncryptData=$D.SmbSecurity.Server.EncryptData;RejectUnencryptedAccess=$D.SmbSecurity.Server.RejectUnencryptedAccess;AuditClientDoesNotSupportSigning=$D.SmbSecurity.Server.AuditClientDoesNotSupportSigning;AuditClientDoesNotSupportEncryption=$D.SmbSecurity.Server.AuditClientDoesNotSupportEncryption}}
         Policies=[ordered]@{RpcPrivacy=(& $state $D.RpcPrivacy);RpcUseNamedPipe=(& $state $D.RpcUseNamedPipe);RpcProtocols=(& $state $D.RpcProtocols);RpcTcpPort=(& $state $D.RpcTcpPort);ForceKerberosForRpc=(& $state $D.ForceKerberosForRpc);RemoteRpcEndpoint=(& $state $D.RemoteRpcEndpoint);PointAndPrint=(& $state $D.PointAndPrint);GuestAuth=(& $state $D.GuestAuth);LmCompatibility=(& $state $D.LmCompatibility);BlankPassword=(& $state $D.BlankPassword)}
         PolicySources=$policySources

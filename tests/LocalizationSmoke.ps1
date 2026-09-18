@@ -27,13 +27,14 @@ $diagnostic = [pscustomobject]@{
     PowerShell='5.1';Role='Client';Spooler=[pscustomobject]@{Status='Running'}
     Printers=@();SharedPrinters=@();Connections=@();Profiles=@()
     WPP=[pscustomobject]@{Enabled=$false};SMB1Client='Disabled'
+    WppReadiness=[pscustomobject]@{OsSupportsWpp=$true;WppEnabled=$false;EvidenceScope='InstalledPrinterBindingsOnly';LocalBindingState='ThirdPartyDriverDependenciesPresent';TotalBindings=3;KnownWindowsReadyPrintBindings=1;MicrosoftIppClassDriverBindings=1;UniversalPrintClassDriverBindings=0;ThirdPartyDriverBindings=2;UnknownOrOtherBindings=0;DeviceCompatibilityProven=$false}
     SmbSecurity=[pscustomobject]@{Client=[pscustomobject]@{Available=$true;RequireSigning=$true;RequireEncryption=$false};Server=[pscustomobject]@{Available=$false;RequireSigning=$null;EncryptData=$null}}
     PolicySources=[pscustomobject]@{RpcUseNamedPipe=[pscustomobject]@{Configured=$true;Source='LocalGroupPolicy';Evidence='RsopRegistryPolicySetting'};RpcPrivacy=[pscustomobject]@{Configured=$true;Source='RegistryOnlyOrUnknownSource';Evidence='RegistryPresence'}}
     Findings=@();PrintErrors=@()
 }
 
 $report = (& { Show-DiagnosticReport $diagnostic } 6>&1 | Out-String)
-foreach($expected in @('LAPORAN DIAGNOSIS','26100.4061','Peran terdeteksi: Klien','Model driver','Penyedia driver','Klien SMB1','Keamanan SMB kli','signing=wajib','enkripsi=tidak diwajibkan','Tidak aktif','Lapisan berikutnya untuk diperiksa','path target / transport remote','prioritas troubleshooting, bukan klaim akar penyebab','Bukti sumber kebijakan printer','Group Policy Lokal','nilai registry; sumber tidak diketahui')) {
+foreach($expected in @('LAPORAN DIAGNOSIS','26100.4061','Peran terdeteksi: Klien','Model driver','Penyedia driver','Kesiapan WPP','ada dependensi driver pihak ketiga','OS mendukung WPP','pihak ketiga=2','Klien SMB1','Keamanan SMB kli','signing=wajib','enkripsi=tidak diwajibkan','Tidak aktif','Lapisan berikutnya untuk diperiksa','path target / transport remote','prioritas troubleshooting, bukan klaim akar penyebab','Bukti sumber kebijakan printer','Group Policy Lokal','nilai registry; sumber tidak diketahui')) {
     if($report -notmatch [regex]::Escape($expected)){throw "Indonesian diagnostic output is missing: $expected"}
 }
 if($report -match 'Detected role|Shared printers:|Network profiles:'){throw 'English diagnostic labels leaked into Indonesian mode.'}

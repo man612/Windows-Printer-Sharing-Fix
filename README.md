@@ -99,7 +99,7 @@ The local diagnosis is read-only and currently inspects:
 - Evidence-based printer-driver classification (v3/v4, Microsoft/third-party/unknown, and exact known Microsoft class-driver technology).
 - Shared-printer host / network-printer client role.
 - Active network profiles.
-- Windows Protected Print (WPP) indicators.
+- Windows Protected Print (WPP) indicators plus conservative local readiness evidence from installed printer bindings, without claiming physical-device compatibility.
 - RPC printer policy, including Named Pipes compatibility state, explicit print-RPC TCP port, Kerberos enforcement, and remote Spooler endpoint policy.
 - Printer-policy source evidence from RSoP plus conservative MDM-aware signals, without assuming a registry value came from a domain GPO.
 - Point and Print driver-installation protection.
@@ -187,6 +187,7 @@ The project deliberately distinguishes Windows Server from Windows 11 even when 
 - [PrintService event classification](docs/PRINTSERVICE-EVENTS.md)
 - [Printer policy source evidence](docs/POLICY-SOURCES.md)
 - [Printer driver classification](docs/DRIVER-CLASSIFICATION.md)
+- [Windows Protected Print readiness evidence](docs/WPP-READINESS.md)
 - [Next-layer correlation](docs/CORRELATION.md)
 - [Modern SMB/RPC diagnostics](docs/MODERN-SMB-RPC.md)
 - [Release integrity and provenance](docs/RELEASE-INTEGRITY.md)
