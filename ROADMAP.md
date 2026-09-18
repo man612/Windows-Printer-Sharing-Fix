@@ -15,7 +15,7 @@ This roadmap describes direction, not a promise of release dates. Stable behavio
 
 ### Distribution and docs
 
-- Keep release ZIPs reproducible and checksummed.
+- Keep deterministic release packaging, checksums, provenance attestations, and immutable-release safeguards covered by regression tests.
 - Keep English and Indonesian onboarding current.
 - Add sanitized screenshots or short recordings when they improve troubleshooting rather than decorate the repo.
 

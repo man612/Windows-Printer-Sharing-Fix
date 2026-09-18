@@ -9,6 +9,10 @@
 5. Accept the Administrator prompt.
 6. Run **Diagnose this PC** before any repair.
 
+## Optional release verification
+
+Stable releases include `SHA256SUMS.txt`; releases produced by the current hardened workflow also carry GitHub build-provenance attestations. See [RELEASE-INTEGRITY.md](RELEASE-INTEGRITY.md) for copy-paste verification commands before running the ZIP.
+
 ## Reading the menu
 
 - **Safe Repair**: first-line repair; must not lower printer/network security protections.

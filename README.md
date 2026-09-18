@@ -31,6 +31,8 @@ It inspects the actual failure layer first — Spooler, network profile, SMB/RPC
 5. Choose **Diagnose this PC** first.
 6. Escalate to Safe, Advanced, or Legacy repair only when the diagnosis points there.
 
+Stable releases also publish `SHA256SUMS.txt`. Releases produced by the hardened workflow include GitHub build-provenance attestations; verification commands are documented in [Release integrity](docs/RELEASE-INTEGRITY.md).
+
 Or clone the repository:
 
 ```powershell
@@ -134,7 +136,9 @@ GitHub Actions runs on Windows with Windows PowerShell 5.1 and checks:
 - structured JSON export reuse/privacy/read-only regression coverage;
 - English/Indonesian localization output;
 - migration of legacy language/restore state to the external runtime workspace;
-- the end-user release ZIP and SHA256 checksum.
+- the end-user release ZIP and SHA256 checksum;
+- bit-for-bit reproducible packaging across differing source file timestamps;
+- release-workflow ordering and pinned GitHub Actions references.
 
 CI is a guardrail, not a substitute for real printer hardware and host/client testing. Planned coverage lives in [docs/TEST-MATRIX.md](docs/TEST-MATRIX.md); accepted evidence is tracked separately in [docs/REAL-WORLD-RESULTS.md](docs/REAL-WORLD-RESULTS.md).
 
@@ -175,6 +179,7 @@ The project deliberately distinguishes Windows Server from Windows 11 even when 
 - [Printer driver classification](docs/DRIVER-CLASSIFICATION.md)
 - [Next-layer correlation](docs/CORRELATION.md)
 - [Modern SMB/RPC diagnostics](docs/MODERN-SMB-RPC.md)
+- [Release integrity and provenance](docs/RELEASE-INTEGRITY.md)
 - [Guided test-page verification](docs/TEST-PAGE-VERIFICATION.md)
 - [Sanitized diagnosis examples](docs/examples/README.md)
 - [Real-world test matrix](docs/TEST-MATRIX.md)

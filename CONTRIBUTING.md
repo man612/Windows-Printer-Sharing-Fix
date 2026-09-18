@@ -57,6 +57,8 @@ powershell.exe -NoProfile -File .\tests\TestPageVerificationSmoke.ps1
 powershell.exe -NoProfile -File .\tests\ExamplesSmoke.ps1
 powershell.exe -NoProfile -File .\tests\LocalizationSmoke.ps1
 powershell.exe -NoProfile -File .\tests\WorkspaceSmoke.ps1
+powershell.exe -NoProfile -File .\tests\ReproduciblePackageSmoke.ps1
+powershell.exe -NoProfile -File .\tests\ReleaseWorkflowSmoke.ps1
 powershell.exe -NoProfile -File .\tests\PackageSmoke.ps1
 ```
 
