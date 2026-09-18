@@ -55,7 +55,7 @@ Reset-Messages
 $script:ServiceState=@{fdPHost='Stopped';FDResPub='Stopped'}
 $script:FailStartService=$null
 function Get-Service {
-    param([string]$Name)
+    [CmdletBinding()] param([string]$Name)
     if(-not $script:ServiceState.ContainsKey($Name)){throw "Unknown service: $Name"}
     [pscustomobject]@{Name=$Name;Status=$script:ServiceState[$Name]}
 }
@@ -105,12 +105,12 @@ function Get-Service {
     [pscustomobject]@{Name='Spooler';Status=$script:SpoolerState}
 }
 function Test-Path {
-    param([string]$LiteralPath,[System.Management.Automation.SwitchParameter]$PathType)
+    param([string]$LiteralPath,$PathType)
     $null=@($LiteralPath,$PathType)
     $true
 }
 function Get-ChildItem {
-    param([string]$LiteralPath,[switch]$Force)
+    [CmdletBinding()] param([string]$LiteralPath,[switch]$Force)
     $null=@($LiteralPath,$Force)
     @($script:QueueEntries | ForEach-Object {[pscustomobject]@{FullName=('C:\queue\'+$_)}})
 }
