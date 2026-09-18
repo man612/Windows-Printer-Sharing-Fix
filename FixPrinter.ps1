@@ -941,8 +941,8 @@ function Get-ManagedRegistryEntries {
 }
 
 function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Services','Network','Firewall','SMB1'),[object[]]$FirewallRules=$null,[object[]]$NetworkProfiles=$null) {
+    $dir=$null
     try {
-        $dir=Join-Path $script:BackupRoot ((Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[Guid]::NewGuid().ToString('N').Substring(0,6));New-Item -ItemType Directory -Path $dir -Force|Out-Null
         $registry=@();$services=@();$profiles=@();$fw=@();$features=@()
 
         if($Scopes -contains 'Registry'){
@@ -994,12 +994,15 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
             $features=@([pscustomobject]@{Name='SMB1Protocol-Client';State=(Get-WindowsFeatureState 'SMB1Protocol-Client')})
         }
 
+        $dir=Join-Path $script:BackupRoot ((Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[Guid]::NewGuid().ToString('N').Substring(0,6))
+        New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop|Out-Null
         $state=[pscustomobject]@{Version=$script:Version;Created=(Get-Date).ToString('o');Reason=$Reason;Scopes=@($Scopes);Registry=$registry;Services=$services;NetworkProfiles=$profiles;FirewallRules=$fw;WindowsFeatures=$features}
-        $state|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $dir 'managed-state.json') -Encoding UTF8
+        $state|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $dir 'managed-state.json') -Encoding UTF8 -ErrorAction Stop
         Write-Log "Snapshot: $dir reason=$Reason scopes=$($Scopes -join ',')"
-        $dir|Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8
+        $dir|Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8 -ErrorAction Stop
         return $dir
     } catch {
+        if($dir -and (Test-Path -LiteralPath $dir -PathType Container)){Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue}
         Write-Fail ((L 'Snapshot failed: {0}' 'Pembuatan snapshot gagal: {0}') -f $_.Exception.Message)
         Write-Log $_.Exception.Message 'ERROR'
         return $null
