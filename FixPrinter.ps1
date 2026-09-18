@@ -1191,9 +1191,9 @@ function Select-NetworkProfile {
     return $p[[int]$c-1]
 }
 
-function Set-OneNetworkPrivate([object]$Profile=$null) {
+function Set-OneNetworkPrivate([object]$SelectedProfile=$null) {
     if(-not(Get-Command Set-NetConnectionProfile -ErrorAction SilentlyContinue)){Write-Warn (L 'Set-NetConnectionProfile unavailable.' 'Set-NetConnectionProfile tidak tersedia.');return}
-    $selected=if($PSBoundParameters.ContainsKey('Profile')){$Profile}else{Select-NetworkProfile}
+    $selected=if($PSBoundParameters.ContainsKey('SelectedProfile')){$SelectedProfile}else{Select-NetworkProfile}
     if($null -eq $selected){return}
     if($selected.NetworkCategory -eq 'DomainAuthenticated'){Write-Warn (L 'DomainAuthenticated profiles should be controlled by domain policy.' 'Profil DomainAuthenticated sebaiknya dikendalikan oleh kebijakan domain.');return}
     Set-NetConnectionProfile -InterfaceIndex $selected.InterfaceIndex -NetworkCategory Private
@@ -1223,7 +1223,7 @@ function Show-SafeRepairMenu {
             '1'{$snap=New-RestoreSnapshot 'Restart Print Spooler' @('Services');if($snap){Invoke-RestartSpooler}}
             '2'{Invoke-ClearPrintQueue}
             '3'{$firewallRules=@(Get-FirewallSharingRules);$snap=New-RestoreSnapshot 'Enable sharing firewall rules' @('Firewall') -FirewallRules $firewallRules;if($snap){Enable-PrivateFirewallSharing -FirewallRules $firewallRules}}
-            '4'{$selectedProfile=Select-NetworkProfile;if($null -ne $selectedProfile){if($selectedProfile.NetworkCategory -eq 'DomainAuthenticated'){Write-Warn (L 'DomainAuthenticated profiles should be controlled by domain policy.' 'Profil DomainAuthenticated sebaiknya dikendalikan oleh kebijakan domain.')}else{$snap=New-RestoreSnapshot 'Change selected network profile' @('Network') -NetworkProfiles @($selectedProfile);if($snap){Set-OneNetworkPrivate -Profile $selectedProfile}}}}
+            '4'{$selectedProfile=Select-NetworkProfile;if($null -ne $selectedProfile){if($selectedProfile.NetworkCategory -eq 'DomainAuthenticated'){Write-Warn (L 'DomainAuthenticated profiles should be controlled by domain policy.' 'Profil DomainAuthenticated sebaiknya dikendalikan oleh kebijakan domain.')}else{$snap=New-RestoreSnapshot 'Change selected network profile' @('Network') -NetworkProfiles @($selectedProfile);if($snap){Set-OneNetworkPrivate -SelectedProfile $selectedProfile}}}}
             '5'{$snap=New-RestoreSnapshot 'Start Network Discovery services' @('Services');if($snap){Start-NetworkDiscoveryServices}}
             '6'{$firewallRules=@(Get-FirewallSharingRules);$snap=New-RestoreSnapshot 'Combined non-destructive Safe Repair' @('Services','Firewall') -FirewallRules $firewallRules;if($snap){Invoke-RestartSpooler;Enable-PrivateFirewallSharing -FirewallRules $firewallRules;Start-NetworkDiscoveryServices}}
         }}catch{Write-Fail $_.Exception.Message}
