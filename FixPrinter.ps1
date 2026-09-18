@@ -1040,14 +1040,14 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
     }
 
     $currentProfiles=@{}
-    foreach($profile in @(Get-NetworkProfilesSafe)){$currentProfiles[[int]$profile.InterfaceIndex]=$true}
+    foreach($networkProfile in @(Get-NetworkProfilesSafe)){$currentProfiles[[int]$networkProfile.InterfaceIndex]=$true}
     $seenProfiles=@{}
-    foreach($profile in @($state.NetworkProfiles)){
-        $index=[int]$profile.InterfaceIndex
+    foreach($networkProfile in @($state.NetworkProfiles)){
+        $index=[int]$networkProfile.InterfaceIndex
         if($index -le 0 -or -not $currentProfiles.ContainsKey($index)){throw "Restore snapshot references an unavailable network profile: $index"}
         if($seenProfiles.ContainsKey($index)){throw 'Restore snapshot contains duplicate network profile state.'}
         $seenProfiles[$index]=$true
-        if([string]$profile.NetworkCategory -notin @('Public','Private','DomainAuthenticated')){throw "Restore snapshot has an invalid network category: $($profile.NetworkCategory)"}
+        if([string]$networkProfile.NetworkCategory -notin @('Public','Private','DomainAuthenticated')){throw "Restore snapshot has an invalid network category: $($networkProfile.NetworkCategory)"}
     }
 
     $sharingRuleNames=@{}
