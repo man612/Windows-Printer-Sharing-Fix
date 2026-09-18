@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Firewall, Network Discovery, and print-queue repairs now report success only after the underlying Windows operations complete as expected; queue cleanup also guarantees a Spooler recovery attempt and reports partial failure instead of a false `[OK]`.
 - Restore snapshots are now narrowed to the exact state each repair action can change, avoiding unrelated registry, service, network, or firewall rollback; failed snapshot capture also leaves no orphan directory or replaced latest pointer.
 - Temporary Point and Print relaxation now restores the previous `Restore latest` pointer and removes its emergency snapshot after a confirmed rollback; if rollback cannot be confirmed, the emergency snapshot remains latest for recovery.
 - Restore now rejects snapshots outside the managed backup root and validates action scopes plus registry, service, network, firewall, and SMB1 targets before the first restore mutation.

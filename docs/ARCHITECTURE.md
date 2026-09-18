@@ -143,6 +143,7 @@ The stable PowerShell implementation is guarded by layered tests rather than a s
 
 - runtime/state-fingerprint smoke tests prove diagnosis paths do not mutate managed Windows state;
 - restore-safety smoke tests reject out-of-root, malformed, scope-mismatched, and unmanaged snapshot targets before confirmation or mutation;
+- repair-outcome smoke tests inject Windows-command failures and require the TUI to suppress success reporting while exercising recovery paths;
 - PSScriptAnalyzer 1.25.0 runs Error/Warning analysis using the documented repository profile;
 - intentional TUI/style conflicts are explicitly excluded, while actionable diagnostics are fixed rather than hidden;
 - repository-hygiene tests require governance files, explicit workflow permissions, full-SHA GitHub Action pinning, and weekly GitHub Actions Dependabot configuration;

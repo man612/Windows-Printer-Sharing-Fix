@@ -125,6 +125,10 @@ jobs:
         shell: powershell
         run: .\tests\PointAndPrintSafetySmoke.ps1
 
+      - name: Validate repair outcome reporting
+        shell: powershell
+        run: .\tests\RepairOutcomeSmoke.ps1
+
       - name: Validate reproducible release package
         shell: powershell
         run: .\tests\ReproduciblePackageSmoke.ps1
