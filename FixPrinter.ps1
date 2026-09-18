@@ -308,6 +308,38 @@ function Get-WppState {
     return [pscustomobject]@{Enabled=(($gp.Present -and [int]$gp.Value -eq 1) -or ($mode.Present -and [int]$mode.Value -eq 1));GroupPolicy=$gp;Mode=$mode;EnabledBy=$enabledBy}
 }
 
+function Get-SmbSecurityPosture {
+    $client=[pscustomobject]@{Available=$false;RequireSigning=$null;RequireEncryption=$null;InsecureGuestAllowed=$null;AuditServerDoesNotSupportSigning=$null;AuditServerDoesNotSupportEncryption=$null}
+    $server=[pscustomobject]@{Available=$false;RequireSigning=$null;EncryptData=$null;RejectUnencryptedAccess=$null;AuditClientDoesNotSupportSigning=$null;AuditClientDoesNotSupportEncryption=$null}
+    if(-not(Get-Command Invoke-CimMethod -ErrorAction SilentlyContinue)){return [pscustomobject]@{Client=$client;Server=$server}}
+    try {
+        $r=Invoke-CimMethod -Namespace 'root\Microsoft\Windows\SMB' -ClassName 'MSFT_SmbClientConfiguration' -MethodName 'GetConfiguration' -ErrorAction Stop
+        if([int]$r.ReturnValue -eq 0 -and $r.Output){
+            $o=$r.Output
+            $client=[pscustomobject]@{Available=$true;RequireSigning=[bool]$o.RequireSecuritySignature;RequireEncryption=[bool]$o.RequireEncryption;InsecureGuestAllowed=[bool]$o.EnableInsecureGuestLogons;AuditServerDoesNotSupportSigning=[bool]$o.AuditServerDoesNotSupportSigning;AuditServerDoesNotSupportEncryption=[bool]$o.AuditServerDoesNotSupportEncryption}
+        }
+    } catch {}
+    try {
+        $r=Invoke-CimMethod -Namespace 'root\Microsoft\Windows\SMB' -ClassName 'MSFT_SmbServerConfiguration' -MethodName 'GetConfiguration' -ErrorAction Stop
+        if([int]$r.ReturnValue -eq 0 -and $r.Output){
+            $o=$r.Output
+            $server=[pscustomobject]@{Available=$true;RequireSigning=[bool]$o.RequireSecuritySignature;EncryptData=[bool]$o.EncryptData;RejectUnencryptedAccess=[bool]$o.RejectUnencryptedAccess;AuditClientDoesNotSupportSigning=[bool]$o.AuditClientDoesNotSupportSigning;AuditClientDoesNotSupportEncryption=[bool]$o.AuditClientDoesNotSupportEncryption}
+        }
+    } catch {}
+    return [pscustomobject]@{Client=$client;Server=$server}
+}
+
+function Get-SmbSecurityEventClassification([string]$LogName,[int]$Id) {
+    $side=if($LogName -match 'SMBServer'){'Server'}else{'Client'}
+    $category=switch($Id){
+        31017 {'RejectedInsecureGuest'}
+        {$_ -in @(31998,31999)} {'SigningOrEncryptionCompatibility'}
+        {$_ -in @(3021,3022)} {'SigningOrEncryptionCompatibility'}
+        default {'OtherSmbSecurity'}
+    }
+    return [pscustomobject]@{Side=$side;Category=$category}
+}
+
 function Normalize-PolicyRegistryKey([string]$Path) {
     if(-not $Path){return ''}
     $key=$Path.Trim()
@@ -349,13 +381,16 @@ function Get-MdmManagementEvidence([object[]]$OmaDmAccounts=$null,[object[]]$Pol
     return [pscustomobject]@{CombinedEvidence=($oma -and $policyManager);OmaDmAccountPresent=$oma;PolicyManagerProviderPresent=$policyManager}
 }
 
-function Get-PrinterPolicySourceEvidence([int]$Build,[object]$RpcPrivacy,[object]$RpcUseNamedPipe,[object]$RpcProtocols,[object]$PointAndPrint,[object]$WppGroupPolicy,[object]$RsopResult=$null,[object]$MdmEvidence=$null) {
+function Get-PrinterPolicySourceEvidence([int]$Build,[object]$RpcPrivacy,[object]$RpcUseNamedPipe,[object]$RpcProtocols,[object]$PointAndPrint,[object]$WppGroupPolicy,[object]$RpcTcpPort=$null,[object]$ForceKerberosForRpc=$null,[object]$RemoteRpcEndpoint=$null,[object]$RsopResult=$null,[object]$MdmEvidence=$null) {
     if($null -eq $RsopResult){$RsopResult=Get-ComputerRsopRegistryPolicySettings}
     $settings=@($RsopResult.Settings)
     $targets=@(
         [pscustomobject]@{Name='RpcPrivacy';State=$RpcPrivacy;Path='HKLM:\SYSTEM\CurrentControlSet\Control\Print';ValueName='RpcAuthnLevelPrivacyEnabled';MdmMinBuild=26100},
         [pscustomobject]@{Name='RpcUseNamedPipe';State=$RpcUseNamedPipe;Path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC';ValueName='RpcUseNamedPipeProtocol';MdmMinBuild=22621},
         [pscustomobject]@{Name='RpcProtocols';State=$RpcProtocols;Path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC';ValueName='RpcProtocols';MdmMinBuild=22621},
+        [pscustomobject]@{Name='RpcTcpPort';State=$RpcTcpPort;Path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC';ValueName='RpcTcpPort';MdmMinBuild=22621},
+        [pscustomobject]@{Name='ForceKerberosForRpc';State=$ForceKerberosForRpc;Path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC';ValueName='ForceKerberosForRpc';MdmMinBuild=22621},
+        [pscustomobject]@{Name='RemoteRpcEndpoint';State=$RemoteRpcEndpoint;Path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers';ValueName='RegisterSpoolerRemoteRpcEndPoint';MdmMinBuild=22000},
         [pscustomobject]@{Name='PointAndPrint';State=$PointAndPrint;Path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint';ValueName='RestrictDriverInstallationToAdministrators';MdmMinBuild=22621},
         [pscustomobject]@{Name='WppGroupPolicy';State=$WppGroupPolicy;Path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\WPP';ValueName='WindowsProtectedPrintGroupPolicyState';MdmMinBuild=26100}
     )
@@ -386,6 +421,9 @@ function Get-PrinterPolicyDisplayName([string]$Name) {
         'RpcPrivacy'{return (L 'RPC packet privacy' 'Privasi paket RPC')}
         'RpcUseNamedPipe'{return (L 'RPC named-pipe connection' 'Koneksi RPC named pipe')}
         'RpcProtocols'{return (L 'RPC listener protocols' 'Protokol listener RPC')}
+        'RpcTcpPort'{return (L 'RPC over TCP port' 'Port RPC melalui TCP')}
+        'ForceKerberosForRpc'{return (L 'RPC listener Kerberos enforcement' 'Pemaksaan Kerberos pada listener RPC')}
+        'RemoteRpcEndpoint'{return (L 'Print Spooler remote RPC endpoint' 'Endpoint RPC remote Print Spooler')}
         'PointAndPrint'{return (L 'Point and Print driver installation' 'Pemasangan driver Point and Print')}
         'WppGroupPolicy'{return (L 'Windows protected print policy' 'Kebijakan Windows protected print')}
         default{return $Name}
@@ -490,6 +528,26 @@ function Get-RecentPrintErrors {
     } catch { return @() }
 }
 
+function Get-RecentSmbSecurityEvents([switch]$ClientOnly) {
+    $queries=@(
+        [pscustomobject]@{Log='Microsoft-Windows-SMBClient/Security';Ids=@(31017)},
+        [pscustomobject]@{Log='Microsoft-Windows-SMBClient/Audit';Ids=@(31998,31999)}
+    )
+    if(-not $ClientOnly){$queries += [pscustomobject]@{Log='Microsoft-Windows-SMBServer/Audit';Ids=@(3021,3022)}}
+    $out=New-Object System.Collections.Generic.List[object]
+    $since=(Get-Date).AddDays(-7)
+    foreach($query in $queries){
+        try {
+            $events=@(Get-WinEvent -FilterHashtable @{LogName=$query.Log;Id=$query.Ids;StartTime=$since} -MaxEvents 8 -ErrorAction Stop)
+            foreach($event in $events){
+                $classification=Get-SmbSecurityEventClassification $query.Log ([int]$event.Id)
+                $out.Add([pscustomobject]@{TimeCreated=$event.TimeCreated;Id=[int]$event.Id;Side=$classification.Side;Category=$classification.Category})
+            }
+        } catch {}
+    }
+    return @($out | Sort-Object TimeCreated -Descending)
+}
+
 function Resolve-HostAddresses([string]$ComputerName,[int]$TimeoutMs=2500) {
     $async=$null
     try {
@@ -556,6 +614,10 @@ function New-NextInvestigation([string]$Layer,[string]$Reason,[bool]$RemoteTrans
 function Get-NextInvestigation($D,[object]$TargetPath=$null) {
     if($null -eq $D){throw 'Diagnostic object is required for correlation.'}
     $signals=@(Get-NextInvestigationSignals $D)
+    if($null -ne $TargetPath){
+        $smbSignalsProp=$TargetPath.PSObject.Properties['SmbSecuritySignals']
+        if($smbSignalsProp){foreach($signal in @($smbSignalsProp.Value)){if($signal){$signals+=('SmbSecurity:{0}' -f [string]$signal)}}}
+    }
     $spoolerProp=$D.PSObject.Properties['Spooler']
     if(-not $spoolerProp -or $null -eq $spoolerProp.Value){return New-NextInvestigation 'LocalSpooler' 'SpoolerMissing' ($null -ne $TargetPath) $signals}
     if([string]$spoolerProp.Value.Status -ne 'Running'){return New-NextInvestigation 'LocalSpooler' 'SpoolerNotRunning' ($null -ne $TargetPath) $signals}
@@ -563,6 +625,9 @@ function Get-NextInvestigation($D,[object]$TargetPath=$null) {
     if(-not [bool]$TargetPath.DnsResolved){return New-NextInvestigation 'NameResolutionOrBasicNetwork' 'TargetDnsFailed' $true $signals}
     if(-not [bool]$TargetPath.Smb445Reachable){return New-NextInvestigation 'SmbFirewallOrRouting' 'TargetSmb445Failed' $true $signals}
     if(-not [bool]$TargetPath.Rpc135Reachable){return New-NextInvestigation 'RpcReachability' 'TargetRpc135Failed' $true $signals}
+    $rpcPortProp=$TargetPath.PSObject.Properties['RpcConfiguredPort']
+    $rpcPortReachableProp=$TargetPath.PSObject.Properties['RpcConfiguredPortReachable']
+    if($rpcPortProp -and $null -ne $rpcPortProp.Value -and $rpcPortReachableProp -and $rpcPortReachableProp.Value -eq $false){return New-NextInvestigation 'RpcReachability' 'TargetConfiguredRpcPortFailed' $true $signals}
     if(-not [bool]$TargetPath.ShareNamespaceAccessible){return New-NextInvestigation 'ShareNamespaceOrCredentials' 'TargetNamespaceFailed' $true $signals}
     $installed=[bool]$TargetPath.PrinterInstalled
     $wppProp=$D.PSObject.Properties['WPP']
@@ -584,7 +649,7 @@ function Get-NextInvestigationLayerLabel([string]$Layer) {
         'RemoteTransportUntested'{return (L 'target path / remote transport' 'path target / transport remote')}
         'NameResolutionOrBasicNetwork'{return (L 'name resolution / basic network' 'resolusi nama / jaringan dasar')}
         'SmbFirewallOrRouting'{return (L 'SMB / firewall / routing' 'SMB / firewall / routing')}
-        'RpcReachability'{return (L 'RPC Endpoint Mapper / firewall' 'RPC Endpoint Mapper / firewall')}
+        'RpcReachability'{return (L 'print RPC / firewall' 'RPC printer / firewall')}
         'ShareNamespaceOrCredentials'{return (L 'share namespace / credentials / sharing' 'namespace share / kredensial / sharing')}
         'WppCompatibility'{return (L 'WPP / driver compatibility' 'WPP / kompatibilitas driver')}
         'DriverOrPackage'{return (L 'driver / package' 'driver / paket')}
@@ -608,6 +673,7 @@ function Get-NextInvestigationReasonText([string]$Reason) {
         'TargetDnsFailed'{return (L 'The target name did not resolve, so later SMB/RPC failures are not yet meaningful.' 'Nama target tidak berhasil di-resolve, jadi kegagalan SMB/RPC setelahnya belum bermakna.')}
         'TargetSmb445Failed'{return (L 'Name resolution succeeded but TCP 445 did not. Check SMB reachability, firewall, and routing before printer-policy changes.' 'Resolusi nama berhasil tetapi TCP 445 tidak. Periksa SMB, firewall, dan routing sebelum mengubah kebijakan printer.')}
         'TargetRpc135Failed'{return (L 'DNS and SMB succeeded but RPC Endpoint Mapper on TCP 135 did not. This does not test the later dynamic RPC ports.' 'DNS dan SMB berhasil tetapi RPC Endpoint Mapper pada TCP 135 tidak. Ini belum menguji dynamic RPC ports setelahnya.')}
+        'TargetConfiguredRpcPortFailed'{return (L 'RPC Endpoint Mapper responded, but the explicitly configured print RPC TCP port did not. Check the configured port and firewall path before changing printer security policy.' 'RPC Endpoint Mapper merespons, tetapi port TCP RPC printer yang dikonfigurasi secara eksplisit tidak. Periksa port tersebut dan jalur firewall sebelum mengubah kebijakan keamanan printer.')}
         'TargetNamespaceFailed'{return (L 'SMB and RPC endpoint checks succeeded, but the host share namespace was not accessible. Check sharing, credentials, and policy next.' 'Pemeriksaan SMB dan RPC endpoint berhasil, tetapi namespace share host tidak dapat diakses. Periksa sharing, kredensial, dan kebijakan berikutnya.')}
         'WppEnabledPrinterNotInstalled'{return (L 'Transport prerequisites look healthy, but WPP is enabled and the target printer is not installed. Verify Windows Ready Print/WPP compatibility before legacy-driver workarounds.' 'Prasyarat transport terlihat sehat, tetapi WPP aktif dan printer target belum terpasang. Periksa kompatibilitas Windows Ready Print/WPP sebelum memakai workaround driver lama.')}
         'RecentDriverOrPackageEvents'{return (L 'Transport prerequisites look healthy and recent PrintService driver/package events exist. Treat them as supporting evidence, not proof of cause.' 'Prasyarat transport terlihat sehat dan ada event PrintService driver/paket terbaru. Anggap ini sebagai bukti pendukung, bukan bukti penyebab.')}
@@ -642,6 +708,7 @@ function Invoke-Diagnosis([switch]$Quiet) {
     $printers=@(Add-PrinterDriverClassifications $printers $driverMetadata)
     $profiles=@(Get-NetworkProfilesSafe);$profilesMs=$step.ElapsedMilliseconds;$step.Restart()
     $wpp=Get-WppState;$wppMs=$step.ElapsedMilliseconds;$step.Restart()
+    $smbSecurity=Get-SmbSecurityPosture;$smbSecurityMs=$step.ElapsedMilliseconds;$step.Restart()
     $errors=@(Get-RecentPrintErrors);$eventsMs=$step.ElapsedMilliseconds
     $shared=@($printers|Where-Object{$_.Shared -or $_.ShareName})
     $connections=@($printers|Where-Object{$_.Name -like '\\*' -or $_.Type -eq 'Connection'})
@@ -649,18 +716,29 @@ function Invoke-Diagnosis([switch]$Quiet) {
     $rpcPrivacy=Get-RegistryValueState 'HKLM:\SYSTEM\CurrentControlSet\Control\Print' 'RpcAuthnLevelPrivacyEnabled'
     $rpcPipe=Get-RegistryValueState 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcUseNamedPipeProtocol'
     $rpcProtocols=Get-RegistryValueState 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcProtocols'
+    $rpcTcpPort=Get-RegistryValueState 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcTcpPort'
+    $forceKerberos=Get-RegistryValueState 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'ForceKerberosForRpc'
+    $remoteRpcEndpoint=Get-RegistryValueState 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers' 'RegisterSpoolerRemoteRpcEndPoint'
     $point=Get-RegistryValueState 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint' 'RestrictDriverInstallationToAdministrators'
     $guest=Get-RegistryValueState 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' 'AllowInsecureGuestAuth'
     $lm=Get-RegistryValueState 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' 'LmCompatibilityLevel'
     $blank=Get-RegistryValueState 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' 'LimitBlankPasswordUse'
-    $step.Restart();$policySources=Get-PrinterPolicySourceEvidence -Build $os.Build -RpcPrivacy $rpcPrivacy -RpcUseNamedPipe $rpcPipe -RpcProtocols $rpcProtocols -PointAndPrint $point -WppGroupPolicy $wpp.GroupPolicy;$policySourcesMs=$step.ElapsedMilliseconds
+    $step.Restart();$policySources=Get-PrinterPolicySourceEvidence -Build $os.Build -RpcPrivacy $rpcPrivacy -RpcUseNamedPipe $rpcPipe -RpcProtocols $rpcProtocols -RpcTcpPort $rpcTcpPort -ForceKerberosForRpc $forceKerberos -RemoteRpcEndpoint $remoteRpcEndpoint -PointAndPrint $point -WppGroupPolicy $wpp.GroupPolicy;$policySourcesMs=$step.ElapsedMilliseconds
     $step.Restart();$smb1=Get-WindowsFeatureState 'SMB1Protocol-Client';$smb1Ms=$step.ElapsedMilliseconds
     $findings=New-Object System.Collections.Generic.List[object]
     if(-not $spooler){$findings.Add([pscustomobject]@{Severity='FAIL';Text=(L 'Print Spooler service is missing.' 'Layanan Print Spooler tidak ditemukan.')})}elseif($spooler.Status -ne 'Running'){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'Print Spooler is not running.' 'Print Spooler sedang tidak berjalan.')})}
     if($wpp.Enabled){$findings.Add([pscustomobject]@{Severity='INFO';Text=(L 'Windows Protected Print Mode appears enabled. Legacy third-party printer drivers can be removed or blocked.' 'Windows Protected Print Mode tampak aktif. Driver printer pihak ketiga yang lama dapat dihapus atau diblokir.')})}
     if($rpcPrivacy.Present -and [int]$rpcPrivacy.Value -eq 0){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'RPC packet privacy hardening is disabled (RpcAuthnLevelPrivacyEnabled=0).' 'Penguatan privasi paket RPC sedang dinonaktifkan (RpcAuthnLevelPrivacyEnabled=0).')})}
+    if($remoteRpcEndpoint.Present -and [int]$remoteRpcEndpoint.Value -eq 0){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'Print Spooler remote RPC endpoint policy is disabled; this PC will not accept remote print clients.' 'Kebijakan endpoint RPC remote Print Spooler dinonaktifkan; PC ini tidak akan menerima klien cetak remote.')})}
+    if($rpcTcpPort.Present){
+        $configuredPort=0
+        if(-not [int]::TryParse([string]$rpcTcpPort.Value,[ref]$configuredPort) -or $configuredPort -lt 0 -or $configuredPort -gt 65535){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'Configured print RPC TCP port is outside the valid 0-65535 range.' 'Port TCP RPC printer yang dikonfigurasi berada di luar rentang valid 0-65535.')})}
+        elseif($configuredPort -gt 0){$findings.Add([pscustomobject]@{Severity='INFO';Text=((L 'Print RPC is configured to use explicit TCP port {0} instead of only dynamic RPC ports.' 'RPC printer dikonfigurasi memakai port TCP eksplisit {0}, bukan hanya port RPC dinamis.') -f $configuredPort)})}
+    }
+    if($forceKerberos.Present -and [int]$forceKerberos.Value -eq 1){$findings.Add([pscustomobject]@{Severity='INFO';Text=(L 'Print RPC listener is configured to require Kerberos authentication.' 'Listener RPC printer dikonfigurasi untuk mewajibkan autentikasi Kerberos.')})}
     if($point.Present -and [int]$point.Value -eq 0){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'Point and Print driver-installation protection is disabled.' 'Proteksi pemasangan driver Point and Print sedang dinonaktifkan.')})}
-    if($guest.Present -and [int]$guest.Value -eq 1){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'Insecure SMB guest authentication is enabled.' 'Autentikasi guest SMB yang tidak aman sedang diaktifkan.')})}
+    $effectiveGuestAllowed=(($smbSecurity.Client.Available -and $smbSecurity.Client.InsecureGuestAllowed) -or ($guest.Present -and [int]$guest.Value -eq 1))
+    if($effectiveGuestAllowed){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'Insecure SMB guest authentication is enabled.' 'Autentikasi guest SMB yang tidak aman sedang diaktifkan.')})}
     if($lm.Present -and [int]$lm.Value -le 2){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L "LAN Manager authentication is configured for legacy compatibility (level $($lm.Value))." "Autentikasi LAN Manager diatur untuk kompatibilitas lama (level $($lm.Value)).")})}
     if($blank.Present -and [int]$blank.Value -eq 0){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'Remote use of blank-password local accounts is allowed. This utility will never enable that setting.' 'Penggunaan remote akun lokal tanpa password diizinkan. Utilitas ini tidak akan pernah mengaktifkan pengaturan tersebut.')})}
     if($smb1 -match '^Enabled'){$findings.Add([pscustomobject]@{Severity='WARN';Text=(L 'SMB1 client is enabled.' 'Klien SMB1 sedang aktif.')})}
@@ -670,11 +748,11 @@ function Invoke-Diagnosis([switch]$Quiet) {
         $findings.Add([pscustomobject]@{Severity='INFO';Text=(L "Recent PrintService warnings/errors by layer: $eventLayers." "Peringatan/error PrintService terbaru menurut lapisan: $eventLayers.")})
     }
     $diagClock.Stop()
-    $timing=[pscustomobject]@{OS=[int64]$osMs;Spooler=[int64]$spoolerMs;Printers=[int64]$printersMs;PrinterDrivers=[int64]$printerDriversMs;Profiles=[int64]$profilesMs;WPP=[int64]$wppMs;PrintEvents=[int64]$eventsMs;PolicySources=[int64]$policySourcesMs;SMB1=[int64]$smb1Ms;Total=[int64]$diagClock.ElapsedMilliseconds}
-    $result=[pscustomobject]@{CollectedAtUtc=(Get-Date).ToUniversalTime().ToString('o');OS=$os;PowerShell=$PSVersionTable.PSVersion.ToString();Role=$role;Spooler=$spooler;Printers=$printers;SharedPrinters=$shared;Connections=$connections;Profiles=$profiles;WPP=$wpp;PrintErrors=$errors;RpcPrivacy=$rpcPrivacy;RpcUseNamedPipe=$rpcPipe;RpcProtocols=$rpcProtocols;PointAndPrint=$point;PolicySources=$policySources;GuestAuth=$guest;LmCompatibility=$lm;BlankPassword=$blank;SMB1Client=$smb1;Findings=$findings;TimingMs=$timing}
+    $timing=[pscustomobject]@{OS=[int64]$osMs;Spooler=[int64]$spoolerMs;Printers=[int64]$printersMs;PrinterDrivers=[int64]$printerDriversMs;Profiles=[int64]$profilesMs;WPP=[int64]$wppMs;SmbSecurity=[int64]$smbSecurityMs;PrintEvents=[int64]$eventsMs;PolicySources=[int64]$policySourcesMs;SMB1=[int64]$smb1Ms;Total=[int64]$diagClock.ElapsedMilliseconds}
+    $result=[pscustomobject]@{CollectedAtUtc=(Get-Date).ToUniversalTime().ToString('o');OS=$os;PowerShell=$PSVersionTable.PSVersion.ToString();Role=$role;Spooler=$spooler;Printers=$printers;SharedPrinters=$shared;Connections=$connections;Profiles=$profiles;WPP=$wpp;SmbSecurity=$smbSecurity;PrintErrors=$errors;RpcPrivacy=$rpcPrivacy;RpcUseNamedPipe=$rpcPipe;RpcProtocols=$rpcProtocols;RpcTcpPort=$rpcTcpPort;ForceKerberosForRpc=$forceKerberos;RemoteRpcEndpoint=$remoteRpcEndpoint;PointAndPrint=$point;PolicySources=$policySources;GuestAuth=$guest;LmCompatibility=$lm;BlankPassword=$blank;SMB1Client=$smb1;Findings=$findings;TimingMs=$timing}
     $script:LastDiagnostic=$result
     Write-Log "Diagnosis role=$role printers=$($printers.Count) findings=$($findings.Count)"
-    Write-Log "Diagnosis timing ms: os=$osMs spooler=$spoolerMs printers=$printersMs printerDrivers=$printerDriversMs profiles=$profilesMs wpp=$wppMs events=$eventsMs policySources=$policySourcesMs smb1=$smb1Ms total=$($diagClock.ElapsedMilliseconds)"
+    Write-Log "Diagnosis timing ms: os=$osMs spooler=$spoolerMs printers=$printersMs printerDrivers=$printerDriversMs profiles=$profilesMs wpp=$wppMs smbSecurity=$smbSecurityMs events=$eventsMs policySources=$policySourcesMs smb1=$smb1Ms total=$($diagClock.ElapsedMilliseconds)"
     if(-not $Quiet){Show-DiagnosticReport $result}; return $result
 }
 
@@ -692,6 +770,17 @@ function Show-DiagnosticReport($D) {
     Write-Host ((L 'Driver providers: Microsoft={0} / Third-party={1} / Unknown={2}' 'Penyedia driver : Microsoft={0} / Pihak ketiga={1} / Tidak diketahui={2}') -f $driverSummary.MicrosoftProvided,$driverSummary.ThirdParty,$driverSummary.ProviderUnknown)
     Write-Host ('WPP             : {0}' -f $wppState)
     Write-Host ((L 'SMB1 client     : {0}' 'Klien SMB1      : {0}') -f (Localize-SystemValue ([string]$D.SMB1Client)))
+    $smbSecurityProp=$D.PSObject.Properties['SmbSecurity']
+    if($smbSecurityProp -and $smbSecurityProp.Value.Client.Available){
+        $sign=if($smbSecurityProp.Value.Client.RequireSigning){L 'required' 'wajib'}else{L 'not required' 'tidak diwajibkan'}
+        $encrypt=if($smbSecurityProp.Value.Client.RequireEncryption){L 'required' 'wajib'}else{L 'not required' 'tidak diwajibkan'}
+        Write-Host ((L 'SMB client sec  : signing={0} / encryption={1}' 'Keamanan SMB kli: signing={0} / enkripsi={1}') -f $sign,$encrypt)
+    }
+    if($smbSecurityProp -and $D.Role -match 'Host' -and $smbSecurityProp.Value.Server.Available){
+        $sign=if($smbSecurityProp.Value.Server.RequireSigning){L 'required' 'wajib'}else{L 'not required' 'tidak diwajibkan'}
+        $encrypt=if($smbSecurityProp.Value.Server.EncryptData){L 'enabled' 'aktif'}else{L 'not enabled globally' 'tidak aktif secara global'}
+        Write-Host ((L 'SMB server sec  : signing={0} / encrypt-data={1}' 'Keamanan SMB srv: signing={0} / encrypt-data={1}') -f $sign,$encrypt)
+    }
     Write-Rule
     if(-not $D.Findings.Count){Write-Ok (L 'No obvious critical problem was detected.' 'Tidak ditemukan masalah kritis yang terlihat jelas.')}
     foreach($f in $D.Findings){switch($f.Severity){'FAIL'{Write-Fail $f.Text};'WARN'{Write-Warn $f.Text};default{Write-Info $f.Text}}}
@@ -713,18 +802,35 @@ function Invoke-SharedPrinterPathDiagnosis {
     if($unc -notmatch '^\\\\([^\\]+)\\([^\\]+)$'){Write-Warn (L 'Invalid UNC printer path.' 'Path UNC printer tidak valid.');return}
     $hostName=$Matches[1]
     $testedAt=(Get-Date).ToUniversalTime().ToString('o')
+    $diagForCorrelation=$script:LastDiagnostic
+    if($null -eq $diagForCorrelation){$diagForCorrelation=Invoke-Diagnosis -Quiet}
+    $configuredRpcPort=$null
+    $rpcTcpStateProp=$diagForCorrelation.PSObject.Properties['RpcTcpPort']
+    if($rpcTcpStateProp -and $rpcTcpStateProp.Value -and $rpcTcpStateProp.Value.Present){
+        $candidate=0
+        if([int]::TryParse([string]$rpcTcpStateProp.Value.Value,[ref]$candidate) -and $candidate -gt 0 -and $candidate -le 65535){$configuredRpcPort=$candidate}
+    }
     $addresses=@(Resolve-HostAddresses $hostName 2500); $dns=($addresses.Count -gt 0)
     $smb=if($dns){Test-TcpPort $hostName 445 2500 $addresses}else{$false}; $rpc=if($dns){Test-TcpPort $hostName 135 2500 $addresses}else{$false}; $root=$false
+    $configuredRpcReachable=if($null -ne $configuredRpcPort -and $dns){Test-TcpPort $hostName $configuredRpcPort 2500 $addresses}else{$null}
     if($smb){try{$root=Test-Path -LiteralPath ("\\{0}\" -f $hostName) -ErrorAction SilentlyContinue}catch{}}
     $installed=@((Get-PrinterInventory)|Where-Object{$_.Name -eq $unc}).Count -gt 0
     if($dns){Write-Ok ((L 'Host resolves: {0}' 'Host berhasil di-resolve: {0}') -f $hostName)}else{Write-Fail ((L 'Host does not resolve: {0}' 'Host tidak dapat di-resolve: {0}') -f $hostName)}
     if($smb){Write-Ok (L 'TCP 445 (SMB) reachable.' 'TCP 445 (SMB) dapat dijangkau.')}else{Write-Fail (L 'TCP 445 (SMB) not reachable.' 'TCP 445 (SMB) tidak dapat dijangkau.')}
     if($rpc){Write-Ok (L 'TCP 135 (RPC Endpoint Mapper) reachable.' 'TCP 135 (RPC Endpoint Mapper) dapat dijangkau.')}else{Write-Warn (L 'TCP 135 (RPC Endpoint Mapper) not reachable.' 'TCP 135 (RPC Endpoint Mapper) tidak dapat dijangkau.')}
+    if($null -ne $configuredRpcPort){
+        if($configuredRpcReachable){Write-Ok ((L 'Configured print RPC TCP port {0} is reachable.' 'Port TCP RPC printer {0} yang dikonfigurasi dapat dijangkau.') -f $configuredRpcPort)}
+        else{Write-Warn ((L 'Configured print RPC TCP port {0} is not reachable.' 'Port TCP RPC printer {0} yang dikonfigurasi tidak dapat dijangkau.') -f $configuredRpcPort)}
+    }
     if($root){Write-Ok ((L 'Host share namespace accessible: \\{0}' 'Namespace share host dapat diakses: \\{0}') -f $hostName)}elseif($smb){Write-Warn (L 'SMB port is reachable but the share namespace was not accessible; credentials, sharing, or policy may be involved.' 'Port SMB dapat dijangkau tetapi namespace share tidak dapat diakses; kredensial, pengaturan sharing, atau kebijakan Windows mungkin terlibat.')}
+    $smbSecuritySignals=@()
+    if($smb -and -not $root){
+        $recentSmbEvents=@(Get-RecentSmbSecurityEvents -ClientOnly)
+        $smbSecuritySignals=@($recentSmbEvents|ForEach-Object{[string]$_.Category}|Where-Object{$_}|Select-Object -Unique)
+        if($smbSecuritySignals.Count){Write-Info ((L 'Recent normalized SMB security evidence: {0}' 'Bukti keamanan SMB ternormalisasi terbaru: {0}') -f ($smbSecuritySignals -join ', '))}
+    }
     if($installed){Write-Ok ((L 'Printer installed locally: {0}' 'Printer sudah terpasang lokal: {0}') -f $unc)}else{Write-Info ((L 'Printer not currently installed locally: {0}' 'Printer belum terpasang lokal: {0}') -f $unc)}
-    $target=[pscustomobject]@{TestedAtUtc=$testedAt;DnsResolved=[bool]$dns;Smb445Reachable=[bool]$smb;Rpc135Reachable=[bool]$rpc;ShareNamespaceAccessible=[bool]$root;PrinterInstalled=[bool]$installed;LikelyLayer=''}
-    $diagForCorrelation=$script:LastDiagnostic
-    if($null -eq $diagForCorrelation){$diagForCorrelation=Invoke-Diagnosis -Quiet}
+    $target=[pscustomobject]@{TestedAtUtc=$testedAt;DnsResolved=[bool]$dns;Smb445Reachable=[bool]$smb;Rpc135Reachable=[bool]$rpc;RpcConfiguredPort=$configuredRpcPort;RpcConfiguredPortReachable=$configuredRpcReachable;ShareNamespaceAccessible=[bool]$root;PrinterInstalled=[bool]$installed;SmbSecuritySignals=@($smbSecuritySignals);LikelyLayer=''}
     $next=Get-NextInvestigation $diagForCorrelation $target
     $likelyLayer=switch([string]$next.Layer){
         'LocalSpooler'{'LocalSpooler'}
@@ -739,7 +845,7 @@ function Invoke-SharedPrinterPathDiagnosis {
     $target.LikelyLayer=$likelyLayer
     $script:LastTargetPathDiagnostic=$target
     Show-NextInvestigation $next
-    Write-Log "Target test [identifier omitted] dns=$dns smb445=$smb rpc135=$rpc root=$root installed=$installed likely=$likelyLayer next=$($next.Layer) reason=$($next.Reason)"
+    Write-Log "Target test [identifier omitted] dns=$dns smb445=$smb rpc135=$rpc rpcConfiguredPort=$configuredRpcPort rpcConfiguredReachable=$configuredRpcReachable root=$root installed=$installed smbSecuritySignals=$($smbSecuritySignals -join ',') likely=$likelyLayer next=$($next.Layer) reason=$($next.Reason)"
 }
 
 function Get-ManagedRegistryEntries {
@@ -1062,12 +1168,15 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null,[object]$
     $findings=@($D.Findings|ForEach-Object{[pscustomobject]@{Severity=[string]$_.Severity;Text=[string]$_.Text}})
     $policySources=[ordered]@{}
     $policySourcesProp=$D.PSObject.Properties['PolicySources']
-    foreach($name in @('RpcPrivacy','RpcUseNamedPipe','RpcProtocols','PointAndPrint','WppGroupPolicy')){
+    foreach($name in @('RpcPrivacy','RpcUseNamedPipe','RpcProtocols','RpcTcpPort','ForceKerberosForRpc','RemoteRpcEndpoint','PointAndPrint','WppGroupPolicy')){
         $entry=$null;if($policySourcesProp -and $policySourcesProp.Value){$entryProp=$policySourcesProp.Value.PSObject.Properties[$name];if($entryProp){$entry=$entryProp.Value}}
         $policySources[$name]=if($entry){[ordered]@{Configured=[bool]$entry.Configured;Source=[string]$entry.Source;Evidence=[string]$entry.Evidence}}else{[ordered]@{Configured=$false;Source='NotConfigured';Evidence='None'}}
     }
     $target=$null
-    if($null -ne $TargetPath){$target=[pscustomobject]@{TestedAtUtc=[string]$TargetPath.TestedAtUtc;DnsResolved=[bool]$TargetPath.DnsResolved;Smb445Reachable=[bool]$TargetPath.Smb445Reachable;Rpc135Reachable=[bool]$TargetPath.Rpc135Reachable;ShareNamespaceAccessible=[bool]$TargetPath.ShareNamespaceAccessible;PrinterInstalled=[bool]$TargetPath.PrinterInstalled;LikelyLayer=[string]$TargetPath.LikelyLayer}}
+    if($null -ne $TargetPath){
+        $rpcPortProp=$TargetPath.PSObject.Properties['RpcConfiguredPort'];$rpcPortReachableProp=$TargetPath.PSObject.Properties['RpcConfiguredPortReachable'];$smbSignalsProp=$TargetPath.PSObject.Properties['SmbSecuritySignals']
+        $target=[pscustomobject]@{TestedAtUtc=[string]$TargetPath.TestedAtUtc;DnsResolved=[bool]$TargetPath.DnsResolved;Smb445Reachable=[bool]$TargetPath.Smb445Reachable;Rpc135Reachable=[bool]$TargetPath.Rpc135Reachable;RpcConfiguredPort=if($rpcPortProp -and $null -ne $rpcPortProp.Value){[int]$rpcPortProp.Value}else{$null};RpcConfiguredPortReachable=if($rpcPortReachableProp -and $null -ne $rpcPortReachableProp.Value){[bool]$rpcPortReachableProp.Value}else{$null};ShareNamespaceAccessible=[bool]$TargetPath.ShareNamespaceAccessible;PrinterInstalled=[bool]$TargetPath.PrinterInstalled;SmbSecuritySignals=if($smbSignalsProp){@($smbSignalsProp.Value)}else{@()};LikelyLayer=[string]$TargetPath.LikelyLayer}
+    }
     $verification=$null
     if($null -ne $FunctionalVerification){$verification=[pscustomobject]@{VerifiedAtUtc=[string]$FunctionalVerification.VerifiedAtUtc;DiagnosticCollectedAtUtc=[string]$FunctionalVerification.DiagnosticCollectedAtUtc;RequestStatus=[string]$FunctionalVerification.RequestStatus;Outcome=[string]$FunctionalVerification.Outcome;NetworkConnection=[bool]$FunctionalVerification.NetworkConnection;DriverModel=[string]$FunctionalVerification.DriverModel;DriverProviderClass=[string]$FunctionalVerification.DriverProviderClass;DriverTechnology=[string]$FunctionalVerification.DriverTechnology}}
     $next=Get-NextInvestigation $D $TargetPath
@@ -1088,7 +1197,8 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null,[object]$
         DriverSummary=[ordered]@{TotalBindings=[int]$driverSummary.Total;Models=[ordered]@{V3=[int]$driverSummary.V3;V4=[int]$driverSummary.V4;Unknown=[int]$driverSummary.ModelUnknown};Providers=[ordered]@{MicrosoftProvided=[int]$driverSummary.MicrosoftProvided;ThirdParty=[int]$driverSummary.ThirdParty;Unknown=[int]$driverSummary.ProviderUnknown};Technologies=[ordered]@{MicrosoftIppClassDriver=[int]$driverSummary.MicrosoftIppClassDriver;UniversalPrintClassDriver=[int]$driverSummary.UniversalPrintClassDriver}}
         NetworkProfiles=$profiles
         WPP=[ordered]@{Enabled=[bool]$D.WPP.Enabled;GroupPolicy=(& $state $D.WPP.GroupPolicy);Mode=(& $state $D.WPP.Mode);EnabledBy=(& $state $D.WPP.EnabledBy)}
-        Policies=[ordered]@{RpcPrivacy=(& $state $D.RpcPrivacy);RpcUseNamedPipe=(& $state $D.RpcUseNamedPipe);RpcProtocols=(& $state $D.RpcProtocols);PointAndPrint=(& $state $D.PointAndPrint);GuestAuth=(& $state $D.GuestAuth);LmCompatibility=(& $state $D.LmCompatibility);BlankPassword=(& $state $D.BlankPassword)}
+        SmbSecurity=[ordered]@{Client=[ordered]@{Available=[bool]$D.SmbSecurity.Client.Available;RequireSigning=$D.SmbSecurity.Client.RequireSigning;RequireEncryption=$D.SmbSecurity.Client.RequireEncryption;InsecureGuestAllowed=$D.SmbSecurity.Client.InsecureGuestAllowed;AuditServerDoesNotSupportSigning=$D.SmbSecurity.Client.AuditServerDoesNotSupportSigning;AuditServerDoesNotSupportEncryption=$D.SmbSecurity.Client.AuditServerDoesNotSupportEncryption};Server=[ordered]@{Available=[bool]$D.SmbSecurity.Server.Available;RequireSigning=$D.SmbSecurity.Server.RequireSigning;EncryptData=$D.SmbSecurity.Server.EncryptData;RejectUnencryptedAccess=$D.SmbSecurity.Server.RejectUnencryptedAccess;AuditClientDoesNotSupportSigning=$D.SmbSecurity.Server.AuditClientDoesNotSupportSigning;AuditClientDoesNotSupportEncryption=$D.SmbSecurity.Server.AuditClientDoesNotSupportEncryption}}
+        Policies=[ordered]@{RpcPrivacy=(& $state $D.RpcPrivacy);RpcUseNamedPipe=(& $state $D.RpcUseNamedPipe);RpcProtocols=(& $state $D.RpcProtocols);RpcTcpPort=(& $state $D.RpcTcpPort);ForceKerberosForRpc=(& $state $D.ForceKerberosForRpc);RemoteRpcEndpoint=(& $state $D.RemoteRpcEndpoint);PointAndPrint=(& $state $D.PointAndPrint);GuestAuth=(& $state $D.GuestAuth);LmCompatibility=(& $state $D.LmCompatibility);BlankPassword=(& $state $D.BlankPassword)}
         PolicySources=$policySources
         NextInvestigation=[ordered]@{Layer=[string]$next.Layer;Reason=[string]$next.Reason;RemoteTransportTested=[bool]$next.RemoteTransportTested;Signals=@($next.Signals);RootCauseClaimed=$false}
         SMB1Client=[string]$D.SMB1Client

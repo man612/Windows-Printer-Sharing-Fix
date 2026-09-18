@@ -31,6 +31,9 @@ Source evidence is currently normalized for:
 - RPC packet privacy;
 - RPC named-pipe transport policy;
 - RPC protocol policy;
+- explicit RPC-over-TCP port policy;
+- RPC listener Kerberos enforcement;
+- Print Spooler remote-RPC endpoint policy;
 - `RestrictDriverInstallationToAdministrators` / Point and Print protection;
 - Windows Protected Print group-policy state.
 

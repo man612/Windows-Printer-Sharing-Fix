@@ -40,7 +40,7 @@ try {
     if(-not $diagnostic.CollectedAtUtc){throw 'Diagnosis did not expose CollectedAtUtc for export reuse.'}
     if($null -eq $diagnostic.TimingMs -or $diagnostic.TimingMs.Total -lt 0){throw 'Diagnosis timing metadata is missing.'}
 
-    $script:LastTargetPathDiagnostic=[pscustomobject]@{TestedAtUtc='2026-09-16T00:00:00Z';DnsResolved=$true;Smb445Reachable=$true;Rpc135Reachable=$false;ShareNamespaceAccessible=$false;PrinterInstalled=$false;LikelyLayer='RpcReachability'}
+    $script:LastTargetPathDiagnostic=[pscustomobject]@{TestedAtUtc='2026-09-16T00:00:00Z';DnsResolved=$true;Smb445Reachable=$true;Rpc135Reachable=$false;RpcConfiguredPort=55000;RpcConfiguredPortReachable=$false;ShareNamespaceAccessible=$false;PrinterInstalled=$false;SmbSecuritySignals=@('SigningOrEncryptionCompatibility');LikelyLayer='RpcReachability'}
     $script:LastFunctionalVerification=[pscustomobject]@{VerifiedAtUtc='2026-09-16T00:05:00Z';DiagnosticCollectedAtUtc=[string]$diagnostic.CollectedAtUtc;RequestStatus='Submitted';Outcome='Printed';NetworkConnection=$true;DriverModel='V3';DriverProviderClass='ThirdParty';DriverTechnology='OtherOrUnknown'}
     $firstPath = Join-Path $temp 'diagnosis-explicit.json'
     [void](Export-DiagnosticJson -Diagnostic $diagnostic -OutputPath $firstPath)
@@ -65,10 +65,12 @@ try {
     if(($data.DriverSummary.Models.V3 + $data.DriverSummary.Models.V4 + $data.DriverSummary.Models.Unknown) -ne $data.DriverSummary.TotalBindings){throw 'JSON driver-model summary counts are inconsistent.'}
     if(($data.DriverSummary.Providers.MicrosoftProvided + $data.DriverSummary.Providers.ThirdParty + $data.DriverSummary.Providers.Unknown) -ne $data.DriverSummary.TotalBindings){throw 'JSON driver-provider summary counts are inconsistent.'}
     if($data.NetworkProfiles.Count -ne @($diagnostic.Profiles).Count){throw 'JSON network profile summary does not match diagnosis.'}
+    if($null -eq $data.SmbSecurity -or [bool]$data.SmbSecurity.Client.Available -ne [bool]$diagnostic.SmbSecurity.Client.Available){throw 'JSON SMB security posture does not match diagnosis.'}
     if($data.TargetPath.LikelyLayer -ne 'RpcReachability' -or $data.TargetPath.Rpc135Reachable){throw 'Sanitized target-path result was not exported correctly.'}
+    if($data.TargetPath.RpcConfiguredPort -ne 55000 -or $data.TargetPath.RpcConfiguredPortReachable -or ($data.TargetPath.SmbSecuritySignals -join '|') -notmatch 'SigningOrEncryptionCompatibility'){throw 'Modern RPC/SMB target evidence was not exported correctly.'}
     if($data.NextInvestigation.Layer -ne 'RpcReachability' -or $data.NextInvestigation.Reason -ne 'TargetRpc135Failed' -or -not $data.NextInvestigation.RemoteTransportTested -or $data.NextInvestigation.RootCauseClaimed){throw 'Normalized next-layer correlation was not exported correctly.'}
     if($data.FunctionalVerification.RequestStatus -ne 'Submitted' -or $data.FunctionalVerification.Outcome -ne 'Printed' -or -not $data.FunctionalVerification.NetworkConnection -or $data.FunctionalVerification.DriverModel -ne 'V3' -or $data.FunctionalVerification.DriverProviderClass -ne 'ThirdParty'){throw 'Sanitized functional-verification record was not exported correctly.'}
-    foreach($name in @('RpcPrivacy','RpcUseNamedPipe','RpcProtocols','PointAndPrint','WppGroupPolicy')){
+    foreach($name in @('RpcPrivacy','RpcUseNamedPipe','RpcProtocols','RpcTcpPort','ForceKerberosForRpc','RemoteRpcEndpoint','PointAndPrint','WppGroupPolicy')){
         $actual=$data.PolicySources.PSObject.Properties[$name].Value
         $expected=$diagnostic.PolicySources.PSObject.Properties[$name].Value
         if($null -eq $actual -or $actual.Source -ne $expected.Source -or [bool]$actual.Configured -ne [bool]$expected.Configured){throw "Normalized policy-source evidence was not exported for $name."}
