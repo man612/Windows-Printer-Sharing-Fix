@@ -8,6 +8,10 @@
 - Same-tag release runs are serialized, release state is preflighted before provenance signing, and uploaded ZIP/checksum bytes are re-downloaded and hash-verified before publication.
 - Release verification guidance now pins the expected signer workflow/source commit and documents immutable-release plus release-asset attestation verification.
 
+### Fixed
+
+- Workspace initialization now falls back to the isolated temp workspace when the configured data root collides with an existing file instead of failing later while opening the runtime log.
+
 ## 4.2.0 - 2026-09-18
 
 Modern Windows printing diagnostics, automation, release integrity, and engineering hardening.
