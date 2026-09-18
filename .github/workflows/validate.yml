@@ -45,6 +45,10 @@ jobs:
         shell: powershell
         run: .\tests\PolicySourceSmoke.ps1
 
+      - name: Validate modern SMB/RPC diagnostics
+        shell: powershell
+        run: .\tests\ModernSmbRpcSmoke.ps1
+
       - name: Validate next-layer correlation
         shell: powershell
         run: .\tests\CorrelationSmoke.ps1

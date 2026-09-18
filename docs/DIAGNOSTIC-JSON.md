@@ -59,7 +59,8 @@ Top-level fields:
 | `DriverSummary` | Aggregate normalized driver-model/provider/known-technology counts; no printer/driver/provider names or INF paths. |
 | `NetworkProfiles` | Category and IPv4/IPv6 connectivity without profile names. |
 | `WPP` | Windows Protected Print state and relevant registry state. |
-| `Policies` | Relevant RPC, Point and Print, guest, LM, and blank-password policy state. |
+| `SmbSecurity` | Effective SMB client/server signing and encryption posture from the Windows SMB provider; no server/share identifiers. |
+| `Policies` | Relevant RPC (including explicit TCP port, Kerberos/listener state), Point and Print, guest, LM, and blank-password policy state. |
 | `PolicySources` | Normalized source evidence for mapped printer policies; no GPO/domain/tenant identifiers are exported. |
 | `NextInvestigation` | Conservative normalized next-layer priority derived from existing evidence; never a root-cause claim. |
 | `FunctionalVerification` | Optional sanitized last guided test-page result: timestamps, request/outcome status, network-connection boolean, and normalized driver classification only. |
@@ -67,7 +68,7 @@ Top-level fields:
 | `PrintServiceEvents` | Timestamp, event ID, level, normalized troubleshooting category, and optional Event 372 Win32 code/class; raw message text is omitted. |
 | `Findings` | Severity and human-readable diagnosis finding. |
 | `TimingMs` | Per-stage and total diagnosis timing from the same diagnosis run. |
-| `TargetPath` | Optional sanitized result from the latest shared-printer path test in the same diagnosis session. |
+| `TargetPath` | Optional sanitized result from the latest shared-printer path test in the same diagnosis session, including normalized configured print-RPC port reachability and SMB-security signals when applicable. |
 
 ## Target-path result
 

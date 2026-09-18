@@ -50,6 +50,7 @@ powershell.exe -NoProfile -File .\tests\EvidenceSmoke.ps1
 powershell.exe -NoProfile -File .\tests\JsonExportSmoke.ps1
 powershell.exe -NoProfile -File .\tests\PrintEventClassificationSmoke.ps1
 powershell.exe -NoProfile -File .\tests\PolicySourceSmoke.ps1
+powershell.exe -NoProfile -File .\tests\ModernSmbRpcSmoke.ps1
 powershell.exe -NoProfile -File .\tests\CorrelationSmoke.ps1
 powershell.exe -NoProfile -File .\tests\DriverClassificationSmoke.ps1
 powershell.exe -NoProfile -File .\tests\TestPageVerificationSmoke.ps1

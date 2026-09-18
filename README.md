@@ -90,15 +90,15 @@ The local diagnosis is read-only and currently inspects:
 - Shared-printer host / network-printer client role.
 - Active network profiles.
 - Windows Protected Print (WPP) indicators.
-- RPC printer policy, including Named Pipes compatibility state.
+- RPC printer policy, including Named Pipes compatibility state, explicit print-RPC TCP port, Kerberos enforcement, and remote Spooler endpoint policy.
 - Printer-policy source evidence from RSoP plus conservative MDM-aware signals, without assuming a registry value came from a domain GPO.
 - Point and Print driver-installation protection.
-- SMB1 client and insecure guest-auth state.
+- Modern SMB client/server signing and encryption posture, plus SMB1 client and insecure guest-auth state.
 - LAN Manager compatibility and blank-password restrictions.
 - Recent PrintService Admin warnings/errors.
 - Conservative next-layer correlation that orders existing evidence without claiming a root cause.
 
-For a specific `\\HOST\Printer` path, the optional target test checks name resolution, TCP 445/SMB, TCP 135/RPC Endpoint Mapper, the host share namespace, and whether the printer is already connected locally.
+For a specific `\\HOST\Printer` path, the optional target test checks name resolution, TCP 445/SMB, TCP 135/RPC Endpoint Mapper, an explicitly configured print-RPC TCP port when present, the host share namespace, and whether the printer is already connected locally. If SMB is reachable but the namespace fails, it can also collect only normalized recent SMB security-event categories as supporting evidence.
 
 Tools and Logs also provides an explicit guided Windows test-page verification flow. It never runs from Diagnose automatically, warns before creating a real print job, and requires the user to confirm whether physical output actually appeared.
 
@@ -174,6 +174,7 @@ The project deliberately distinguishes Windows Server from Windows 11 even when 
 - [Printer policy source evidence](docs/POLICY-SOURCES.md)
 - [Printer driver classification](docs/DRIVER-CLASSIFICATION.md)
 - [Next-layer correlation](docs/CORRELATION.md)
+- [Modern SMB/RPC diagnostics](docs/MODERN-SMB-RPC.md)
 - [Guided test-page verification](docs/TEST-PAGE-VERIFICATION.md)
 - [Sanitized diagnosis examples](docs/examples/README.md)
 - [Real-world test matrix](docs/TEST-MATRIX.md)

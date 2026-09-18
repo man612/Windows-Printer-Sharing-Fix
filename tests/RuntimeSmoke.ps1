@@ -64,6 +64,8 @@ foreach($printer in @($diagnostic.Printers)){
     if([string]$printer.DriverTechnology -notin $allowedDriverTechnologies){throw "Unexpected printer driver technology: $($printer.DriverTechnology)"}
 }
 if ($null -eq $diagnostic.WPP) { throw 'WPP state object is missing.' }
+if ($null -eq $diagnostic.SmbSecurity -or $null -eq $diagnostic.SmbSecurity.Client -or $null -eq $diagnostic.SmbSecurity.Server) { throw 'Modern SMB security posture is missing.' }
+if ($diagnostic.SmbSecurity.Client.Available -and $null -eq $diagnostic.SmbSecurity.Client.RequireSigning) { throw 'Available SMB client posture lost signing state.' }
 if ($null -eq $diagnostic.PolicySources) { throw 'Printer policy source evidence is missing.' }
 $allowedPolicySources=@('LocalGroupPolicy','GroupPolicy','PossibleMdmOrOtherPolicy','RegistryOnlyOrUnknownSource','NotConfigured')
 foreach($property in $diagnostic.PolicySources.PSObject.Properties){
@@ -79,6 +81,7 @@ if (-not $diagnostic.CollectedAtUtc) { throw 'Diagnosis collection timestamp is 
 if ($null -eq $diagnostic.TimingMs -or $diagnostic.TimingMs.Total -lt 0) { throw 'Diagnosis timing object is missing.' }
 if ($diagnostic.TimingMs.PolicySources -lt 0) { throw 'Policy-source timing metadata is invalid.' }
 if ($diagnostic.TimingMs.PrinterDrivers -lt 0) { throw 'Printer-driver timing metadata is invalid.' }
+if ($diagnostic.TimingMs.SmbSecurity -lt 0) { throw 'SMB-security timing metadata is invalid.' }
 
 $timingLog = Get-Content -LiteralPath $script:CurrentLog -Raw
 if ($timingLog -notmatch 'Diagnosis timing ms:') { throw 'Diagnosis performance timing was not written to the runtime log.' }

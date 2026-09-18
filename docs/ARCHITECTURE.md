@@ -34,8 +34,9 @@ The local diagnostic gathers evidence before recommending compatibility changes:
 - Network-printer client role.
 - Network profile category.
 - WPP indicators.
-- RPC policy state.
+- RPC policy state, including explicit print-RPC TCP port, Kerberos listener enforcement, and remote Spooler RPC endpoint state.
 - Point and Print policy state.
+- Modern SMB client/server signing and encryption posture.
 - SMB1 state.
 - SMB insecure guest state.
 - LAN Manager compatibility state.
