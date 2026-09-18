@@ -47,7 +47,7 @@ function Write-Snapshot([string]$Directory,[object]$State){
 }
 function Assert-Rejected([string]$Directory,[string]$Label){
     $accepted=$false
-    try{[void](Get-ValidatedRestoreSnapshot $Directory);$accepted=$true}catch{}
+    try{[void](Get-ValidatedRestoreSnapshot $Directory);$accepted=$true}catch{$accepted=$false}
     if($accepted){throw "Unsafe restore snapshot was accepted: $Label"}
 }
 
@@ -98,8 +98,8 @@ try {
     function Read-YesNo([string]$Prompt,[bool]$DefaultNo=$true){$script:PromptCount++;return $true}
     function Restore-RegistryValue($Entry){$script:MutationCount++}
     function Restore-ServiceStartMode($Name,$Mode){$script:MutationCount++}
-    function Set-NetFirewallRule{param($Name,$Enabled,$Profile,$ErrorAction);$script:MutationCount++}
-    function Set-NetConnectionProfile{param($InterfaceIndex,$NetworkCategory,$ErrorAction);$script:MutationCount++}
+    function Set-NetFirewallRule{param($Name,$Enabled,[Alias('Profile')]$FirewallProfile,$ErrorAction);$null=@($Name,$Enabled,$FirewallProfile,$ErrorAction);$script:MutationCount++}
+    function Set-NetConnectionProfile{param($InterfaceIndex,$NetworkCategory,$ErrorAction);$null=@($InterfaceIndex,$NetworkCategory,$ErrorAction);$script:MutationCount++}
     $registryDir | Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8
     Invoke-RestoreLatest
     if($script:MutationCount -ne 0){throw 'Rejected restore snapshot reached a mutation function.'}
