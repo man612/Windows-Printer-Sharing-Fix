@@ -1164,11 +1164,38 @@ function Invoke-RestartSpooler {
 function Invoke-ClearPrintQueue {
     Write-Warn (L 'This permanently removes pending print jobs and cannot be restored.' 'Ini menghapus print job yang masih menunggu secara permanen dan tidak dapat dikembalikan.')
     if(-not(Read-YesNo (L 'Continue?' 'Lanjutkan?') $true)){return}
-    Stop-Service Spooler -Force -ErrorAction SilentlyContinue
-    $q="$env:SystemRoot\System32\spool\PRINTERS"
-    if(Test-Path $q){Get-ChildItem $q -Force -ErrorAction SilentlyContinue|Remove-Item -Force -Recurse -ErrorAction SilentlyContinue}
-    Start-Service Spooler -ErrorAction SilentlyContinue
-    Write-Ok (L 'Pending queue files cleared.' 'File antrean yang tertunda berhasil dibersihkan.')
+    $queuePath="$env:SystemRoot\System32\spool\PRINTERS"
+    $failure=$null
+    try{
+        Stop-Service Spooler -Force -ErrorAction Stop
+        $spooler=Get-Service -Name Spooler -ErrorAction Stop
+        if($spooler.Status -ne 'Stopped'){throw 'Print Spooler did not reach Stopped state.'}
+
+        if(Test-Path -LiteralPath $queuePath -PathType Container){
+            $queueFiles=@(Get-ChildItem -LiteralPath $queuePath -Force -ErrorAction Stop)
+            foreach($item in $queueFiles){Remove-Item -LiteralPath $item.FullName -Force -Recurse -ErrorAction Stop}
+            $remaining=@(Get-ChildItem -LiteralPath $queuePath -Force -ErrorAction Stop)
+            if($remaining.Count){throw ("{0} queue file(s) remain after cleanup." -f $remaining.Count)}
+        }
+    }catch{
+        $failure=$_.Exception.Message
+        Write-Log ("Queue cleanup failed before Spooler restart: {0}" -f $failure) 'ERROR'
+    }finally{
+        try{
+            Start-Service Spooler -ErrorAction Stop
+            $spooler=Get-Service -Name Spooler -ErrorAction Stop
+            if($spooler.Status -ne 'Running'){throw 'Print Spooler did not reach Running state after queue cleanup.'}
+        }catch{
+            $restartError=$_.Exception.Message
+            if($failure){$failure="$failure; Spooler restart failed: $restartError"}else{$failure="Spooler restart failed: $restartError"}
+            Write-Log ("Queue cleanup Spooler recovery failed: {0}" -f $restartError) 'ERROR'
+        }
+    }
+    if($failure){
+        Write-Fail ((L 'Pending queue cleanup was not fully completed: {0}' 'Pembersihan antrean tertunda tidak selesai sepenuhnya: {0}') -f $failure)
+        return
+    }
+    Write-Ok (L 'Pending queue files cleared and Print Spooler is running.' 'File antrean tertunda berhasil dibersihkan dan Print Spooler sedang berjalan.')
     Write-Log 'Queue cleared; irreversible.' 'WARN'
 }
 
@@ -1176,9 +1203,24 @@ function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null) {
     if(-not(Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue)){Write-Warn (L 'Modern firewall cmdlets unavailable.' 'Cmdlet firewall modern tidak tersedia.');return}
     $rules=@(if($PSBoundParameters.ContainsKey('FirewallRules')){@($FirewallRules)}else{@(Get-FirewallSharingRules)})
     if(-not $rules.Count){Write-Warn (L 'File and Printer Sharing firewall group could not be identified.' 'Grup firewall File and Printer Sharing tidak dapat diidentifikasi.');return}
-    $count=0
-    foreach($r in $rules){if([string]$r.Profile -match 'Private|Domain|Any'){Set-NetFirewallRule -Name $r.Name -Enabled True -Profile Domain,Private -ErrorAction SilentlyContinue;$count++}}
-    Write-Ok ((L 'Enabled/limited {0} sharing firewall rule(s) to Domain/Private.' '{0} aturan firewall sharing diaktifkan/dibatasi hanya untuk Domain/Private.') -f $count)
+    $eligible=@($rules|Where-Object{[string]$_.Profile -match 'Private|Domain|Any'})
+    if(-not $eligible.Count){Write-Warn (L 'No File and Printer Sharing firewall rules are eligible for the Domain/Private repair.' 'Tidak ada aturan firewall File and Printer Sharing yang dapat diperbaiki untuk Domain/Private.');return}
+    $succeeded=0
+    $failed=@()
+    foreach($rule in $eligible){
+        try{
+            Set-NetFirewallRule -Name $rule.Name -Enabled True -Profile Domain,Private -ErrorAction Stop
+            $succeeded++
+        }catch{
+            $failed+=([string]$rule.Name)
+            Write-Log ("Firewall repair failed for rule {0}: {1}" -f $rule.Name,$_.Exception.Message) 'ERROR'
+        }
+    }
+    if($failed.Count){
+        Write-Fail ((L 'Firewall repair updated {0} of {1} eligible rule(s); {2} failed. Check the log before assuming sharing is enabled.' 'Perbaikan firewall memperbarui {0} dari {1} aturan yang memenuhi syarat; {2} gagal. Periksa log sebelum menganggap sharing sudah aktif.') -f $succeeded,$eligible.Count,$failed.Count)
+        return
+    }
+    Write-Ok ((L 'Enabled/limited {0} sharing firewall rule(s) to Domain/Private.' '{0} aturan firewall sharing diaktifkan/dibatasi hanya untuk Domain/Private.') -f $succeeded)
 }
 
 function Select-NetworkProfile {
@@ -1201,8 +1243,25 @@ function Set-OneNetworkPrivate([object]$SelectedProfile=$null) {
 }
 
 function Start-NetworkDiscoveryServices {
-    foreach($n in @('fdPHost','FDResPub')){if(Get-Service $n -ErrorAction SilentlyContinue){Start-Service $n -ErrorAction SilentlyContinue}}
-    Write-Ok (L 'Network Discovery services requested.' 'Layanan Network Discovery diminta untuk berjalan.')
+    $failed=@()
+    foreach($name in @('fdPHost','FDResPub')){
+        try{
+            $service=Get-Service -Name $name -ErrorAction Stop
+            if($service.Status -ne 'Running'){
+                Start-Service -Name $name -ErrorAction Stop
+                $service=Get-Service -Name $name -ErrorAction Stop
+            }
+            if($service.Status -ne 'Running'){throw "Service did not reach Running state: $name"}
+        }catch{
+            $failed+=$name
+            Write-Log ("Network Discovery service failed for {0}: {1}" -f $name,$_.Exception.Message) 'ERROR'
+        }
+    }
+    if($failed.Count){
+        Write-Fail ((L 'Network Discovery could not be confirmed for {0} service(s). Check the log.' 'Network Discovery tidak dapat dikonfirmasi untuk {0} layanan. Periksa log.') -f $failed.Count)
+        return
+    }
+    Write-Ok (L 'Network Discovery services are running.' 'Layanan Network Discovery sedang berjalan.')
 }
 
 function Show-SafeRepairMenu {
