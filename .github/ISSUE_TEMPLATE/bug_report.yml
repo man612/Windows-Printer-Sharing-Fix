@@ -20,7 +20,8 @@ body:
     id: windows
     attributes:
       label: Windows product and build
-      placeholder: "Windows 11 24H2 build 26100.x"
+      description: Include the full build when available (base build + UBR).
+      placeholder: "Windows 11 24H2 build 26100.4061"
     validations:
       required: true
   - type: dropdown

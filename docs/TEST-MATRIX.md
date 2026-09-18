@@ -1,6 +1,6 @@
 # v4 Integration Test Matrix
 
-Static CI protects syntax and architecture rules, but printer sharing must also be validated on real/disposable Windows machines because behavior depends on OS build, driver type, policy, network profile, host/client roles, and printer hardware.
+Static CI protects syntax and architecture rules, but printer sharing must also be validated on real/disposable Windows machines because behavior depends on the exact OS servicing build (base build + UBR when available), driver type, policy, network profile, host/client roles, and printer hardware.
 
 ## Minimum lab topology
 

@@ -25,7 +25,7 @@ The structured export is sanitized by design. It does **not** include:
 - printer names, share names, UNC paths, port names, or interface aliases;
 - raw PrintService event messages.
 
-It does include Windows/build information, inferred host/client role, printer counts, network-profile categories/connectivity, WPP and relevant policy states, SMB1 client state, finding text, timing metadata, and sanitized PrintService event metadata.
+It does include Windows/build information (base build, UBR revision when available, and normalized full build), inferred host/client role, printer counts, network-profile categories/connectivity, WPP and relevant policy states, SMB1 client state, finding text, timing metadata, and sanitized PrintService event metadata.
 
 Always review a file before posting it publicly. Policy values can describe the security posture of a machine even when identity fields are omitted. `PolicySources` contains only normalized labels such as `LocalGroupPolicy`, `GroupPolicy`, `PossibleMdmOrOtherPolicy`, or `RegistryOnlyOrUnknownSource`; raw GPO/tenant/management identifiers are intentionally omitted.
 

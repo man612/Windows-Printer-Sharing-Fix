@@ -9,7 +9,7 @@ Context: a Windows 11 client has an existing network-printer connection. The hos
   "Schema": "windows-printer-sharing-fix/diagnosis",
   "SchemaVersion": 1,
   "ToolVersion": "4.1.0",
-  "Windows": {"Name": "Windows 11", "DisplayVersion": "24H2", "Build": 26100},
+  "Windows": {"Name": "Windows 11", "DisplayVersion": "24H2", "Build": 26100, "Revision": 4061, "FullBuild": "26100.4061"},
   "Role": "Client",
   "Spooler": {"Present": true, "Status": "Running"},
   "PrinterSummary": {"Total": 2, "Shared": 0, "NetworkConnections": 1},

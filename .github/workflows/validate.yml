@@ -33,6 +33,10 @@ jobs:
         shell: powershell
         run: .\tests\EvidenceSmoke.ps1
 
+      - name: Validate exact Windows build revision reporting
+        shell: powershell
+        run: .\tests\ExactBuildSmoke.ps1
+
       - name: Validate structured diagnosis JSON export
         shell: powershell
         run: .\tests\JsonExportSmoke.ps1

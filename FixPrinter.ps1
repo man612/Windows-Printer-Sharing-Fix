@@ -175,12 +175,17 @@ function Get-OsInfo {
     $getProp = { param($Object,$Name,$Default='') $p=$Object.PSObject.Properties[$Name]; if($p){[string]$p.Value}else{$Default} }
     $buildText = & $getProp $key 'CurrentBuild' '0'
     $build = 0; [void][int]::TryParse($buildText,[ref]$build)
+    $revision = $null
+    $revisionText = & $getProp $key 'UBR' ''
+    $parsedRevision = 0
+    if($revisionText -ne '' -and [int]::TryParse($revisionText,[ref]$parsedRevision) -and $parsedRevision -ge 0){$revision=$parsedRevision}
+    $fullBuild = if($build -gt 0 -and $null -ne $revision){"$build.$revision"}elseif($build -gt 0){[string]$build}else{''}
     $productName = & $getProp $key 'ProductName' 'Windows'
     $installationType = & $getProp $key 'InstallationType' ''
     $name = Resolve-WindowsProductName $productName $installationType $build
     $isServer = ($productName -match 'Server') -or ($installationType -match 'Server')
     $display = & $getProp $key 'DisplayVersion' (& $getProp $key 'ReleaseId' '')
-    return [pscustomobject]@{Name=$name;Build=$build;DisplayVersion=$display;InstallationType=$installationType;IsServer=$isServer}
+    return [pscustomobject]@{Name=$name;Build=$build;Revision=$revision;FullBuild=$fullBuild;DisplayVersion=$display;InstallationType=$installationType;IsServer=$isServer}
 }
 
 function Get-RegistryValueState([string]$Path,[string]$Name) {
@@ -760,7 +765,8 @@ function Show-DiagnosticReport($D) {
     Write-Header (L 'DIAGNOSTIC REPORT' 'LAPORAN DIAGNOSIS')
     $spoolerState = if($D.Spooler){Localize-SystemValue ([string]$D.Spooler.Status)}else{Localize-SystemValue 'Missing'}
     $wppState = if($D.WPP.Enabled){L 'ENABLED' 'AKTIF'}else{L 'not detected as enabled' 'tidak terdeteksi aktif'}
-    Write-Host ('OS              : {0} {1} (build {2})' -f $D.OS.Name,$D.OS.DisplayVersion,$D.OS.Build)
+    $osBuildText=if($D.OS.PSObject.Properties['FullBuild'] -and $D.OS.FullBuild){[string]$D.OS.FullBuild}else{[string]$D.OS.Build}
+    Write-Host ('OS              : {0} {1} (build {2})' -f $D.OS.Name,$D.OS.DisplayVersion,$osBuildText)
     Write-Host ('PowerShell      : {0}' -f $D.PowerShell)
     Write-Host ((L 'Detected role   : {0}' 'Peran terdeteksi: {0}') -f (Localize-SystemValue $D.Role))
     Write-Host ('Print Spooler   : {0}' -f $spoolerState)
@@ -1190,7 +1196,7 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null,[object]$
         Language=$script:Language
         Sanitized=$true
         Privacy='Machine/user/network identifiers, printer/share names, IP addresses, and raw event messages are omitted.'
-        Windows=[ordered]@{Name=[string]$D.OS.Name;DisplayVersion=[string]$D.OS.DisplayVersion;Build=[int]$D.OS.Build;InstallationType=[string]$D.OS.InstallationType;IsServer=[bool]$D.OS.IsServer;PowerShell=[string]$D.PowerShell}
+        Windows=[ordered]@{Name=[string]$D.OS.Name;DisplayVersion=[string]$D.OS.DisplayVersion;Build=[int]$D.OS.Build;Revision=if($D.OS.PSObject.Properties['Revision'] -and $null -ne $D.OS.Revision){[int]$D.OS.Revision}else{$null};FullBuild=if($D.OS.PSObject.Properties['FullBuild']){[string]$D.OS.FullBuild}else{[string]$D.OS.Build};InstallationType=[string]$D.OS.InstallationType;IsServer=[bool]$D.OS.IsServer;PowerShell=[string]$D.PowerShell}
         Role=[string]$D.Role
         Spooler=[ordered]@{Present=($null -ne $D.Spooler);Status=if($D.Spooler){[string]$D.Spooler.Status}else{'Missing'}}
         PrinterSummary=[ordered]@{Total=@($D.Printers).Count;Shared=@($D.SharedPrinters).Count;NetworkConnections=@($D.Connections).Count}
@@ -1229,7 +1235,7 @@ function Export-DiagnosticText {
     $lines=@(
         "Windows Printer Sharing Fix v$($script:Version) - $(L 'Diagnostic Report' 'Laporan Diagnosis')",
         "$(L 'Generated' 'Dibuat'): $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
-        "OS: $($d.OS.Name) $($d.OS.DisplayVersion) build $($d.OS.Build)",
+        "OS: $($d.OS.Name) $($d.OS.DisplayVersion) build $(if($d.OS.PSObject.Properties['FullBuild'] -and $d.OS.FullBuild){$d.OS.FullBuild}else{$d.OS.Build})",
         "$(L 'Role' 'Peran'): $(Localize-SystemValue $d.Role)",
         "Spooler: $(if($d.Spooler){Localize-SystemValue ([string]$d.Spooler.Status)}else{Localize-SystemValue 'Missing'})",
         "WPP: $($d.WPP.Enabled)",

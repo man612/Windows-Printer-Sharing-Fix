@@ -40,7 +40,8 @@ body:
     id: host
     attributes:
       label: Printer host Windows version/build
-      placeholder: "Windows 11 24H2 build 26100.x / Windows 10 22H2 build 19045.x"
+      description: Include the full build when available (base build + UBR).
+      placeholder: "Windows 11 24H2 build 26100.4061 / Windows 10 22H2 build 19045.x"
     validations:
       required: true
 
@@ -48,7 +49,8 @@ body:
     id: client
     attributes:
       label: Printer client Windows version/build
-      placeholder: "Windows 11 24H2 build 26100.x / Windows 10 22H2 build 19045.x"
+      description: Include the full build when available (base build + UBR).
+      placeholder: "Windows 11 24H2 build 26100.4061 / Windows 10 22H2 build 19045.x"
     validations:
       required: true
 
