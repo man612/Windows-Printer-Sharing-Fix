@@ -940,18 +940,70 @@ function Get-ManagedRegistryEntries {
     $out=@();foreach($t in $targets){$s=Get-RegistryValueState $t[0] $t[1];$out+=[pscustomobject]@{Path=$t[0];Name=$t[1];Present=$s.Present;Value=$s.Value;Kind=$s.Kind}};return $out
 }
 
-function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Services','Network','Firewall','SMB1'),[object[]]$FirewallRules=$null) {
+function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Services','Network','Firewall','SMB1'),[object[]]$FirewallRules=$null,[object[]]$NetworkProfiles=$null) {
     try {
         $dir=Join-Path $script:BackupRoot ((Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[Guid]::NewGuid().ToString('N').Substring(0,6));New-Item -ItemType Directory -Path $dir -Force|Out-Null
         $registry=@();$services=@();$profiles=@();$fw=@();$features=@()
-        if($Scopes -contains 'Registry'){$registry=@(Get-ManagedRegistryEntries)}
-        if($Scopes -contains 'Services'){foreach($name in @('Spooler','fdPHost','FDResPub')){try{$s=Get-CimInstance Win32_Service -Filter "Name='$name'";$services+=[pscustomobject]@{Name=$name;State=$s.State;StartMode=$s.StartMode}}catch{Write-Verbose ('Service snapshot failed for {0}: {1}' -f $name,$_.Exception.Message)}}}
-        if($Scopes -contains 'Network'){$profiles=@(Get-NetworkProfilesSafe|ForEach-Object{[pscustomobject]@{InterfaceIndex=[int]$_.InterfaceIndex;NetworkCategory=[string]$_.NetworkCategory}})}
-        if($Scopes -contains 'Firewall'){$sourceRules=if($PSBoundParameters.ContainsKey('FirewallRules')){@($FirewallRules)}else{@(Get-FirewallSharingRules)};$fw=@($sourceRules|ForEach-Object{[pscustomobject]@{Name=[string]$_.Name;Enabled=[string]$_.Enabled;Profile=[string]$_.Profile}})}
-        if($Scopes -contains 'SMB1'){$features=@([pscustomobject]@{Name='SMB1Protocol-Client';State=(Get-WindowsFeatureState 'SMB1Protocol-Client')})}
+
+        if($Scopes -contains 'Registry'){
+            $registryTargets=@{
+                'RPC Named Pipes compatibility fallback'=@('RpcUseNamedPipeProtocol','RpcProtocols')
+                'Temporary Point and Print relaxation'=@('RestrictDriverInstallationToAdministrators')
+                'High-risk RPC privacy workaround'=@('RpcAuthnLevelPrivacyEnabled')
+                'Enable insecure SMB guest'=@('AllowInsecureGuestAuth')
+                'Legacy LAN Manager level'=@('LmCompatibilityLevel')
+            }
+            if(-not $registryTargets.ContainsKey($Reason)){throw "No action-specific registry snapshot scope is defined for: $Reason"}
+            $names=@($registryTargets[$Reason])
+            $registry=@(Get-ManagedRegistryEntries|Where-Object{[string]$_.Name -in $names})
+            if($registry.Count -ne $names.Count){throw "Action-specific registry snapshot is incomplete for: $Reason"}
+        }
+
+        if($Scopes -contains 'Services'){
+            $serviceTargets=@{
+                'Restart Print Spooler'=@('Spooler')
+                'Start Network Discovery services'=@('fdPHost','FDResPub')
+                'Combined non-destructive Safe Repair'=@('Spooler','fdPHost','FDResPub')
+            }
+            if(-not $serviceTargets.ContainsKey($Reason)){throw "No action-specific service snapshot scope is defined for: $Reason"}
+            foreach($name in @($serviceTargets[$Reason])){
+                try{
+                    $service=Get-CimInstance Win32_Service -Filter "Name='$name'"
+                    if($null -eq $service){throw "Service not found: $name"}
+                    $services+=[pscustomobject]@{Name=$name;State=$service.State;StartMode=$service.StartMode}
+                }catch{throw ("Service snapshot failed for {0}: {1}" -f $name,$_.Exception.Message)}
+            }
+        }
+
+        if($Scopes -contains 'Network'){
+            if($Reason -ne 'Change selected network profile'){throw "No action-specific network snapshot scope is defined for: $Reason"}
+            $sourceProfiles=if($PSBoundParameters.ContainsKey('NetworkProfiles')){@($NetworkProfiles)}else{@(Get-NetworkProfilesSafe)}
+            $profiles=@($sourceProfiles|ForEach-Object{[pscustomobject]@{InterfaceIndex=[int]$_.InterfaceIndex;NetworkCategory=[string]$_.NetworkCategory}})
+            if(-not $profiles.Count){throw 'No network profile was supplied for the selected-network snapshot.'}
+        }
+
+        if($Scopes -contains 'Firewall'){
+            if($Reason -notin @('Enable sharing firewall rules','Combined non-destructive Safe Repair')){throw "No action-specific firewall snapshot scope is defined for: $Reason"}
+            $sourceRules=if($PSBoundParameters.ContainsKey('FirewallRules')){@($FirewallRules)}else{@(Get-FirewallSharingRules)}
+            $changedRules=@($sourceRules|Where-Object{[string]$_.Profile -match 'Private|Domain|Any'})
+            $fw=@($changedRules|ForEach-Object{[pscustomobject]@{Name=[string]$_.Name;Enabled=[string]$_.Enabled;Profile=[string]$_.Profile}})
+        }
+
+        if($Scopes -contains 'SMB1'){
+            if($Reason -ne 'Enable SMB1 client'){throw "No action-specific SMB1 snapshot scope is defined for: $Reason"}
+            $features=@([pscustomobject]@{Name='SMB1Protocol-Client';State=(Get-WindowsFeatureState 'SMB1Protocol-Client')})
+        }
+
         $state=[pscustomobject]@{Version=$script:Version;Created=(Get-Date).ToString('o');Reason=$Reason;Scopes=@($Scopes);Registry=$registry;Services=$services;NetworkProfiles=$profiles;FirewallRules=$fw;WindowsFeatures=$features}
-        $state|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $dir 'managed-state.json') -Encoding UTF8;$dir|Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8;Write-Log "Snapshot: $dir reason=$Reason scopes=$($Scopes -join ',')";return $dir
-    } catch {Write-Fail ((L 'Snapshot failed: {0}' 'Pembuatan snapshot gagal: {0}') -f $_.Exception.Message);Write-Log $_.Exception.Message 'ERROR';return $null}
+        $state|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $dir 'managed-state.json') -Encoding UTF8
+        Write-Log "Snapshot: $dir reason=$Reason scopes=$($Scopes -join ',')"
+        $dir|Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8
+        return $dir
+    } catch {
+        Write-Fail ((L 'Snapshot failed: {0}' 'Pembuatan snapshot gagal: {0}') -f $_.Exception.Message)
+        Write-Log $_.Exception.Message 'ERROR'
+        return $null
+    }
 }
 
 function Restore-ServiceStartMode([string]$Name,[string]$Mode){$map=@{Auto='Automatic';Automatic='Automatic';Manual='Manual';Disabled='Disabled'};if($map.ContainsKey($Mode)){Set-Service -Name $Name -StartupType $map[$Mode] -ErrorAction SilentlyContinue}}
@@ -1136,12 +1188,13 @@ function Select-NetworkProfile {
     return $p[[int]$c-1]
 }
 
-function Set-OneNetworkPrivate {
+function Set-OneNetworkPrivate([object]$Profile=$null) {
     if(-not(Get-Command Set-NetConnectionProfile -ErrorAction SilentlyContinue)){Write-Warn (L 'Set-NetConnectionProfile unavailable.' 'Set-NetConnectionProfile tidak tersedia.');return}
-    $p=Select-NetworkProfile;if($null -eq $p){return}
-    if($p.NetworkCategory -eq 'DomainAuthenticated'){Write-Warn (L 'DomainAuthenticated profiles should be controlled by domain policy.' 'Profil DomainAuthenticated sebaiknya dikendalikan oleh kebijakan domain.');return}
-    Set-NetConnectionProfile -InterfaceIndex $p.InterfaceIndex -NetworkCategory Private
-    Write-Ok ((L 'Interface {0} is now Private.' 'Interface {0} sekarang berprofil Privat.') -f $p.InterfaceAlias)
+    $selected=if($PSBoundParameters.ContainsKey('Profile')){$Profile}else{Select-NetworkProfile}
+    if($null -eq $selected){return}
+    if($selected.NetworkCategory -eq 'DomainAuthenticated'){Write-Warn (L 'DomainAuthenticated profiles should be controlled by domain policy.' 'Profil DomainAuthenticated sebaiknya dikendalikan oleh kebijakan domain.');return}
+    Set-NetConnectionProfile -InterfaceIndex $selected.InterfaceIndex -NetworkCategory Private
+    Write-Ok ((L 'Interface {0} is now Private.' 'Interface {0} sekarang berprofil Privat.') -f $selected.InterfaceAlias)
 }
 
 function Start-NetworkDiscoveryServices {
@@ -1167,7 +1220,7 @@ function Show-SafeRepairMenu {
             '1'{$snap=New-RestoreSnapshot 'Restart Print Spooler' @('Services');if($snap){Invoke-RestartSpooler}}
             '2'{Invoke-ClearPrintQueue}
             '3'{$firewallRules=@(Get-FirewallSharingRules);$snap=New-RestoreSnapshot 'Enable sharing firewall rules' @('Firewall') -FirewallRules $firewallRules;if($snap){Enable-PrivateFirewallSharing -FirewallRules $firewallRules}}
-            '4'{$snap=New-RestoreSnapshot 'Change selected network profile' @('Network');if($snap){Set-OneNetworkPrivate}}
+            '4'{$selectedProfile=Select-NetworkProfile;if($null -ne $selectedProfile){if($selectedProfile.NetworkCategory -eq 'DomainAuthenticated'){Write-Warn (L 'DomainAuthenticated profiles should be controlled by domain policy.' 'Profil DomainAuthenticated sebaiknya dikendalikan oleh kebijakan domain.')}else{$snap=New-RestoreSnapshot 'Change selected network profile' @('Network') -NetworkProfiles @($selectedProfile);if($snap){Set-OneNetworkPrivate -Profile $selectedProfile}}}}
             '5'{$snap=New-RestoreSnapshot 'Start Network Discovery services' @('Services');if($snap){Start-NetworkDiscoveryServices}}
             '6'{$firewallRules=@(Get-FirewallSharingRules);$snap=New-RestoreSnapshot 'Combined non-destructive Safe Repair' @('Services','Firewall') -FirewallRules $firewallRules;if($snap){Invoke-RestartSpooler;Enable-PrivateFirewallSharing -FirewallRules $firewallRules;Start-NetworkDiscoveryServices}}
         }}catch{Write-Fail $_.Exception.Message}
