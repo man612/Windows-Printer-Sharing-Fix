@@ -15,7 +15,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate syntax and safety guards
         shell: powershell
@@ -72,6 +72,14 @@ jobs:
       - name: Validate runtime workspace migration
         shell: powershell
         run: .\tests\WorkspaceSmoke.ps1
+
+      - name: Validate reproducible release package
+        shell: powershell
+        run: .\tests\ReproduciblePackageSmoke.ps1
+
+      - name: Validate release workflow hardening
+        shell: powershell
+        run: .\tests\ReleaseWorkflowSmoke.ps1
 
       - name: Validate release package
         shell: powershell

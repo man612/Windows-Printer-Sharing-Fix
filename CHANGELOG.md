@@ -5,6 +5,7 @@
 ### Added
 
 - Read-only modern SMB/RPC diagnostics for effective SMB signing/encryption posture, additional print-RPC policies, explicit configured RPC-port reachability, and normalized SMB security-event evidence without automatic security downgrades.
+- Deterministic release ZIP construction, reproducibility regression coverage, pinned GitHub Actions, provenance attestation, and draft-before-publish release sequencing.
 
 ## 4.1.0 - 2026-09-16
 

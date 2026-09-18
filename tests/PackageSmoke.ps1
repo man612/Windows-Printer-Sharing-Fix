@@ -31,6 +31,7 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\POLICY-SOURCES.md'))) { throw 'Packaged printer policy source documentation is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\CORRELATION.md'))) { throw 'Packaged next-layer correlation documentation is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\MODERN-SMB-RPC.md'))) { throw 'Packaged modern SMB/RPC diagnostics documentation is missing.' }
+    if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\RELEASE-INTEGRITY.md'))) { throw 'Packaged release-integrity documentation is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\DRIVER-CLASSIFICATION.md'))) { throw 'Packaged printer driver classification documentation is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\TEST-PAGE-VERIFICATION.md'))) { throw 'Packaged guided test-page verification documentation is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\examples\README.md'))) { throw 'Packaged sanitized diagnosis examples are missing.' }

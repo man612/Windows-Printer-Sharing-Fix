@@ -1,28 +1,79 @@
 name: Package stable release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   package:
-    if: github.event.release.prerelease == false
+    name: Build, attest, and publish stable release
     runs-on: windows-latest
     steps:
       - name: Checkout release tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.ref }}
 
-      - name: Build user package and checksum
+      - name: Verify tag matches stable source version
         shell: powershell
-        run: .\tools\Build-Release.ps1 -Version "${{ github.event.release.tag_name }}" -OutputDirectory .\dist
+        run: |
+          $source = Get-Content -LiteralPath .\FixPrinter.ps1 -Raw
+          $match = [regex]::Match($source, '\$script:Version\s*=\s*''([^'']+)''', 'IgnoreCase')
+          if (-not $match.Success) { throw 'Could not read stable source version.' }
+          $expected = 'v' + $match.Groups[1].Value
+          if ('${{ github.ref_name }}' -ne $expected) {
+            throw "Release tag ${{ github.ref_name }} does not match source version $expected."
+          }
 
-      - name: Upload release assets
+      - name: Validate reproducible packaging
+        shell: powershell
+        run: .\tests\ReproduciblePackageSmoke.ps1
+
+      - name: Build deterministic user package and checksum
+        shell: powershell
+        run: .\tools\Build-Release.ps1 -Version "${{ github.ref_name }}" -OutputDirectory .\dist
+
+      - name: Generate build provenance attestation
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+
+      - name: Create or reuse draft release
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" .\dist\*.zip .\dist\SHA256SUMS.txt --clobber
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $existing = gh release view $tag --json isDraft,url 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $release = $existing | ConvertFrom-Json
+            if (-not $release.isDraft) { throw "Release $tag is already published; refusing to mutate it." }
+          } else {
+            gh release create $tag --verify-tag --draft --title "Windows Printer Sharing Fix $tag" --generate-notes
+            if ($LASTEXITCODE -ne 0) { throw "Could not create draft release $tag." }
+          }
+
+      - name: Upload release assets to draft
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload '${{ github.ref_name }}' .\dist\*.zip .\dist\SHA256SUMS.txt --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Release asset upload failed.' }
+
+      - name: Publish release after assets and attestation are ready
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit '${{ github.ref_name }}' --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }

@@ -79,6 +79,7 @@ Tidak ada telemetry atau upload laporan otomatis. Test UNC hanya mengakses host/
 - [Klasifikasi driver printer](DRIVER-CLASSIFICATION.md)
 - [Korelasi lapisan troubleshooting](CORRELATION.md)
 - [Diagnosis SMB/RPC modern](MODERN-SMB-RPC.md)
+- [Integritas dan provenance release](RELEASE-INTEGRITY.md)
 - [Verifikasi test page terpandu](TEST-PAGE-VERIFICATION.md)
 - [Contoh diagnosis yang sudah disanitasi](examples/README.md)
 - [Test Matrix](TEST-MATRIX.md)
