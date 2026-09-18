@@ -5,7 +5,12 @@ on:
     tags:
       - 'v*'
 
+concurrency:
+  group: stable-release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
+  actions: read
   contents: write
   id-token: write
   attestations: write
@@ -16,10 +21,10 @@ jobs:
     name: Build, attest, and publish stable release
     runs-on: windows-latest
     steps:
-      - name: Checkout release tag
+      - name: Checkout release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
 
       - name: Verify tag matches stable source version
         shell: powershell
@@ -32,6 +37,62 @@ jobs:
             throw "Release tag ${{ github.ref_name }} does not match source version $expected."
           }
 
+      - name: Verify tag source and main validation gate
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $sha = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $sha) { throw 'Could not resolve checked-out release commit.' }
+
+          $tagRefs = @(git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}")
+          if ($LASTEXITCODE -ne 0 -or $tagRefs.Count -eq 0) { throw "Could not resolve remote tag $tag." }
+          $peeled = @($tagRefs | Where-Object { $_ -match '\^\{\}$' }) | Select-Object -First 1
+          $selected = if ($peeled) { [string]$peeled } else { [string]$tagRefs[0] }
+          $remoteTagSha = ($selected -split '\s+')[0]
+          if ($remoteTagSha -ne $sha) {
+            throw "Remote tag $tag moved after this workflow started. Expected $sha, found $remoteTagSha."
+          }
+
+          $compare = gh api "repos/$env:GITHUB_REPOSITORY/compare/$sha...main" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Could not compare release commit with main.' }
+          if ($compare.status -notin @('identical','ahead') -or [string]$compare.merge_base_commit.sha -ne $sha) {
+            throw "Release commit $sha is not on main."
+          }
+
+          $deadline = [DateTime]::UtcNow.AddMinutes(12)
+          $validation = $null
+          do {
+            $runs = @(gh run list --workflow validate.yml --commit $sha --event push --limit 20 --json databaseId,status,conclusion,headSha,event | ConvertFrom-Json)
+            if ($LASTEXITCODE -ne 0) { throw 'Could not query validation workflow runs.' }
+            $validation = @(
+              $runs |
+                Where-Object { $_.headSha -eq $sha -and $_.event -eq 'push' } |
+                Sort-Object { [long]$_.databaseId } -Descending
+            ) | Select-Object -First 1
+            if ($validation -and $validation.status -eq 'completed') { break }
+            Start-Sleep -Seconds 15
+          } while ([DateTime]::UtcNow -lt $deadline)
+
+          if (-not $validation) { throw "No main push validation run was found for release commit $sha." }
+          if ($validation.status -ne 'completed' -or $validation.conclusion -ne 'success') {
+            throw "Main validation for $sha did not succeed (status=$($validation.status), conclusion=$($validation.conclusion))."
+          }
+
+      - name: Preflight release state
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $releases = @(gh release list --limit 100 --json tagName,isDraft | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { throw 'Could not list existing releases.' }
+          $release = @($releases | Where-Object { $_.tagName -eq $tag }) | Select-Object -First 1
+          if ($release -and -not $release.isDraft) {
+            throw "Release $tag is already published; refusing to rebuild or mutate it."
+          }
+
       - name: Validate reproducible packaging
         shell: powershell
         run: .\tests\ReproduciblePackageSmoke.ps1
@@ -39,13 +100,6 @@ jobs:
       - name: Build deterministic user package and checksum
         shell: powershell
         run: .\tools\Build-Release.ps1 -Version "${{ github.ref_name }}" -OutputDirectory .\dist
-
-      - name: Generate build provenance attestation
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-path: |
-            dist/*.zip
-            dist/SHA256SUMS.txt
 
       - name: Create or reuse draft release
         shell: powershell
@@ -63,6 +117,13 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Could not create draft release $tag." }
           }
 
+      - name: Generate build provenance attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+
       - name: Upload release assets to draft
         shell: powershell
         env:
@@ -71,7 +132,38 @@ jobs:
           gh release upload '${{ github.ref_name }}' .\dist\*.zip .\dist\SHA256SUMS.txt --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Release asset upload failed.' }
 
-      - name: Publish release after assets and attestation are ready
+      - name: Verify uploaded release assets
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $verifyDir = Join-Path $env:RUNNER_TEMP 'wpsf-release-upload-verify'
+          if (Test-Path -LiteralPath $verifyDir) { Remove-Item -LiteralPath $verifyDir -Recurse -Force }
+          New-Item -ItemType Directory -Path $verifyDir -Force | Out-Null
+
+          gh release download $tag --pattern '*.zip' --pattern 'SHA256SUMS.txt' --dir $verifyDir
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download uploaded release assets for verification.' }
+
+          $localZip = @(Get-ChildItem -LiteralPath .\dist -Filter '*.zip' -File)
+          $uploadedZip = @(Get-ChildItem -LiteralPath $verifyDir -Filter '*.zip' -File)
+          if ($localZip.Count -ne 1 -or $uploadedZip.Count -ne 1) { throw 'Expected exactly one release ZIP locally and after upload.' }
+
+          $localZipHash = (Get-FileHash -LiteralPath $localZip[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $uploadedZipHash = (Get-FileHash -LiteralPath $uploadedZip[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($uploadedZipHash -ne $localZipHash) { throw 'Uploaded release ZIP hash does not match the built ZIP.' }
+
+          $localSums = Join-Path (Resolve-Path .\dist).Path 'SHA256SUMS.txt'
+          $uploadedSums = Join-Path $verifyDir 'SHA256SUMS.txt'
+          if (-not (Test-Path -LiteralPath $uploadedSums -PathType Leaf)) { throw 'Uploaded checksum manifest is missing.' }
+          $localSumsHash = (Get-FileHash -LiteralPath $localSums -Algorithm SHA256).Hash.ToLowerInvariant()
+          $uploadedSumsHash = (Get-FileHash -LiteralPath $uploadedSums -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($uploadedSumsHash -ne $localSumsHash) { throw 'Uploaded checksum manifest does not match the built manifest.' }
+
+          $manifestZipHash = ((Get-Content -LiteralPath $uploadedSums -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+          if ($manifestZipHash -ne $uploadedZipHash) { throw 'Uploaded checksum manifest does not match the uploaded ZIP.' }
+
+      - name: Publish release after verified assets and attestation are ready
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
