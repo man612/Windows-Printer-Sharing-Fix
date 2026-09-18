@@ -8,7 +8,7 @@ trim_trailing_whitespace = true
 [*.md]
 trim_trailing_whitespace = false
 
-[*.{ps1,bat}]
+[*.{ps1,psd1,bat}]
 end_of_line = crlf
 
 [*.{yml,yaml,json,md}]

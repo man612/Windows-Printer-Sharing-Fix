@@ -80,7 +80,7 @@ if ($source -notmatch 'LOCALAPPDATA' -or $source -notmatch 'WindowsPrinterSharin
 if ($source -notmatch 'WPSF_DATA_ROOT') { throw 'Custom runtime workspace override is missing.' }
 if ($source -notmatch 'LegacyLanguageFile' -or $source -notmatch 'LegacyBackupRoot') { throw 'Legacy v4 runtime-state migration guards are missing.' }
 # Windows Server must not be relabeled as Windows 11 just because it shares a modern build number.
-Invoke-Expression (Get-FunctionText 'Resolve-WindowsProductName')
+. ([scriptblock]::Create((Get-FunctionText 'Resolve-WindowsProductName')))
 if ((Resolve-WindowsProductName 'Windows Server 2025 Standard' 'Server' 26100) -ne 'Windows Server 2025 Standard') { throw 'Windows Server 2025 is misclassified as a desktop Windows release.' }
 if ((Resolve-WindowsProductName 'Windows 10 Pro' 'Client' 26100) -ne 'Windows 11') { throw 'Desktop build 26100 should be classified as Windows 11.' }
 Write-Host 'Validation passed: syntax, launcher separation, and v4 safety guards are intact.' -ForegroundColor Green

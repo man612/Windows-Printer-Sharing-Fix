@@ -20,7 +20,7 @@ function Get-ManagedFingerprint {
                 $item = Get-Item -LiteralPath $target[0]
                 $value = $item.GetValue($target[1],$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
                 $present = ($null -ne $value)
-            } catch {}
+            } catch { Write-Verbose ('Fingerprint registry read failed: {0}' -f $_.Exception.Message) }
         }
         [pscustomobject]@{Path=$target[0];Name=$target[1];Present=$present;Value=$value}
     }
@@ -28,15 +28,15 @@ function Get-ManagedFingerprint {
     $profiles = @()
     try {
         $profiles = @(Get-NetConnectionProfile -ErrorAction Stop | Sort-Object InterfaceIndex | Select-Object InterfaceIndex,NetworkCategory)
-    } catch {}
+    } catch { Write-Verbose ('Network profile fingerprint read failed: {0}' -f $_.Exception.Message) }
 
     $firewall = @()
     try {
         $firewall = @(Get-NetFirewallRule -Group '@FirewallAPI.dll,-28502' -ErrorAction Stop | Sort-Object Name | Select-Object Name,Enabled,Profile)
-    } catch {}
+    } catch { Write-Verbose ('Firewall fingerprint read failed: {0}' -f $_.Exception.Message) }
 
     $smb1 = 'Unknown'
-    try { $smb1 = [string](Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol-Client -ErrorAction Stop).State } catch {}
+    try { $smb1 = [string](Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol-Client -ErrorAction Stop).State } catch { Write-Verbose ('SMB1 fingerprint read failed: {0}' -f $_.Exception.Message) }
     $spooler = Get-Service Spooler -ErrorAction SilentlyContinue
 
     return ([pscustomobject]@{

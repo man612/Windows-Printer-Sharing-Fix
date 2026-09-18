@@ -17,9 +17,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Install pinned PSScriptAnalyzer
+        shell: powershell
+        run: |
+          $version = '1.25.0'
+          $moduleRoot = Join-Path ([Environment]::GetFolderPath('MyDocuments')) "WindowsPowerShell\Modules\PSScriptAnalyzer\$version"
+          New-Item -ItemType Directory -Path $moduleRoot -Force | Out-Null
+          $package = Join-Path $env:RUNNER_TEMP "PSScriptAnalyzer.$version.zip"
+          Invoke-WebRequest -UseBasicParsing -Uri "https://www.powershellgallery.com/api/v2/package/PSScriptAnalyzer/$version" -OutFile $package
+          Expand-Archive -LiteralPath $package -DestinationPath $moduleRoot -Force
+          Import-Module (Join-Path $moduleRoot 'PSScriptAnalyzer.psd1') -Force
+          if ((Get-Module PSScriptAnalyzer).Version -ne [version]$version) { throw 'Pinned PSScriptAnalyzer version did not load.' }
+
       - name: Validate syntax and safety guards
         shell: powershell
         run: .\tests\Validate.ps1
+
+      - name: Validate PowerShell static analysis
+        shell: powershell
+        run: .\tests\StaticAnalysisSmoke.ps1
+
+      - name: Validate repository hygiene
+        shell: powershell
+        run: .\tests\RepositoryHygieneSmoke.ps1
+
+      - name: Validate documentation links/index
+        shell: powershell
+        run: .\tests\DocumentationSmoke.ps1
 
       - name: Execute diagnosis-only runtime smoke test
         shell: powershell

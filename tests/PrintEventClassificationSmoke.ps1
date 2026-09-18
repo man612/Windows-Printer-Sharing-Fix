@@ -50,6 +50,7 @@ $fake215=[pscustomobject]@{Id=215;Properties=$props}
 if($null -ne (Get-PrintServiceEventWin32Code $fake215)){throw 'Non-372 events must not reuse the 372 property position.'}
 function Get-WinEvent {
     param($FilterHashtable,$MaxEvents)
+    $null=$FilterHashtable;$null=$MaxEvents
     $p372=@(0..10|ForEach-Object{[pscustomobject]@{Value=$null}})
     $p372[9]=[pscustomobject]@{Value=67}
     return @(

@@ -15,6 +15,7 @@ param(
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+$script:NoElevationRequested = [bool]$NoElevation
 
 $script:Version = '4.1.0'
 $script:ScriptPath = $PSCommandPath
@@ -126,7 +127,7 @@ function Test-IsAdministrator {
 
 function Ensure-Administrator {
     if (Test-IsAdministrator) { return $true }
-    if ($NoElevation) { return $false }
+    if ($script:NoElevationRequested) { return $false }
     Write-Host (L 'Requesting Administrator access...' 'Meminta akses Administrator...') -ForegroundColor Yellow
     try {
         $argumentLine = '-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $script:ScriptPath
@@ -239,15 +240,15 @@ function Get-PrinterDriverMetadataSafe {
     return @()
 }
 
-function Get-NormalizedDriverModel([object[]]$Matches) {
-    $versions=@($Matches | ForEach-Object { try{[int]$_.MajorVersion}catch{0} } | Where-Object {$_ -gt 0} | Select-Object -Unique)
+function Get-NormalizedDriverModel([object[]]$DriverMatches) {
+    $versions=@($DriverMatches | ForEach-Object { try{[int]$_.MajorVersion}catch{0} } | Where-Object {$_ -gt 0} | Select-Object -Unique)
     if($versions.Count -ne 1){return 'Unknown'}
     switch([int]$versions[0]){3{return 'V3'};4{return 'V4'};default{return 'Unknown'}}
 }
 
-function Get-NormalizedDriverProviderClass([object[]]$Matches) {
+function Get-NormalizedDriverProviderClass([object[]]$DriverMatches) {
     $classes=@()
-    foreach($driver in @($Matches)){
+    foreach($driver in @($DriverMatches)){
         $provider=if(-not [string]::IsNullOrWhiteSpace([string]$driver.provider)){[string]$driver.provider}else{[string]$driver.Manufacturer}
         if([string]::IsNullOrWhiteSpace($provider)){$classes+='Unknown'}
         elseif($provider.Trim() -ieq 'Microsoft'){$classes+='MicrosoftProvided'}
@@ -270,11 +271,11 @@ function Get-NormalizedDriverTechnology([string]$DriverName,[string]$ProviderCla
 
 function Get-PrinterDriverClassification([object]$Printer,[object[]]$DriverMetadata) {
     $driverName=if($null -ne $Printer){[string]$Printer.DriverName}else{''}
-    $matches=@($DriverMetadata | Where-Object {[string]$_.Name -ieq $driverName})
-    $model=Get-NormalizedDriverModel $matches
-    $providerClass=Get-NormalizedDriverProviderClass $matches
-    $technology=Get-NormalizedDriverTechnology $driverName $providerClass ($matches.Count -gt 0)
-    return [pscustomobject]@{DriverModel=$model;ProviderClass=$providerClass;Technology=$technology;Evidence=if($matches.Count){'PrinterDriverMetadata'}else{'NoMatchingDriverMetadata'}}
+    $driverMatches=@($DriverMetadata | Where-Object {[string]$_.Name -ieq $driverName})
+    $model=Get-NormalizedDriverModel $driverMatches
+    $providerClass=Get-NormalizedDriverProviderClass $driverMatches
+    $technology=Get-NormalizedDriverTechnology $driverName $providerClass ($driverMatches.Count -gt 0)
+    return [pscustomobject]@{DriverModel=$model;ProviderClass=$providerClass;Technology=$technology;Evidence=if($driverMatches.Count){'PrinterDriverMetadata'}else{'NoMatchingDriverMetadata'}}
 }
 function Add-PrinterDriverClassifications([object[]]$Printers,[object[]]$DriverMetadata) {
     $out=@()
@@ -368,14 +369,14 @@ function Get-SmbSecurityPosture {
             $o=$r.Output
             $client=[pscustomobject]@{Available=$true;RequireSigning=[bool]$o.RequireSecuritySignature;RequireEncryption=[bool]$o.RequireEncryption;InsecureGuestAllowed=[bool]$o.EnableInsecureGuestLogons;AuditServerDoesNotSupportSigning=[bool]$o.AuditServerDoesNotSupportSigning;AuditServerDoesNotSupportEncryption=[bool]$o.AuditServerDoesNotSupportEncryption}
         }
-    } catch {}
+    } catch { Write-Verbose ('SMB client configuration query failed: {0}' -f $_.Exception.Message) }
     try {
         $r=Invoke-CimMethod -Namespace 'root\Microsoft\Windows\SMB' -ClassName 'MSFT_SmbServerConfiguration' -MethodName 'GetConfiguration' -ErrorAction Stop
         if([int]$r.ReturnValue -eq 0 -and $r.Output){
             $o=$r.Output
             $server=[pscustomobject]@{Available=$true;RequireSigning=[bool]$o.RequireSecuritySignature;EncryptData=[bool]$o.EncryptData;RejectUnencryptedAccess=[bool]$o.RejectUnencryptedAccess;AuditClientDoesNotSupportSigning=[bool]$o.AuditClientDoesNotSupportSigning;AuditClientDoesNotSupportEncryption=[bool]$o.AuditClientDoesNotSupportEncryption}
         }
-    } catch {}
+    } catch { Write-Verbose ('SMB server configuration query failed: {0}' -f $_.Exception.Message) }
     return [pscustomobject]@{Client=$client;Server=$server}
 }
 
@@ -413,13 +414,13 @@ function Get-ComputerRsopRegistryPolicySettings {
 
 function Find-RsopRegistryPolicySource([object[]]$Settings,[string]$RegistryPath,[string]$ValueName) {
     $target=Normalize-PolicyRegistryKey $RegistryPath
-    $matches=@($Settings | Where-Object {
+    $matchedSettings=@($Settings | Where-Object {
         $deletedProp=$_.PSObject.Properties['Deleted']
         $deleted=if($deletedProp){[bool]$deletedProp.Value}else{$false}
         (-not $deleted) -and ((Normalize-PolicyRegistryKey ([string]$_.RegistryKey)) -eq $target) -and ([string]$_.ValueName -eq $ValueName)
     } | Sort-Object Precedence)
-    if(-not $matches.Count){return $null}
-    $winner=$matches[0]
+    if(-not $matchedSettings.Count){return $null}
+    $winner=$matchedSettings[0]
     $source=if(([string]$winner.GpoId -eq 'LocalGPO') -or ([string]$winner.SomId -eq 'Local')){'LocalGroupPolicy'}else{'GroupPolicy'}
     return [pscustomobject]@{Source=$source;Evidence='RsopRegistryPolicySetting'}
 }
@@ -492,7 +493,7 @@ function Get-PolicySourceLabel([string]$Source) {
 }
 
 function Get-WindowsFeatureState([string]$Name) {
-    try { if (Get-Command Get-WindowsOptionalFeature -ErrorAction SilentlyContinue) { return [string](Get-WindowsOptionalFeature -Online -FeatureName $Name).State } } catch {}
+    try { if (Get-Command Get-WindowsOptionalFeature -ErrorAction SilentlyContinue) { return [string](Get-WindowsOptionalFeature -Online -FeatureName $Name).State } } catch { Write-Verbose ('Windows optional feature query failed for {0}: {1}' -f $Name,$_.Exception.Message) }
     return 'Unknown'
 }
 
@@ -532,11 +533,11 @@ function Get-PrintServiceEventClassification([int]$Id,[object]$Win32Code=$null) 
     return [pscustomobject]@{Category=$category;Win32Code=if($null -ne $Win32Code){[int64]$Win32Code}else{$null};CodeClass=(Get-PrintServiceWin32CodeClass $Win32Code)}
 }
 
-function Get-PrintServiceEventWin32Code($Event) {
-    if($null -eq $Event -or [int]$Event.Id -ne 372){return $null}
+function Get-PrintServiceEventWin32Code($PrintEvent) {
+    if($null -eq $PrintEvent -or [int]$PrintEvent.Id -ne 372){return $null}
     try {
-        if($Event.Properties -and $Event.Properties.Count -gt 9 -and $null -ne $Event.Properties[9].Value){return [int64]$Event.Properties[9].Value}
-    } catch {}
+        if($PrintEvent.Properties -and $PrintEvent.Properties.Count -gt 9 -and $null -ne $PrintEvent.Properties[9].Value){return [int64]$PrintEvent.Properties[9].Value}
+    } catch { Write-Verbose ('PrintService event code extraction failed: {0}' -f $_.Exception.Message) }
     return $null
 }
 
@@ -589,11 +590,11 @@ function Get-RecentSmbSecurityEvents([switch]$ClientOnly) {
     foreach($query in $queries){
         try {
             $events=@(Get-WinEvent -FilterHashtable @{LogName=$query.Log;Id=$query.Ids;StartTime=$since} -MaxEvents 8 -ErrorAction Stop)
-            foreach($event in $events){
-                $classification=Get-SmbSecurityEventClassification $query.Log ([int]$event.Id)
-                $out.Add([pscustomobject]@{TimeCreated=$event.TimeCreated;Id=[int]$event.Id;Side=$classification.Side;Category=$classification.Category})
+            foreach($smbEvent in $events){
+                $classification=Get-SmbSecurityEventClassification $query.Log ([int]$smbEvent.Id)
+                $out.Add([pscustomobject]@{TimeCreated=$smbEvent.TimeCreated;Id=[int]$smbEvent.Id;Side=$classification.Side;Category=$classification.Category})
             }
-        } catch {}
+        } catch { Write-Verbose ('SMB security event query failed for {0}: {1}' -f $query.Log,$_.Exception.Message) }
     }
     return @($out | Sort-Object TimeCreated -Descending)
 }
@@ -623,7 +624,7 @@ function Test-TcpPort([string]$ComputerName,[int]$Port,[int]$TimeoutMs=2500,[Sys
                 $client.EndConnect($async)
                 if($client.Connected){return $true}
             }
-        } catch {}
+        } catch { Write-Verbose ('TCP probe failed for port {0}: {1}' -f $Port,$_.Exception.Message) }
         finally {
             if($async -and $async.AsyncWaitHandle){$async.AsyncWaitHandle.Close()}
             $client.Close()
@@ -878,7 +879,7 @@ function Invoke-SharedPrinterPathDiagnosis {
     $addresses=@(Resolve-HostAddresses $hostName 2500); $dns=($addresses.Count -gt 0)
     $smb=if($dns){Test-TcpPort $hostName 445 2500 $addresses}else{$false}; $rpc=if($dns){Test-TcpPort $hostName 135 2500 $addresses}else{$false}; $root=$false
     $configuredRpcReachable=if($null -ne $configuredRpcPort -and $dns){Test-TcpPort $hostName $configuredRpcPort 2500 $addresses}else{$null}
-    if($smb){try{$root=Test-Path -LiteralPath ("\\{0}\" -f $hostName) -ErrorAction SilentlyContinue}catch{}}
+    if($smb){try{$root=Test-Path -LiteralPath ("\\{0}\" -f $hostName) -ErrorAction SilentlyContinue}catch{Write-Verbose ('Share namespace probe failed: {0}' -f $_.Exception.Message)}}
     $installed=@((Get-PrinterInventory)|Where-Object{$_.Name -eq $unc}).Count -gt 0
     if($dns){Write-Ok ((L 'Host resolves: {0}' 'Host berhasil di-resolve: {0}') -f $hostName)}else{Write-Fail ((L 'Host does not resolve: {0}' 'Host tidak dapat di-resolve: {0}') -f $hostName)}
     if($smb){Write-Ok (L 'TCP 445 (SMB) reachable.' 'TCP 445 (SMB) dapat dijangkau.')}else{Write-Fail (L 'TCP 445 (SMB) not reachable.' 'TCP 445 (SMB) tidak dapat dijangkau.')}
@@ -931,7 +932,7 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
         $dir=Join-Path $script:BackupRoot ((Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[Guid]::NewGuid().ToString('N').Substring(0,6));New-Item -ItemType Directory -Path $dir -Force|Out-Null
         $registry=@();$services=@();$profiles=@();$fw=@();$features=@()
         if($Scopes -contains 'Registry'){$registry=@(Get-ManagedRegistryEntries)}
-        if($Scopes -contains 'Services'){foreach($name in @('Spooler','fdPHost','FDResPub')){try{$s=Get-CimInstance Win32_Service -Filter "Name='$name'";$services+=[pscustomobject]@{Name=$name;State=$s.State;StartMode=$s.StartMode}}catch{}}}
+        if($Scopes -contains 'Services'){foreach($name in @('Spooler','fdPHost','FDResPub')){try{$s=Get-CimInstance Win32_Service -Filter "Name='$name'";$services+=[pscustomobject]@{Name=$name;State=$s.State;StartMode=$s.StartMode}}catch{Write-Verbose ('Service snapshot failed for {0}: {1}' -f $name,$_.Exception.Message)}}}
         if($Scopes -contains 'Network'){$profiles=@(Get-NetworkProfilesSafe|ForEach-Object{[pscustomobject]@{InterfaceIndex=[int]$_.InterfaceIndex;NetworkCategory=[string]$_.NetworkCategory}})}
         if($Scopes -contains 'Firewall'){$sourceRules=if($PSBoundParameters.ContainsKey('FirewallRules')){@($FirewallRules)}else{@(Get-FirewallSharingRules)};$fw=@($sourceRules|ForEach-Object{[pscustomobject]@{Name=[string]$_.Name;Enabled=[string]$_.Enabled;Profile=[string]$_.Profile}})}
         if($Scopes -contains 'SMB1'){$features=@([pscustomobject]@{Name='SMB1Protocol-Client';State=(Get-WindowsFeatureState 'SMB1Protocol-Client')})}
@@ -1416,7 +1417,7 @@ try {
 } catch {
     if($headlessIntent){
         [Console]::Error.WriteLine(('Headless diagnosis failed: {0}' -f $_.Exception.Message))
-        try{Write-Log $_.Exception.ToString() 'FATAL'}catch{}
+        try{Write-Log $_.Exception.ToString() 'FATAL'}catch{Write-Verbose ('Fatal log write failed: {0}' -f $_.Exception.Message)}
         exit 1
     }
     Write-Host ((L 'Fatal error: {0}' 'Error fatal: {0}') -f $_.Exception.Message) -ForegroundColor Red

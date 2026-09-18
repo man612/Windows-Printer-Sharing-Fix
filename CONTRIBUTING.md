@@ -40,10 +40,13 @@ Keep `FixPrinter.ps1` compatible with Windows PowerShell 5.1. Do not introduce P
 
 ## Local validation
 
-Run the full stable test set before opening a PR:
+Run the full stable test set before opening a PR. Static analysis uses PSScriptAnalyzer 1.25.0; install that exact version in the development environment first.
 
 ```powershell
 powershell.exe -NoProfile -File .\tests\Validate.ps1
+powershell.exe -NoProfile -File .\tests\StaticAnalysisSmoke.ps1
+powershell.exe -NoProfile -File .\tests\RepositoryHygieneSmoke.ps1
+powershell.exe -NoProfile -File .\tests\DocumentationSmoke.ps1
 powershell.exe -NoProfile -File .\tests\RuntimeSmoke.ps1
 powershell.exe -NoProfile -File .\tests\PerformanceSmoke.ps1
 powershell.exe -NoProfile -File .\tests\EvidenceSmoke.ps1
@@ -65,6 +68,8 @@ powershell.exe -NoProfile -File .\tests\ReproduciblePackageSmoke.ps1
 powershell.exe -NoProfile -File .\tests\ReleaseWorkflowSmoke.ps1
 powershell.exe -NoProfile -File .\tests\PackageSmoke.ps1
 ```
+
+`PSScriptAnalyzerSettings.psd1` keeps Error/Warning diagnostics enabled but excludes four intentional architectural/style conflicts: `PSAvoidUsingWriteHost` for the host-rendered TUI/test output, `PSUseShouldProcessForStateChangingFunctions` for internal helpers already protected by explicit consent/snapshot boundaries, and the naming-only `PSUseSingularNouns` / `PSUseApprovedVerbs` rules. Test analysis additionally permits deliberate built-in-cmdlet overrides used as mocks. Do not add exclusions merely to make CI green; fix actionable diagnostics first.
 
 Diagnosis-only tests must leave the managed Windows-state fingerprint unchanged.
 

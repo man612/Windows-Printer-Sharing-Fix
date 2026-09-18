@@ -133,13 +133,15 @@ v4 treats these as first-class conditions:
 
 Legacy compatibility remains available for real old environments, but is no longer treated as a normal baseline.
 
-## Future work
+## Engineering validation
 
-The public roadmap is maintained in [ROADMAP.md](../ROADMAP.md). Useful technical directions include:
+The stable PowerShell implementation is guarded by layered tests rather than a single lint pass:
 
-- More precise driver classification (IPP/inbox/v3/v4/vendor).
-- Optional guided test-page verification.
-- Structured diagnostic JSON export in addition to text.
-- More detailed PrintService event interpretation by event ID.
-- A disposable-VM integration harness for host/client combinations.
-- Detecting whether policy values are local, domain, or MDM-controlled before offering any conflicting change.
+- runtime/state-fingerprint smoke tests prove diagnosis paths do not mutate managed Windows state;
+- PSScriptAnalyzer 1.25.0 runs Error/Warning analysis using the documented repository profile;
+- intentional TUI/style conflicts are explicitly excluded, while actionable diagnostics are fixed rather than hidden;
+- repository-hygiene tests require governance files, explicit workflow permissions, full-SHA GitHub Action pinning, and weekly GitHub Actions Dependabot configuration;
+- documentation tests validate relative Markdown links and the core README documentation index;
+- deterministic package and release-workflow tests protect ZIP reproducibility, checksums, provenance, and draft-before-publish ordering.
+
+The remaining major validation gap is real disposable host/client coverage across Windows/printer combinations. That work is tracked separately in the public roadmap and real-world results documents.

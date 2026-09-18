@@ -12,6 +12,7 @@ $functions=@($ast.EndBlock.Statements | Where-Object {$_ -is [System.Management.
 $script:BuildFixture='present'
 function Get-ItemProperty {
     param([string]$Path)
+    $null=$Path
     $props=[ordered]@{CurrentBuild='26100';ProductName='Windows 11 Pro';InstallationType='Client';DisplayVersion='24H2';ReleaseId='2009'}
     if($script:BuildFixture -eq 'present'){$props['UBR']=4061}
     elseif($script:BuildFixture -eq 'invalid'){$props['UBR']='not-a-number'}

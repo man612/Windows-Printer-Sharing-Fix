@@ -16,6 +16,7 @@ This roadmap describes direction, not a promise of release dates. Stable behavio
 ### Distribution and docs
 
 - Keep deterministic release packaging, checksums, provenance attestations, and immutable-release safeguards covered by regression tests.
+- Keep PSScriptAnalyzer, repository-hygiene, documentation-link, and pinned GitHub Actions/Dependabot guards green as the stable script evolves.
 - Keep English and Indonesian onboarding current.
 - Add sanitized screenshots or short recordings when they improve troubleshooting rather than decorate the repo.
 

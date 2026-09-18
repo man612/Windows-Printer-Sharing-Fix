@@ -125,15 +125,15 @@ try {
 
     # Strong identifiers must not appear even embedded inside another exported value.
     $strongSecrets=@($env:COMPUTERNAME,$env:USERNAME,$env:USERDOMAIN)
-    try{$strongSecrets += @(Get-NetIPAddress -ErrorAction Stop | Select-Object -ExpandProperty IPAddress)}catch{}
+    try{$strongSecrets += @(Get-NetIPAddress -ErrorAction Stop | Select-Object -ExpandProperty IPAddress)}catch{Write-Verbose ('IP privacy fixture collection failed: {0}' -f $_.Exception.Message)}
     foreach($secret in @($strongSecrets | Where-Object {$_} | Select-Object -Unique)){
         if(([string]$secret).Length -ge 3 -and @($leafStrings | Where-Object {$_ -match [regex]::Escape([string]$secret)}).Count){throw "JSON export leaked a strong environment identifier: $secret"}
     }
 
     # Printer/profile labels can be generic words (for example "Network"), so require exact leaf-value leakage.
     $labelSecrets=@()
-    try{$labelSecrets += @(Get-Printer -ErrorAction Stop | ForEach-Object {$_.Name;$_.ShareName;$_.PortName;$_.ComputerName})}catch{}
-    try{$labelSecrets += @(Get-NetConnectionProfile -ErrorAction Stop | ForEach-Object {$_.Name;$_.InterfaceAlias})}catch{}
+    try{$labelSecrets += @(Get-Printer -ErrorAction Stop | ForEach-Object {$_.Name;$_.ShareName;$_.PortName;$_.ComputerName})}catch{Write-Verbose ('Printer privacy fixture collection failed: {0}' -f $_.Exception.Message)}
+    try{$labelSecrets += @(Get-NetConnectionProfile -ErrorAction Stop | ForEach-Object {$_.Name;$_.InterfaceAlias})}catch{Write-Verbose ('Network privacy fixture collection failed: {0}' -f $_.Exception.Message)}
     foreach($secret in @($labelSecrets | Where-Object {$_} | Select-Object -Unique)){
         if(@($leafStrings | Where-Object {$_ -eq [string]$secret}).Count){throw "JSON export leaked an environment label value: $secret"}
     }

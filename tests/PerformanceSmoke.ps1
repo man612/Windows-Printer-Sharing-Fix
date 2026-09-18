@@ -54,7 +54,7 @@ $tcpWatch.Stop()
 if ($tcpWatch.ElapsedMilliseconds -gt 1500) { throw "TCP timeout exceeded regression budget: $($tcpWatch.ElapsedMilliseconds) ms" }
 $firewallMs = $null
 if (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue) {
-    $measure = Measure-Command { $realRules = @(Get-FirewallSharingRules) }
+    $measure = Measure-Command { [void](Get-FirewallSharingRules) }
     $firewallMs = [math]::Round($measure.TotalMilliseconds)
     if ($measure.TotalSeconds -gt 8) { throw "Targeted firewall query exceeded regression budget: $firewallMs ms" }
 }
