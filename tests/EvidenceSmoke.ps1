@@ -63,7 +63,7 @@ try {
     $mdText = Get-Content -LiteralPath $mdFile.FullName -Raw
     $data = $jsonText | ConvertFrom-Json
     if ($data.MatrixId -ne 'A1' -or $data.Side -ne 'Client') { throw 'Evidence metadata did not preserve the requested matrix case/side.' }
-    if ($data.ToolVersion -ne '4.1.0') { throw "Evidence collector did not detect stable tool version: $($data.ToolVersion)" }
+    if ($data.ToolVersion -ne '4.2.0') { throw "Evidence collector did not detect stable tool version: $($data.ToolVersion)" }
     if (-not $data.OS.Name -or $data.OS.Build -le 0) { throw 'Evidence collector did not capture a valid Windows identity.' }
     if([string]$data.CollectorVersion -ne '1.1'){throw 'Evidence collector version was not bumped for exact-build metadata.'}
     if(-not $data.OS.FullBuild -or [string]$data.OS.FullBuild -notmatch ('^'+[regex]::Escape([string]$data.OS.Build)+'(?:\.\d+)?$')){throw 'Evidence collector did not capture normalized full-build metadata.'}
