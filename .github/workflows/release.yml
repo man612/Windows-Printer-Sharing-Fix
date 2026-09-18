@@ -53,9 +53,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = '${{ github.ref_name }}'
-          $existing = gh release view $tag --json isDraft,url 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            $release = $existing | ConvertFrom-Json
+          $releases = @(gh release list --limit 100 --json tagName,isDraft,url | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { throw 'Could not list existing releases.' }
+          $release = @($releases | Where-Object { $_.tagName -eq $tag }) | Select-Object -First 1
+          if ($release) {
             if (-not $release.isDraft) { throw "Release $tag is already published; refusing to mutate it." }
           } else {
             gh release create $tag --verify-tag --draft --title "Windows Printer Sharing Fix $tag" --generate-notes
