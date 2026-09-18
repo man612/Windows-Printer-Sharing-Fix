@@ -129,6 +129,10 @@ jobs:
         shell: powershell
         run: .\tests\RepairOutcomeSmoke.ps1
 
+      - name: Validate managed Restore outcome reporting
+        shell: powershell
+        run: .\tests\RestoreOutcomeSmoke.ps1
+
       - name: Validate reproducible release package
         shell: powershell
         run: .\tests\ReproduciblePackageSmoke.ps1

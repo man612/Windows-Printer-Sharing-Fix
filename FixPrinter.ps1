@@ -224,14 +224,16 @@ function Set-RegistryDword([string]$Path,[string]$Name,[int]$Value) {
 }
 
 function Restore-RegistryValue($Entry) {
-    $path=[string]$Entry.Path; $name=[string]$Entry.Name
-    if ($Entry.Present) {
-        if (-not (Test-Path -LiteralPath $path)) { New-Item -Path $path -Force | Out-Null }
+    $path=[string]$Entry.Path
+    $name=[string]$Entry.Name
+    if($Entry.Present){
+        if(-not(Test-Path -LiteralPath $path)){New-Item -Path $path -Force -ErrorAction Stop|Out-Null}
         $types=@{DWord='DWord';QWord='QWord';String='String';ExpandString='ExpandString';MultiString='MultiString';Binary='Binary'}
         $type=if($types.ContainsKey([string]$Entry.Kind)){$types[[string]$Entry.Kind]}else{'String'}
-        New-ItemProperty -Path $path -Name $name -PropertyType $type -Value $Entry.Value -Force | Out-Null
-    } elseif (Test-Path -LiteralPath $path) {
-        Remove-ItemProperty -Path $path -Name $name -ErrorAction SilentlyContinue
+        New-ItemProperty -Path $path -Name $name -PropertyType $type -Value $Entry.Value -Force -ErrorAction Stop|Out-Null
+    }else{
+        $current=Get-RegistryValueState $path $name
+        if($current.Present){Remove-ItemProperty -Path $path -Name $name -ErrorAction Stop}
     }
 }
 
@@ -1009,7 +1011,11 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
     }
 }
 
-function Restore-ServiceStartMode([string]$Name,[string]$Mode){$map=@{Auto='Automatic';Automatic='Automatic';Manual='Manual';Disabled='Disabled'};if($map.ContainsKey($Mode)){Set-Service -Name $Name -StartupType $map[$Mode] -ErrorAction SilentlyContinue}}
+function Restore-ServiceStartMode([string]$Name,[string]$Mode) {
+    $map=@{Auto='Automatic';Automatic='Automatic';Manual='Manual';Disabled='Disabled'}
+    if(-not $map.ContainsKey($Mode)){throw "Unsupported service start mode for restore: $Mode"}
+    Set-Service -Name $Name -StartupType $map[$Mode] -ErrorAction Stop
+}
 
 function Get-ValidatedRestoreSnapshot([string]$Directory) {
     if (-not $Directory) { throw 'Restore snapshot pointer is empty.' }
@@ -1143,15 +1149,96 @@ function Invoke-RestoreLatest {
         return
     }
     if(-not(Read-YesNo ((L 'Restore state from {0}?' 'Kembalikan kondisi dari {0}?') -f $dir) $true)){return}
-    try{
-        foreach($r in @($state.Registry)){Restore-RegistryValue $r}
-        foreach($f in @($state.FirewallRules)){if(Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue){Set-NetFirewallRule -Name $f.Name -Enabled ([string]$f.Enabled) -Profile ([string]$f.Profile) -ErrorAction SilentlyContinue}}
-        foreach($n in @($state.NetworkProfiles)){if(Get-Command Set-NetConnectionProfile -ErrorAction SilentlyContinue){Set-NetConnectionProfile -InterfaceIndex ([int]$n.InterfaceIndex) -NetworkCategory ([string]$n.NetworkCategory) -ErrorAction SilentlyContinue}}
-        foreach($feature in @($state.WindowsFeatures)){if($feature.Name -eq 'SMB1Protocol-Client' -and (Get-Command Get-WindowsOptionalFeature -ErrorAction SilentlyContinue)){$current=Get-WindowsFeatureState $feature.Name;if([string]$feature.State -match '^Enabled' -and $current -notmatch '^Enabled'){Enable-WindowsOptionalFeature -Online -FeatureName $feature.Name -NoRestart -ErrorAction SilentlyContinue|Out-Null}elseif([string]$feature.State -match '^Disabled' -and $current -notmatch '^Disabled'){Disable-WindowsOptionalFeature -Online -FeatureName $feature.Name -NoRestart -ErrorAction SilentlyContinue|Out-Null}}}
-        foreach($s in @($state.Services)){Restore-ServiceStartMode $s.Name $s.StartMode;if($s.State -eq 'Running'){Start-Service $s.Name -ErrorAction SilentlyContinue}else{Stop-Service $s.Name -Force -ErrorAction SilentlyContinue}}
+
+    $failures=@()
+
+    foreach($entry in @($state.Registry)){
+        try{Restore-RegistryValue $entry}
+        catch{
+            $message=("Registry {0}\{1}: {2}" -f $entry.Path,$entry.Name,$_.Exception.Message)
+            $failures+=$message
+            Write-Log ("Restore failed: {0}" -f $message) 'ERROR'
+        }
+    }
+
+    $firewallEntries=@($state.FirewallRules)
+    if($firewallEntries.Count){
+        if(-not(Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue)){
+            $message='Firewall restore cmdlet Set-NetFirewallRule is unavailable.'
+            $failures+=$message
+            Write-Log ("Restore failed: {0}" -f $message) 'ERROR'
+        }else{
+            foreach($entry in $firewallEntries){
+                try{Set-NetFirewallRule -Name $entry.Name -Enabled ([string]$entry.Enabled) -Profile ([string]$entry.Profile) -ErrorAction Stop}
+                catch{
+                    $message=("Firewall rule {0}: {1}" -f $entry.Name,$_.Exception.Message)
+                    $failures+=$message
+                    Write-Log ("Restore failed: {0}" -f $message) 'ERROR'
+                }
+            }
+        }
+    }
+
+    $networkEntries=@($state.NetworkProfiles)
+    if($networkEntries.Count){
+        if(-not(Get-Command Set-NetConnectionProfile -ErrorAction SilentlyContinue)){
+            $message='Network profile restore cmdlet Set-NetConnectionProfile is unavailable.'
+            $failures+=$message
+            Write-Log ("Restore failed: {0}" -f $message) 'ERROR'
+        }else{
+            foreach($entry in $networkEntries){
+                try{Set-NetConnectionProfile -InterfaceIndex ([int]$entry.InterfaceIndex) -NetworkCategory ([string]$entry.NetworkCategory) -ErrorAction Stop}
+                catch{
+                    $message=("Network profile {0}: {1}" -f $entry.InterfaceIndex,$_.Exception.Message)
+                    $failures+=$message
+                    Write-Log ("Restore failed: {0}" -f $message) 'ERROR'
+                }
+            }
+        }
+    }
+
+    foreach($feature in @($state.WindowsFeatures)){
+        try{
+            if([string]$feature.Name -ne 'SMB1Protocol-Client'){throw "Unsupported Windows feature in restore: $($feature.Name)"}
+            $expected=[string]$feature.State
+            $current=Get-WindowsFeatureState $feature.Name
+            if($expected -match '^Enabled' -and $current -notmatch '^Enabled'){
+                if(-not(Get-Command Enable-WindowsOptionalFeature -ErrorAction SilentlyContinue)){throw 'Enable-WindowsOptionalFeature is unavailable.'}
+                Enable-WindowsOptionalFeature -Online -FeatureName $feature.Name -NoRestart -ErrorAction Stop|Out-Null
+            }elseif($expected -match '^Disabled' -and $current -notmatch '^Disabled'){
+                if(-not(Get-Command Disable-WindowsOptionalFeature -ErrorAction SilentlyContinue)){throw 'Disable-WindowsOptionalFeature is unavailable.'}
+                Disable-WindowsOptionalFeature -Online -FeatureName $feature.Name -NoRestart -ErrorAction Stop|Out-Null
+            }
+            $verified=Get-WindowsFeatureState $feature.Name
+            if($expected -match '^Enabled' -and $verified -notmatch '^Enabled'){throw "Feature did not return to Enabled state; current state is $verified"}
+            if($expected -match '^Disabled' -and $verified -notmatch '^Disabled'){throw "Feature did not return to Disabled state; current state is $verified"}
+        }catch{
+            $message=("Windows feature {0}: {1}" -f $feature.Name,$_.Exception.Message)
+            $failures+=$message
+            Write-Log ("Restore failed: {0}" -f $message) 'ERROR'
+        }
+    }
+
+    foreach($entry in @($state.Services)){
+        try{
+            Restore-ServiceStartMode $entry.Name $entry.StartMode
+            if($entry.State -eq 'Running'){Start-Service $entry.Name -ErrorAction Stop}else{Stop-Service $entry.Name -Force -ErrorAction Stop}
+            $service=Get-Service -Name $entry.Name -ErrorAction Stop
+            if([string]$service.Status -ne [string]$entry.State){throw "Service state is $($service.Status), expected $($entry.State)"}
+        }catch{
+            $message=("Service {0}: {1}" -f $entry.Name,$_.Exception.Message)
+            $failures+=$message
+            Write-Log ("Restore failed: {0}" -f $message) 'ERROR'
+        }
+    }
+
+    if($failures.Count){
+        Write-Fail ((L 'Restore completed with {0} failure(s). Some managed state may still differ; review the log and keep this snapshot for retry.' 'Restore selesai dengan {0} kegagalan. Sebagian kondisi terkelola mungkin masih berbeda; periksa log dan pertahankan snapshot ini untuk mencoba lagi.') -f $failures.Count)
+        Write-Log ("Restore partially completed from {0}; failures={1}" -f $dir,$failures.Count) 'ERROR'
+    }else{
         Write-Ok (L 'Managed state restored.' 'Kondisi yang dikelola aplikasi berhasil dikembalikan.')
         Write-Log "Restore completed from $dir"
-    }catch{Write-Fail $_.Exception.Message;Write-Log $_.Exception.Message 'ERROR'}
+    }
     Pause-Tui
 }
 
