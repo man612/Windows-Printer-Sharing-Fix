@@ -218,9 +218,13 @@ function Get-RegistryValueState([string]$Path,[string]$Name) {
 }
 
 function Set-RegistryDword([string]$Path,[string]$Name,[int]$Value) {
-    if (-not (Test-Path -LiteralPath $Path)) { New-Item -Path $Path -Force | Out-Null }
-    New-ItemProperty -Path $Path -Name $Name -PropertyType DWord -Value $Value -Force | Out-Null
-    Write-Log "Registry: $Path\\$Name=$Value"
+    if(-not(Test-Path -LiteralPath $Path)){New-Item -Path $Path -Force -ErrorAction Stop|Out-Null}
+    New-ItemProperty -Path $Path -Name $Name -PropertyType DWord -Value $Value -Force -ErrorAction Stop|Out-Null
+    $verified=Get-RegistryValueState $Path $Name
+    if(-not $verified.Present -or [string]$verified.Kind -ne 'DWord' -or [int]$verified.Value -ne $Value){
+        throw "Registry write could not be verified: $Path\$Name"
+    }
+    Write-Log "Registry: $Path\$Name=$Value"
 }
 
 function Restore-RegistryValue($Entry) {
@@ -1243,8 +1247,12 @@ function Invoke-RestoreLatest {
 }
 
 function Invoke-RestartSpooler {
-    Stop-Service Spooler -Force
-    Start-Service Spooler
+    Stop-Service Spooler -Force -ErrorAction Stop
+    $stopped=Get-Service -Name Spooler -ErrorAction Stop
+    if($stopped.Status -ne 'Stopped'){throw 'Print Spooler did not reach Stopped state during restart.'}
+    Start-Service Spooler -ErrorAction Stop
+    $running=Get-Service -Name Spooler -ErrorAction Stop
+    if($running.Status -ne 'Running'){throw 'Print Spooler did not reach Running state after restart.'}
     Write-Ok (L 'Print Spooler restarted.' 'Print Spooler berhasil direstart.')
 }
 
@@ -1325,7 +1333,11 @@ function Set-OneNetworkPrivate([object]$SelectedProfile=$null) {
     $selected=if($PSBoundParameters.ContainsKey('SelectedProfile')){$SelectedProfile}else{Select-NetworkProfile}
     if($null -eq $selected){return}
     if($selected.NetworkCategory -eq 'DomainAuthenticated'){Write-Warn (L 'DomainAuthenticated profiles should be controlled by domain policy.' 'Profil DomainAuthenticated sebaiknya dikendalikan oleh kebijakan domain.');return}
-    Set-NetConnectionProfile -InterfaceIndex $selected.InterfaceIndex -NetworkCategory Private
+    Set-NetConnectionProfile -InterfaceIndex $selected.InterfaceIndex -NetworkCategory Private -ErrorAction Stop
+    $verified=@(Get-NetworkProfilesSafe|Where-Object{[int]$_.InterfaceIndex -eq [int]$selected.InterfaceIndex})|Select-Object -First 1
+    if($null -eq $verified -or [string]$verified.NetworkCategory -ne 'Private'){
+        throw "Network profile change could not be verified for interface $($selected.InterfaceIndex)."
+    }
     Write-Ok ((L 'Interface {0} is now Private.' 'Interface {0} sekarang berprofil Privat.') -f $selected.InterfaceAlias)
 }
 
@@ -1470,7 +1482,14 @@ function Reset-ClientPrinterConnectionTargeted {
     $target=$p[[int]$c-1].Name
     Write-Warn (L 'Removing a printer connection is not recreated by generic Restore. You must reconnect the same UNC path manually if needed.' 'Koneksi printer yang dilepas tidak dapat dibuat ulang oleh Restore umum. Jika diperlukan, sambungkan kembali path UNC yang sama secara manual.')
     if(-not(Read-YesNo ((L 'Remove only {0}?' 'Lepas hanya {0}?') -f $target) $true)){return}
-    if(Get-Command Remove-Printer -ErrorAction SilentlyContinue){Remove-Printer -Name $target}else{Start-Process rundll32.exe -ArgumentList ('printui.dll,PrintUIEntry /dn /n "{0}"' -f $target) -Wait}
+    if(Get-Command Remove-Printer -ErrorAction SilentlyContinue){
+        Remove-Printer -Name $target -ErrorAction Stop
+    }else{
+        $process=Start-Process rundll32.exe -ArgumentList ('printui.dll,PrintUIEntry /dn /n "{0}"' -f $target) -Wait -PassThru
+        if($process.ExitCode -ne 0){throw "PrintUI removal exited with code $($process.ExitCode)."}
+    }
+    $remaining=@(Get-PrinterInventory|Where-Object{[string]$_.Name -eq [string]$target})
+    if($remaining.Count){throw "Targeted printer connection is still installed: $target"}
     Write-Ok ((L 'Removed targeted connection: {0}' 'Koneksi yang dipilih berhasil dilepas: {0}') -f $target)
     Write-Info (L 'Reconnect the same UNC path after restarting the spooler if needed.' 'Jika perlu, sambungkan kembali path UNC yang sama setelah restart Spooler.')
     Write-Log "Targeted printer connection removed: $target" 'WARN'
@@ -1496,8 +1515,23 @@ function Show-CompatibilityMenu {
 function Enable-Smb1ClientLegacy {
     Write-Fail (L 'SMB1 is obsolete and unsafe. Use only when a specific old device is proven SMB1-only.' 'SMB1 sudah usang dan tidak aman. Gunakan hanya jika perangkat lama tertentu benar-benar terbukti hanya mendukung SMB1.')
     if((Read-Host (L 'Type LEGACY to continue' 'Ketik LEGACY untuk lanjut')).Trim().ToUpperInvariant() -ne 'LEGACY'){return}
+    if(-not(Get-Command Enable-WindowsOptionalFeature -ErrorAction SilentlyContinue)){
+        Write-Fail (L 'Enable-WindowsOptionalFeature is unavailable; SMB1 client was not changed.' 'Enable-WindowsOptionalFeature tidak tersedia; klien SMB1 tidak diubah.')
+        return
+    }
     $snap=New-RestoreSnapshot 'Enable SMB1 client' @('SMB1')
-    if($snap -and (Get-Command Enable-WindowsOptionalFeature -ErrorAction SilentlyContinue)){Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol-Client -NoRestart|Out-Null;Write-Warn (L 'SMB1 CLIENT enabled. SMB1 server was not enabled.' 'KLIEN SMB1 diaktifkan. Server SMB1 tidak diaktifkan.');Write-Info ((L 'Restore snapshot: {0}' 'Snapshot restore: {0}') -f $snap)}
+    if(-not $snap){return}
+    Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol-Client -NoRestart -ErrorAction Stop|Out-Null
+    $verified=Get-WindowsFeatureState 'SMB1Protocol-Client'
+    if($verified -notmatch '^Enabled' -and $verified -notmatch '^EnablePending'){
+        throw "SMB1 client enablement could not be verified; current state is $verified"
+    }
+    if($verified -match '^EnablePending'){
+        Write-Warn (L 'SMB1 CLIENT enablement is pending a Windows restart. SMB1 server was not enabled.' 'Pengaktifan KLIEN SMB1 menunggu restart Windows. Server SMB1 tidak diaktifkan.')
+    }else{
+        Write-Warn (L 'SMB1 CLIENT enabled. SMB1 server was not enabled.' 'KLIEN SMB1 diaktifkan. Server SMB1 tidak diaktifkan.')
+    }
+    Write-Info ((L 'Restore snapshot: {0}' 'Snapshot restore: {0}') -f $snap)
 }
 
 function Enable-InsecureGuestLegacy {

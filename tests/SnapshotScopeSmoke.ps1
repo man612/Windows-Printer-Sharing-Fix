@@ -41,9 +41,10 @@ function Get-CimInstance {
     $name=([regex]::Match($Filter,"Name='([^']+)'")).Groups[1].Value
     [pscustomobject]@{Name=$name;State='Running';StartMode='Manual'}
 }
+$script:NetworkCategory7='Public'
 function Get-NetworkProfilesSafe {
     @(
-      [pscustomobject]@{InterfaceIndex=7;NetworkCategory='Public';InterfaceAlias='Ethernet'},
+      [pscustomobject]@{InterfaceIndex=7;NetworkCategory=$script:NetworkCategory7;InterfaceAlias='Ethernet'},
       [pscustomobject]@{InterfaceIndex=8;NetworkCategory='Private';InterfaceAlias='Wi-Fi'}
     )
 }
@@ -105,8 +106,9 @@ try {
 
     $script:NetworkSetCalls=@()
     function Set-NetConnectionProfile {
-        param([int]$InterfaceIndex,[string]$NetworkCategory)
+        [CmdletBinding()] param([int]$InterfaceIndex,[string]$NetworkCategory)
         $script:NetworkSetCalls += [pscustomobject]@{InterfaceIndex=$InterfaceIndex;NetworkCategory=$NetworkCategory}
+        if($InterfaceIndex -eq 7){$script:NetworkCategory7=$NetworkCategory}
     }
     Set-OneNetworkPrivate -SelectedProfile $selected
     if($script:NetworkSetCalls.Count -ne 1 -or $script:NetworkSetCalls[0].InterfaceIndex -ne 7 -or $script:NetworkSetCalls[0].NetworkCategory -ne 'Private'){throw 'Selected-network repair did not mutate only the supplied interface.'}
