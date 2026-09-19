@@ -1033,7 +1033,7 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
                 try{
                     $service=Get-CimInstance Win32_Service -Filter "Name='$name'"
                     if($null -eq $service){throw "Service not found: $name"}
-                    $services+=[pscustomobject]@{Name=$name;State=$service.State;StartMode=$service.StartMode}
+                    $services+=[pscustomobject]@{Name=$name;State=$service.State}
                 }catch{throw ("Service snapshot failed for {0}: {1}" -f $name,$_.Exception.Message)}
             }
             if($services.Count -ne @($contract.ServiceNames).Count){throw "Service snapshot is incomplete for: $Reason"}
@@ -1068,12 +1068,6 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
         Write-Log $_.Exception.Message 'ERROR'
         return $null
     }
-}
-
-function Restore-ServiceStartMode([string]$Name,[string]$Mode) {
-    $map=@{Auto='Automatic';Automatic='Automatic';Manual='Manual';Disabled='Disabled'}
-    if(-not $map.ContainsKey($Mode)){throw "Unsupported service start mode for restore: $Mode"}
-    Set-Service -Name $Name -StartupType $map[$Mode] -ErrorAction Stop
 }
 
 function Get-ValidatedRestoreSnapshot([string]$Directory) {
@@ -1156,7 +1150,10 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
         $key=$name.ToUpperInvariant()
         if($seenServices.ContainsKey($key)){throw 'Restore snapshot contains duplicate service state.'}
         $seenServices[$key]=$true
-        if([string]$service.StartMode -notin @('Auto','Automatic','Manual','Disabled')){throw "Restore snapshot has an invalid service start mode: $name"}
+        if('StartMode' -in @($service.PSObject.Properties.Name)){
+            $legacyStartMode=[string]$service.StartMode
+            if($legacyStartMode -notin @('Auto','Automatic','Manual','Disabled')){throw "Restore snapshot has an invalid legacy service start mode: $name"}
+        }
         if([string]$service.State -notin @('Running','Stopped')){throw "Restore snapshot has an unsupported service state: $name"}
     }
 
@@ -1302,7 +1299,6 @@ function Invoke-RestoreLatest {
 
     foreach($entry in @($state.Services)){
         try{
-            Restore-ServiceStartMode $entry.Name $entry.StartMode
             if($entry.State -eq 'Running'){Start-Service $entry.Name -ErrorAction Stop}else{Stop-Service $entry.Name -Force -ErrorAction Stop}
             $service=Get-Service -Name $entry.Name -ErrorAction Stop
             if([string]$service.Status -ne [string]$entry.State){throw "Service state is $($service.Status), expected $($entry.State)"}
