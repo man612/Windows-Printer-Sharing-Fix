@@ -34,10 +34,6 @@ $registryThrew=$false
 try{Restore-RegistryValue ([pscustomobject]@{Path='HKLM:\X';Name='Y';Present=$false;Value=$null;Kind=$null})}catch{$registryThrew=$true}
 if(-not $registryThrew){throw 'Restore-RegistryValue swallowed a registry removal failure.'}
 
-function Set-Service {[CmdletBinding()]param([string]$Name,[string]$StartupType);$null=@($Name,$StartupType);Write-Error 'synthetic startup-mode failure'}
-$serviceModeThrew=$false
-try{Restore-ServiceStartMode 'Spooler' 'Manual'}catch{$serviceModeThrew=$true}
-if(-not $serviceModeThrew){throw 'Restore-ServiceStartMode swallowed a Set-Service failure.'}
 
 # Coordinator harness.
 $temp=Join-Path $env:TEMP ('wpsf-restore-outcome-'+[Guid]::NewGuid().ToString('N'))
@@ -50,7 +46,7 @@ $script:FirewallCalls=0
 $script:NetworkCalls=0
 $script:FeatureEnableCalls=0
 $script:FeatureDisableCalls=0
-$script:ServiceModeCalls=0
+$script:SetServiceCalls=0
 $script:ServiceStartCalls=0
 $script:ServiceStopCalls=0
 $script:FirewallFails=$false
@@ -109,7 +105,11 @@ function Disable-WindowsOptionalFeature {
     if($script:FeatureFails){Write-Error 'synthetic feature disable failure';return}
     $script:FeatureState='Disabled'
 }
-function Restore-ServiceStartMode([string]$Name,[string]$Mode){$null=@($Name,$Mode);$script:ServiceModeCalls++}
+function Set-Service {
+    [CmdletBinding()] param([string]$Name,[string]$StartupType)
+    $null=@($Name,$StartupType)
+    $script:SetServiceCalls++
+}
 function Start-Service {
     [CmdletBinding()] param([string]$Name)
     $null=$Name
@@ -142,7 +142,7 @@ function Reset-Harness {
     Reset-Messages
     $script:RegistryCalls=0;$script:FirewallCalls=0;$script:NetworkCalls=0
     $script:FeatureEnableCalls=0;$script:FeatureDisableCalls=0
-    $script:ServiceModeCalls=0;$script:ServiceStartCalls=0;$script:ServiceStopCalls=0
+    $script:SetServiceCalls=0;$script:ServiceStartCalls=0;$script:ServiceStopCalls=0
     $script:FirewallFails=$false;$script:NetworkFails=$false;$script:FeatureFails=$false;$script:ServiceStartFails=$false
     $script:FirewallNoOp=$false;$script:NetworkNoOp=$false
     $script:FirewallEnabled='True';$script:FirewallProfile='Private';$script:NetworkCategory='Private'
@@ -155,7 +155,7 @@ try {
     Reset-Harness
     Invoke-RestoreLatest
     if($script:Ok.Count -ne 1 -or $script:Fail.Count -ne 0){throw 'Successful managed Restore did not report exactly one success.'}
-    if($script:RegistryCalls -ne 1 -or $script:FirewallCalls -ne 1 -or $script:NetworkCalls -ne 1 -or $script:FeatureDisableCalls -ne 1 -or $script:ServiceModeCalls -ne 1 -or $script:ServiceStartCalls -ne 1){throw 'Successful managed Restore did not execute every expected category.'}
+    if($script:RegistryCalls -ne 1 -or $script:FirewallCalls -ne 1 -or $script:NetworkCalls -ne 1 -or $script:FeatureDisableCalls -ne 1 -or $script:SetServiceCalls -ne 0 -or $script:ServiceStartCalls -ne 1){throw 'Successful managed Restore did not execute every expected category or attempted unrelated service startup-mode mutation.'}
     if($script:FeatureState -ne 'Disabled' -or $script:ServiceState -ne 'Running'){throw 'Successful managed Restore did not reach expected final state.'}
 
     # Firewall failure must not prevent later categories from being attempted.
