@@ -23,6 +23,10 @@ $script:FirewallFixture=@()
 $script:FirewallRepairNames=@()
 $script:RestartCalls=0
 $script:DiscoveryCalls=0
+$script:FailMessages=@()
+$script:FailRestart=$false
+$script:FailFirewall=$false
+$script:FailDiscovery=$false
 
 function L([string]$English,[string]$Indonesian){$English}
 function T([string]$Key){$Key}
@@ -30,7 +34,7 @@ function Write-Header([string]$Text){}
 function Write-Rule{}
 function Write-Info([string]$Text){}
 function Write-Warn([string]$Text){}
-function Write-Fail([string]$Text){throw $Text}
+function Write-Fail([string]$Text){$script:FailMessages+=$Text}
 function Write-Ok([string]$Text){}
 function Write-Log([string]$Message,[string]$Level='INFO'){}
 function Pause-Tui{}
@@ -109,6 +113,17 @@ try {
     if($script:FirewallRepairNames.Count -ne 0){throw 'Combined already-correct repair invoked firewall mutation.'}
     if($script:RestartCalls -ne 1 -or $script:DiscoveryCalls -ne 0){throw 'Combined already-correct repair service execution does not match planned mutation set.'}
     [void](Get-ValidatedRestoreSnapshot $noop.Directory)
+
+    # Independent combined substeps must all be attempted even when earlier ones throw.
+    Reset-Harness
+    $script:ServiceStates=@{Spooler='Running';fdPHost='Stopped';FDResPub='Running'}
+    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False'})
+    $script:FailRestart=$true
+    $script:FailFirewall=$true
+    $script:FailDiscovery=$true
+    Show-SafeRepairMenu
+    if($script:RestartCalls -ne 1 -or $script:FirewallRepairNames.Count -ne 1 -or $script:DiscoveryCalls -ne 1){throw 'Combined substep failure stopped a later planned repair.'}
+    if($script:FailMessages.Count -ne 3){throw "Combined substep failures were not reported independently. Count=$($script:FailMessages.Count)"}
 
     Write-Host 'Combined Safe Repair scope smoke passed: snapshot services/firewall exactly match the planned mutation set.' -ForegroundColor Green
 } finally {
