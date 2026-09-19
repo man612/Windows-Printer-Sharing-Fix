@@ -1574,7 +1574,72 @@ function Set-RpcNamedPipeFallback {
 
 function Connect-SharedPrinterTemporarilyRelaxed {
     $unc=(Read-Host (L 'Shared printer path, e.g. \\PRINT-PC\OfficePrinter' 'Path printer sharing, contoh \\PC-PRINT\PrinterKantor')).Trim()
-    if($unc -notmatch '^\\\\[^\\]+\\[^\\]+    $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint';$original=Get-RegistryValueStateStrict $path 'RestrictDriverInstallationToAdministrators'
+    if($unc -notmatch '^\\\\[^\\]+\\[^\\]+
+    $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint';$original=Get-RegistryValueStateStrict $path 'RestrictDriverInstallationToAdministrators'
+    Write-Warn (L 'This temporarily reduces Point and Print driver-installation protection. It will be restored immediately after the connection attempt.' 'Tindakan ini menurunkan proteksi pemasangan driver Point and Print hanya sementara. Nilai sebelumnya akan langsung dikembalikan setelah percobaan koneksi.')
+    if((Read-Host (L 'Type RISK to continue' 'Ketik RISK untuk lanjut')).Trim().ToUpperInvariant() -ne 'RISK'){return}
+
+    $hadPreviousLatest=Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf
+    $previousLatest=$null
+    if($hadPreviousLatest){
+        try{$previousLatest=([string](Get-Content -LiteralPath $script:LatestStateFile -ErrorAction Stop|Select-Object -First 1)).Trim()}
+        catch{
+            Write-Warn ((L 'Could not preserve the current Restore pointer, so the temporary Point and Print change was not started: {0}' 'Pointer Restore saat ini tidak dapat diamankan, jadi perubahan Point and Print sementara tidak dijalankan: {0}') -f $_.Exception.Message)
+            Write-Log ("Temporary Point and Print aborted before mutation because the existing Restore pointer could not be read: {0}" -f $_.Exception.Message) 'ERROR'
+            return
+        }
+    }
+
+    $snap=New-RestoreSnapshot 'Temporary Point and Print relaxation' @('Registry');if(-not $snap){return}
+    try{
+        Set-RegistryDword $path 'RestrictDriverInstallationToAdministrators' 0
+        if(Get-Command Add-Printer -ErrorAction SilentlyContinue){
+            Add-Printer -ConnectionName $unc -ErrorAction Stop
+        }else{
+            $process=Start-Process rundll32.exe -ArgumentList ('printui.dll,PrintUIEntry /in /n "{0}"' -f $unc) -Wait -PassThru
+            if($process.ExitCode -ne 0){throw "PrintUI connection exited with code $($process.ExitCode)."}
+        }
+        $connected=@(Get-PrinterInventory|Where-Object{[string]$_.Name -eq [string]$unc})
+        if(-not $connected.Count){throw "Shared printer connection could not be verified: $unc"}
+        Write-Ok ((L 'Shared printer connection verified: {0}' 'Koneksi printer sharing terverifikasi: {0}') -f $unc)
+    }catch{Write-Fail $_.Exception.Message}
+    finally{
+        $rollbackSucceeded=$false
+        try{
+            Restore-RegistryValue ([pscustomobject]@{Path=$path;Name='RestrictDriverInstallationToAdministrators';Present=$original.Present;Value=$original.Value;Kind=$original.Kind})
+            $rollbackSucceeded=$true
+            Write-Ok (L 'Point and Print protection returned to its previous state.' 'Proteksi Point and Print sudah dikembalikan ke kondisi sebelumnya.')
+        }catch{
+            Write-Fail ((L 'Point and Print protection could not be restored automatically: {0}' 'Proteksi Point and Print tidak dapat dikembalikan otomatis: {0}') -f $_.Exception.Message)
+            Write-Log ("Temporary Point and Print rollback failed; emergency restore snapshot retained at $snap. Error: {0}" -f $_.Exception.Message) 'ERROR'
+        }
+
+        if($rollbackSucceeded){
+            try{
+                if($hadPreviousLatest){
+                    if(-not $previousLatest){throw 'Previous Restore pointer was empty.'}
+                    $previousLatest|Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8 -ErrorAction Stop
+                }else{
+                    Remove-Item -LiteralPath $script:LatestStateFile -Force -ErrorAction SilentlyContinue
+                }
+                if(Test-Path -LiteralPath $snap -PathType Container){Remove-Item -LiteralPath $snap -Recurse -Force -ErrorAction Stop}
+                Write-Log 'Temporary Point and Print rollback succeeded; previous Restore history was preserved.'
+            }catch{
+                Write-Warn ((L 'Point and Print protection was restored, but temporary Restore history cleanup was incomplete: {0}' 'Proteksi Point and Print sudah kembali, tetapi pembersihan riwayat Restore sementara belum lengkap: {0}') -f $_.Exception.Message)
+                Write-Log ("Temporary Point and Print rollback succeeded but Restore history cleanup failed: {0}" -f $_.Exception.Message) 'WARN'
+            }
+        }else{
+            Write-Warn ((L 'The temporary Restore snapshot was kept as the latest snapshot because rollback could not be confirmed: {0}' 'Snapshot Restore sementara dipertahankan sebagai snapshot terbaru karena rollback belum dapat dipastikan: {0}') -f $snap)
+        }
+    }
+}
+){Write-Warn (L 'Invalid printer UNC path.' 'Path UNC printer tidak valid.');return}
+    $existing=@(Get-PrinterInventory|Where-Object{[string]$_.Name -eq [string]$unc})
+    if($existing.Count){
+        Write-Info ((L 'This shared printer is already connected; Point and Print protection was not changed: {0}' 'Printer sharing ini sudah terhubung; proteksi Point and Print tidak diubah: {0}') -f $unc)
+        return
+    }
+    $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint';$original=Get-RegistryValueStateStrict $path 'RestrictDriverInstallationToAdministrators'
     Write-Warn (L 'This temporarily reduces Point and Print driver-installation protection. It will be restored immediately after the connection attempt.' 'Tindakan ini menurunkan proteksi pemasangan driver Point and Print hanya sementara. Nilai sebelumnya akan langsung dikembalikan setelah percobaan koneksi.')
     if((Read-Host (L 'Type RISK to continue' 'Ketik RISK untuk lanjut')).Trim().ToUpperInvariant() -ne 'RISK'){return}
 
