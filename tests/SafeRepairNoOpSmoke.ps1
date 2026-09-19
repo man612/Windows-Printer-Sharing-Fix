@@ -29,7 +29,7 @@ function Write-Fail([string]$Text){throw $Text}
 function Write-Ok([string]$Text){}
 function Write-Log([string]$Message,[string]$Level='INFO'){}
 function Pause-Tui{}
-function Write-Host{param([Parameter(ValueFromRemainingArguments=$true)]$Object)}
+function Write-Host{param([Parameter(ValueFromRemainingArguments=$true)]$Object);$null=$Object}
 function Read-Choice([string]$Prompt,[string[]]$Allowed){
     $null=@($Prompt,$Allowed)
     if(-not $script:ChoiceQueue.Count){throw 'Choice queue exhausted.'}
@@ -45,7 +45,7 @@ function New-RestoreSnapshot{
     return 'synthetic-snapshot'
 }
 function Get-FirewallSharingRules{@($script:FirewallFixture)}
-function Set-NetFirewallRule{param($Name,$Enabled,$Profile,$ErrorAction);$null=@($Name,$Enabled,$Profile,$ErrorAction)}
+function Set-NetFirewallRule{param($Name,$Enabled,[Alias('Profile')]$FirewallProfile,$ErrorAction);$null=@($Name,$Enabled,$FirewallProfile,$ErrorAction)}
 function Get-NetFirewallRule{param($Name,$ErrorAction);$null=@($Name,$ErrorAction);[pscustomobject]@{Name=$Name;Enabled='True';Profile='Domain, Private'}}
 function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null){$script:RepairFirewallNames=@($FirewallRules|ForEach-Object{[string]$_.Name})}
 function Select-NetworkProfile{$script:SelectedProfile}
