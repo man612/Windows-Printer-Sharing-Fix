@@ -29,7 +29,7 @@ function Write-Log([string]$Message,[string]$Level='INFO'){}
 function Get-RegistryValueStateStrict([string]$Path,[string]$Name){
     $null=@($Path,$Name)
     $script:RegistryReadCount++
-    [pscustomobject]@{Present=$true;Value=1;Kind='DWord'}
+    [pscustomobject]@{Present=$true;Value=$script:RegistryValue;Kind='DWord'}
 }
 
 function Reset-Harness {
@@ -37,6 +37,9 @@ function Reset-Harness {
     New-Item -ItemType Directory -Path $script:BackupRoot -Force | Out-Null
     $script:ReadCount=0
     $script:SnapshotCount=0
+    $script:RegistryValue=1
+    $script:ChangeRegistryOnRisk=$false
+    $script:RollbackValue=$null
     $script:RegistryReadCount=0
     $script:SetCount=0
     $script:RestoreCount=0
@@ -53,6 +56,7 @@ function Read-Host([string]$Prompt){
     $null=$Prompt
     $script:ReadCount++
     if($script:ReadCount -eq 1){return '\\host\printer'}
+    if($script:ChangeRegistryOnRisk){$script:RegistryValue=1}
     return 'RISK'
 }
 function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes){
@@ -64,8 +68,9 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes){
     return $dir
 }
 function Set-RegistryDword([string]$Path,[string]$Name,[int]$Value){
-    $null=@($Path,$Name,$Value)
+    $null=@($Path,$Name)
     $script:SetCount++
+    $script:RegistryValue=$Value
 }
 function Add-Printer{
     [CmdletBinding()] param([string]$ConnectionName)
@@ -79,9 +84,10 @@ function Get-PrinterInventory{
     return @()
 }
 function Restore-RegistryValue($Entry){
-    $null=$Entry
     $script:RestoreCount++
     if($script:FailRollback){throw 'synthetic rollback failure'}
+    $script:RollbackValue=$Entry.Value
+    $script:RegistryValue=[int]$Entry.Value
 }
 
 try {
@@ -110,6 +116,13 @@ try {
     if($script:SetCount -ne 1 -or $script:RestoreCount -ne 1 -or $script:AddCount -ne 1){throw 'Successful Point and Print call counts are inconsistent.'}
     if(-not $script:PrinterInstalled){throw 'Successful Point and Print did not leave the connection in inventory.'}
     if(($script:OkMessages -join ' ') -notmatch 'Shared printer connection verified'){throw 'Successful Point and Print did not report verified connection.'}
+
+    # Baseline must be captured after RISK confirmation so a change while the prompt is open is not overwritten by stale rollback.
+    Reset-Harness
+    $script:RegistryValue=0
+    $script:ChangeRegistryOnRisk=$true
+    Connect-SharedPrinterTemporarilyRelaxed
+    if($script:RollbackValue -ne 1 -or $script:RegistryValue -ne 1){throw 'Point and Print rollback used a stale pre-confirmation registry baseline.'}
 
     # With no previous history, success leaves no synthetic latest pointer.
     Reset-Harness
