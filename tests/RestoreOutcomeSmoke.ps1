@@ -28,7 +28,7 @@ function Reset-Messages {$script:Ok=@();$script:Warn=@();$script:Fail=@();$scrip
 
 # Helpers must surface underlying failures.
 $script:RegistryPresent=$true
-function Get-RegistryValueState([string]$Path,[string]$Name){$null=@($Path,$Name);[pscustomobject]@{Present=$script:RegistryPresent;Value=1;Kind='DWord'}}
+function Get-RegistryValueStateStrict([string]$Path,[string]$Name){$null=@($Path,$Name);[pscustomobject]@{Present=$script:RegistryPresent;Value=1;Kind='DWord'}}
 function Remove-ItemProperty {[CmdletBinding()]param([string]$Path,[string]$Name);$null=@($Path,$Name);Write-Error 'synthetic registry removal failure'}
 $registryThrew=$false
 try{Restore-RegistryValue ([pscustomobject]@{Path='HKLM:\X';Name='Y';Present=$false;Value=$null;Kind=$null})}catch{$registryThrew=$true}
