@@ -1443,6 +1443,27 @@ function Start-NetworkDiscoveryServices {
     Write-Ok (L 'Network Discovery services are running.' 'Layanan Network Discovery sedang berjalan.')
 }
 
+function Test-FirewallRuleNeedsSafeRepair([object]$Rule) {
+    if($null -eq $Rule){return $false}
+    if([string]$Rule.Profile -notmatch 'Private|Domain|Any'){return $false}
+    $profiles=@(([string]$Rule.Profile -split ',')|ForEach-Object{$_.Trim()}|Where-Object{$_}|Sort-Object -Unique)
+    $isEnabled=[string]::Equals('True',[string]$Rule.Enabled,[StringComparison]::OrdinalIgnoreCase)
+    return (-not $isEnabled -or ($profiles -join ',') -ne 'Domain,Private')
+}
+
+function Get-NetworkDiscoveryRepairPlan {
+    $services=@()
+    foreach($name in @('fdPHost','FDResPub')){
+        $service=Get-Service -Name $name -ErrorAction Stop
+        if($null -eq $service){throw "Network Discovery service not found: $name"}
+        $services+=$service
+    }
+    return [pscustomobject]@{
+        Services=@($services)
+        NeedsRepair=(@($services|Where-Object{$_.Status -ne 'Running'}).Count -gt 0)
+    }
+}
+
 function Show-SafeRepairMenu {
     while($true){
         Write-Header (L 'SAFE REPAIR' 'PERBAIKAN AMAN')
@@ -1458,12 +1479,61 @@ function Show-SafeRepairMenu {
         $c=Read-Choice (T 'Select') @('1','2','3','4','5','6','B');if($c -eq 'B'){return}
         $snap=$null
         try{switch($c){
-            '1'{$snap=New-RestoreSnapshot 'Restart Print Spooler' @('Services');if($snap){Invoke-RestartSpooler}}
+            '1'{
+                $snap=New-RestoreSnapshot 'Restart Print Spooler' @('Services')
+                if($snap){Invoke-RestartSpooler}
+            }
             '2'{Invoke-ClearPrintQueue}
-            '3'{$firewallRules=@(Get-FirewallSharingRules);$snap=New-RestoreSnapshot 'Enable sharing firewall rules' @('Firewall') -FirewallRules $firewallRules;if($snap){Enable-PrivateFirewallSharing -FirewallRules $firewallRules}}
-            '4'{$selectedProfile=Select-NetworkProfile;if($null -ne $selectedProfile){if($selectedProfile.NetworkCategory -eq 'DomainAuthenticated'){Write-Warn (L 'DomainAuthenticated profiles should be controlled by domain policy.' 'Profil DomainAuthenticated sebaiknya dikendalikan oleh kebijakan domain.')}else{$snap=New-RestoreSnapshot 'Change selected network profile' @('Network') -NetworkProfiles @($selectedProfile);if($snap){Set-OneNetworkPrivate -SelectedProfile $selectedProfile}}}}
-            '5'{$snap=New-RestoreSnapshot 'Start Network Discovery services' @('Services');if($snap){Start-NetworkDiscoveryServices}}
-            '6'{$firewallRules=@(Get-FirewallSharingRules);$snap=New-RestoreSnapshot 'Combined non-destructive Safe Repair' @('Services','Firewall') -FirewallRules $firewallRules;if($snap){Invoke-RestartSpooler;Enable-PrivateFirewallSharing -FirewallRules $firewallRules;Start-NetworkDiscoveryServices}}
+            '3'{
+                if(-not(Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue) -or -not(Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue)){
+                    Write-Warn (L 'Modern firewall read/write cmdlets are unavailable; no repair snapshot was created.' 'Cmdlet baca/tulis firewall modern tidak tersedia; snapshot perbaikan tidak dibuat.')
+                    break
+                }
+                $firewallRules=@(Get-FirewallSharingRules)
+                $repairRules=@($firewallRules|Where-Object{Test-FirewallRuleNeedsSafeRepair $_})
+                if(-not $repairRules.Count){
+                    Write-Info (L 'File and Printer Sharing firewall rules already need no Domain/Private repair; Restore history was left unchanged.' 'Aturan firewall File and Printer Sharing tidak memerlukan perbaikan Domain/Private; riwayat Restore tidak diubah.')
+                    break
+                }
+                $snap=New-RestoreSnapshot 'Enable sharing firewall rules' @('Firewall') -FirewallRules $repairRules
+                if($snap){Enable-PrivateFirewallSharing -FirewallRules $repairRules}
+            }
+            '4'{
+                $selectedProfile=Select-NetworkProfile
+                if($null -eq $selectedProfile){break}
+                if($selectedProfile.NetworkCategory -eq 'DomainAuthenticated'){
+                    Write-Warn (L 'DomainAuthenticated profiles should be controlled by domain policy.' 'Profil DomainAuthenticated sebaiknya dikendalikan oleh kebijakan domain.')
+                    break
+                }
+                if($selectedProfile.NetworkCategory -eq 'Private'){
+                    Write-Info (L 'The selected network is already Private; Restore history was left unchanged.' 'Jaringan yang dipilih sudah Privat; riwayat Restore tidak diubah.')
+                    break
+                }
+                if(-not(Get-Command Set-NetConnectionProfile -ErrorAction SilentlyContinue) -or -not(Get-Command Get-NetConnectionProfile -ErrorAction SilentlyContinue)){
+                    Write-Warn (L 'Network-profile read/write cmdlets are unavailable; no repair snapshot was created.' 'Cmdlet baca/tulis profil jaringan tidak tersedia; snapshot perbaikan tidak dibuat.')
+                    break
+                }
+                $snap=New-RestoreSnapshot 'Change selected network profile' @('Network') -NetworkProfiles @($selectedProfile)
+                if($snap){Set-OneNetworkPrivate -SelectedProfile $selectedProfile}
+            }
+            '5'{
+                $plan=Get-NetworkDiscoveryRepairPlan
+                if(-not $plan.NeedsRepair){
+                    Write-Info (L 'Network Discovery services are already running; Restore history was left unchanged.' 'Layanan Network Discovery sudah berjalan; riwayat Restore tidak diubah.')
+                    break
+                }
+                $snap=New-RestoreSnapshot 'Start Network Discovery services' @('Services')
+                if($snap){Start-NetworkDiscoveryServices}
+            }
+            '6'{
+                $firewallRules=@(Get-FirewallSharingRules)
+                $snap=New-RestoreSnapshot 'Combined non-destructive Safe Repair' @('Services','Firewall') -FirewallRules $firewallRules
+                if($snap){
+                    Invoke-RestartSpooler
+                    Enable-PrivateFirewallSharing -FirewallRules $firewallRules
+                    Start-NetworkDiscoveryServices
+                }
+            }
         }}catch{Write-Fail $_.Exception.Message}
         if($snap){Write-Info ((L 'Restore snapshot: {0}' 'Snapshot restore: {0}') -f $snap)}
         Pause-Tui
