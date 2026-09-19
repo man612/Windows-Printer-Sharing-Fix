@@ -1188,7 +1188,7 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
     }
 
     $currentProfiles=@{}
-    foreach($networkProfile in @(Get-NetworkProfilesSafe)){$currentProfiles[[int]$networkProfile.InterfaceIndex]=$true}
+    foreach($currentNetworkProfile in @(Get-NetworkProfilesSafe)){$currentProfiles[[int]$currentNetworkProfile.InterfaceIndex]=$currentNetworkProfile}
     $networkEntries=@($state.NetworkProfiles)
     if($scopes -contains 'Network' -and $networkEntries.Count -ne 1){throw 'Restore snapshot must contain exactly one selected network profile.'}
     $seenProfiles=@{}
@@ -1198,8 +1198,13 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
         if($seenProfiles.ContainsKey($index)){throw 'Restore snapshot contains duplicate network profile state.'}
         $seenProfiles[$index]=$true
         if([string]$networkProfile.NetworkCategory -notin @('Public','Private','DomainAuthenticated')){throw "Restore snapshot has an invalid network category: $($networkProfile.NetworkCategory)"}
-        if($reason -eq 'Change selected network profile' -and [string]$networkProfile.NetworkCategory -ne 'Public'){
-            throw 'Restore snapshot network baseline does not belong to the selected-network Safe Repair action.'
+        if($reason -eq 'Change selected network profile'){
+            if([string]$networkProfile.NetworkCategory -ne 'Public'){
+                throw 'Restore snapshot network baseline does not belong to the selected-network Safe Repair action.'
+            }
+            if([string]$currentProfiles[$index].NetworkCategory -eq 'DomainAuthenticated'){
+                throw 'Restore will not override a network profile that is currently DomainAuthenticated.'
+            }
         }
     }
 
