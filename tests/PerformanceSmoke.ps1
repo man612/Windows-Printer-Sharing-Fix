@@ -79,8 +79,7 @@ Enable-PrivateFirewallSharing -FirewallRules $fakeRules
 if ($script:FirewallQueryCount -ne 0) { throw 'Safe firewall repair re-queried firewall despite receiving preloaded rules.' }
 if ($script:FirewallSetCount -ne 1) { throw "Expected one stubbed firewall update, got $($script:FirewallSetCount)." }
 
-$emptySnapshot = New-RestoreSnapshot 'Enable sharing firewall rules' @('Firewall') -FirewallRules @()
-if (-not $emptySnapshot) { throw 'Empty preloaded firewall snapshot failed.' }
+# Empty preloaded repair inventory must still avoid a re-query/update; snapshot creation is intentionally rejected by the firewall action contract.
 Enable-PrivateFirewallSharing -FirewallRules @()
 if ($script:FirewallQueryCount -ne 0) { throw 'Empty preloaded firewall inventory triggered an unexpected re-query.' }
 if ($script:FirewallSetCount -ne 1) { throw 'Empty preloaded firewall inventory attempted an update.' }

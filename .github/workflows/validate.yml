@@ -125,6 +125,10 @@ jobs:
         shell: powershell
         run: .\tests\RestoreActionContractSmoke.ps1
 
+      - name: Validate firewall Restore action contract
+        shell: powershell
+        run: .\tests\FirewallRestoreContractSmoke.ps1
+
       - name: Validate temporary Point and Print rollback history
         shell: powershell
         run: .\tests\PointAndPrintSafetySmoke.ps1

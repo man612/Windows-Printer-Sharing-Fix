@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Firewall Restore contracts now reject empty firewall-only snapshots and Public-only firewall state that Safe Repair would never mutate.
 - Network Discovery and combined Safe Repair now snapshot only services that actually need mutation; combined repair also snapshots only firewall rules requiring repair, while always retaining Spooler as its required service target.
 - Temporary Point and Print now detects an already-connected target UNC before confirmation, snapshot creation, or security relaxation, leaving protection and Restore history untouched.
 - Legacy/high-risk compatibility actions now leave `Restore latest` unchanged when the target state is already active; RPC Named Pipes snapshots only remaining targets, and SMB1 changes abort when the baseline state is `Unknown` and cannot be restored reliably.
