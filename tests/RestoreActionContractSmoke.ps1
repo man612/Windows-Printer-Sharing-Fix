@@ -65,11 +65,11 @@ try{
     # Host role: snapshot and mutation must contain only host target.
     $script:Role='Host';$script:Mutated=@()
     Set-RpcNamedPipeFallback
-    $host=Read-StateFromLatest
-    Assert-ExactNames @($host.State.Registry) @('RpcProtocols') 'Host RPC snapshot'
+    $hostCase=Read-StateFromLatest
+    Assert-ExactNames @($hostCase.State.Registry) @('RpcProtocols') 'Host RPC snapshot'
     $hostMutated=@($script:Mutated|Sort-Object)
     if(($hostMutated -join '|') -ne 'RpcProtocols'){throw 'Host RPC fallback mutated state outside the host contract.'}
-    [void](Get-ValidatedRestoreSnapshot $host.Directory)
+    [void](Get-ValidatedRestoreSnapshot $hostCase.Directory)
 
     # Unknown/local role: both managed targets are captured and changed.
     $script:Role='Unknown / local only';$script:Mutated=@()
