@@ -23,32 +23,66 @@ function Write-Info([string]$Text){}
 function Write-Log([string]$Message,[string]$Level='INFO'){$script:Logs += ($Level+':'+$Message)}
 function Reset-Messages {$script:Ok=@();$script:Warn=@();$script:Fail=@();$script:Logs=@()}
 
-# Firewall: all eligible updates succeed.
-Reset-Messages
+# Firewall harness.
 $script:FirewallFailName=$null
+$script:FirewallNoOp=$false
 $script:FirewallAttempts=@()
+$script:FirewallState=@{}
+function Reset-FirewallHarness {
+    Reset-Messages
+    $script:FirewallFailName=$null
+    $script:FirewallNoOp=$false
+    $script:FirewallAttempts=@()
+    $script:FirewallState=@{
+        'FPS-One'=[pscustomobject]@{Enabled='False';Profile='Private'}
+        'FPS-Two'=[pscustomobject]@{Enabled='False';Profile='Domain'}
+        'FPS-Public'=[pscustomobject]@{Enabled='False';Profile='Public'}
+    }
+}
 function Set-NetFirewallRule {
-    [CmdletBinding()] param([string]$Name,$Enabled,[Alias('Profile')]$FirewallProfile)
-    $null=@($Enabled,$FirewallProfile)
+    [CmdletBinding()] param([string]$Name,$Enabled,[Alias('Profile')][string[]]$FirewallProfile)
     $script:FirewallAttempts += $Name
-    if($Name -eq $script:FirewallFailName){Write-Error 'synthetic firewall failure'}
+    if($Name -eq $script:FirewallFailName){Write-Error 'synthetic firewall failure';return}
+    if(-not $script:FirewallNoOp){
+        $script:FirewallState[$Name]=[pscustomobject]@{Enabled=[string]$Enabled;Profile=(@($FirewallProfile) -join ', ')}
+    }
+}
+function Get-NetFirewallRule {
+    [CmdletBinding()] param([string]$Name)
+    if(-not $script:FirewallState.ContainsKey($Name)){return $null}
+    $state=$script:FirewallState[$Name]
+    [pscustomobject]@{Name=$Name;Enabled=$state.Enabled;Profile=$state.Profile}
 }
 $rules=@(
   [pscustomobject]@{Name='FPS-One';Profile='Private';Enabled='False'},
   [pscustomobject]@{Name='FPS-Two';Profile='Domain';Enabled='False'},
   [pscustomobject]@{Name='FPS-Public';Profile='Public';Enabled='False'}
 )
-Enable-PrivateFirewallSharing -FirewallRules $rules
-if($script:Ok.Count -ne 1 -or $script:Fail.Count -ne 0){throw 'Successful firewall repair did not report exactly one success.'}
-if(($script:FirewallAttempts -join ',') -ne 'FPS-One,FPS-Two'){throw 'Firewall repair touched rules outside the eligible set.'}
 
-# Firewall: partial failure must suppress success and emit failure.
-Reset-Messages
-$script:FirewallAttempts=@()
+# Firewall: all eligible updates must be read back successfully.
+Reset-FirewallHarness
+Enable-PrivateFirewallSharing -FirewallRules $rules
+if($script:Ok.Count -ne 1 -or $script:Fail.Count -ne 0){throw 'Successful firewall repair did not report exactly one verified success.'}
+if(($script:FirewallAttempts -join ',') -ne 'FPS-One,FPS-Two'){throw 'Firewall repair touched rules outside the eligible set.'}
+foreach($name in @('FPS-One','FPS-Two')){
+    $state=$script:FirewallState[$name]
+    if([string]$state.Enabled -ne 'True' -or [string]$state.Profile -ne 'Domain, Private'){throw "Firewall success fixture did not reach verified Domain/Private state: $name"}
+}
+if([string]$script:FirewallState['FPS-Public'].Enabled -ne 'False' -or [string]$script:FirewallState['FPS-Public'].Profile -ne 'Public'){throw 'Firewall repair changed the Public-only rule.'}
+
+# Firewall: partial command failure must suppress success and emit failure.
+Reset-FirewallHarness
 $script:FirewallFailName='FPS-Two'
 Enable-PrivateFirewallSharing -FirewallRules $rules
 if($script:Ok.Count -ne 0 -or $script:Fail.Count -ne 1){throw 'Partial firewall failure produced a false success or no failure.'}
 if($script:FirewallAttempts.Count -ne 2){throw 'Firewall repair stopped before attempting all eligible rules.'}
+
+# Firewall: successful/no-op cmdlets must fail read-back verification.
+Reset-FirewallHarness
+$script:FirewallNoOp=$true
+Enable-PrivateFirewallSharing -FirewallRules $rules
+if($script:Ok.Count -ne 0 -or $script:Fail.Count -ne 1){throw 'No-op firewall mutation produced false success or no failure.'}
+if(@($script:Logs|Where-Object{$_ -match 'postcondition mismatch'}).Count -lt 1){throw 'No-op firewall mutation did not record a postcondition mismatch.'}
 
 # Network Discovery: both services reach Running.
 Reset-Messages
