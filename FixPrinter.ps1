@@ -986,21 +986,22 @@ function Get-ManagedRegistryEntries([switch]$Strict) {
 
 function Get-RestoreActionContract([string]$Reason) {
     switch($Reason){
-        'Restart Print Spooler' {return [pscustomobject]@{Scopes=@('Services');RegistryNames=@();ServiceNames=@('Spooler');AllowRegistrySubset=$false}}
-        'Enable sharing firewall rules' {return [pscustomobject]@{Scopes=@('Firewall');RegistryNames=@();ServiceNames=@();AllowRegistrySubset=$false}}
-        'Change selected network profile' {return [pscustomobject]@{Scopes=@('Network');RegistryNames=@();ServiceNames=@();AllowRegistrySubset=$false}}
-        'Start Network Discovery services' {return [pscustomobject]@{Scopes=@('Services');RegistryNames=@();ServiceNames=@('fdPHost','FDResPub');AllowRegistrySubset=$false}}
-        'Combined non-destructive Safe Repair' {return [pscustomobject]@{Scopes=@('Services','Firewall');RegistryNames=@();ServiceNames=@('Spooler','fdPHost','FDResPub');AllowRegistrySubset=$false}}
-        'RPC Named Pipes compatibility fallback' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('RpcUseNamedPipeProtocol','RpcProtocols');ServiceNames=@();AllowRegistrySubset=$true}}
-        'Temporary Point and Print relaxation' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('RestrictDriverInstallationToAdministrators');ServiceNames=@();AllowRegistrySubset=$false}}
-        'High-risk RPC privacy workaround' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('RpcAuthnLevelPrivacyEnabled');ServiceNames=@();AllowRegistrySubset=$false}}
-        'Enable SMB1 client' {return [pscustomobject]@{Scopes=@('SMB1');RegistryNames=@();ServiceNames=@();AllowRegistrySubset=$false}}
-        'Enable insecure SMB guest' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('AllowInsecureGuestAuth');ServiceNames=@();AllowRegistrySubset=$false}}
-        'Legacy LAN Manager level' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('LmCompatibilityLevel');ServiceNames=@();AllowRegistrySubset=$false}}
+        'Restart Print Spooler' {return [pscustomobject]@{Scopes=@('Services');RegistryNames=@();ServiceNames=@('Spooler');RequiredServiceNames=@('Spooler');AllowRegistrySubset=$false;AllowServiceSubset=$false}}
+        'Enable sharing firewall rules' {return [pscustomobject]@{Scopes=@('Firewall');RegistryNames=@();ServiceNames=@();RequiredServiceNames=@();AllowRegistrySubset=$false;AllowServiceSubset=$false}}
+        'Change selected network profile' {return [pscustomobject]@{Scopes=@('Network');RegistryNames=@();ServiceNames=@();RequiredServiceNames=@();AllowRegistrySubset=$false;AllowServiceSubset=$false}}
+        'Start Network Discovery services' {return [pscustomobject]@{Scopes=@('Services');RegistryNames=@();ServiceNames=@('fdPHost','FDResPub');RequiredServiceNames=@('fdPHost','FDResPub');AllowRegistrySubset=$false;AllowServiceSubset=$false}}
+        'Combined non-destructive Safe Repair' {return [pscustomobject]@{Scopes=@('Services','Firewall');RegistryNames=@();ServiceNames=@('Spooler','fdPHost','FDResPub');RequiredServiceNames=@('Spooler');AllowRegistrySubset=$false;AllowServiceSubset=$true}}
+        'RPC Named Pipes compatibility fallback' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('RpcUseNamedPipeProtocol','RpcProtocols');ServiceNames=@();RequiredServiceNames=@();AllowRegistrySubset=$true;AllowServiceSubset=$false}}
+        'Temporary Point and Print relaxation' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('RestrictDriverInstallationToAdministrators');ServiceNames=@();RequiredServiceNames=@();AllowRegistrySubset=$false;AllowServiceSubset=$false}}
+        'High-risk RPC privacy workaround' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('RpcAuthnLevelPrivacyEnabled');ServiceNames=@();RequiredServiceNames=@();AllowRegistrySubset=$false;AllowServiceSubset=$false}}
+        'Enable SMB1 client' {return [pscustomobject]@{Scopes=@('SMB1');RegistryNames=@();ServiceNames=@();RequiredServiceNames=@();AllowRegistrySubset=$false;AllowServiceSubset=$false}}
+        'Enable insecure SMB guest' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('AllowInsecureGuestAuth');ServiceNames=@();RequiredServiceNames=@();AllowRegistrySubset=$false;AllowServiceSubset=$false}}
+        'Legacy LAN Manager level' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('LmCompatibilityLevel');ServiceNames=@();RequiredServiceNames=@();AllowRegistrySubset=$false;AllowServiceSubset=$false}}
         default {throw "Restore action contract is not recognized: $Reason"}
     }
 }
-function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Services','Network','Firewall','SMB1'),[object[]]$FirewallRules=$null,[object[]]$NetworkProfiles=$null,[string[]]$RegistryNames=$null) {
+
+function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Services','Network','Firewall','SMB1'),[object[]]$FirewallRules=$null,[object[]]$NetworkProfiles=$null,[string[]]$RegistryNames=$null,[string[]]$ServiceNames=$null) {
     $dir=$null
     try{
         $contract=Get-RestoreActionContract $Reason
@@ -1029,14 +1030,27 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
         }
 
         if($actualScopes -contains 'Services'){
-            foreach($name in @($contract.ServiceNames)){
+            $allowedServiceNames=@($contract.ServiceNames)
+            if($PSBoundParameters.ContainsKey('ServiceNames')){
+                $serviceNamesToCapture=@($ServiceNames|ForEach-Object{[string]$_}|Where-Object{$_}|Select-Object -Unique)
+            }else{
+                $serviceNamesToCapture=@($allowedServiceNames)
+            }
+            if(-not $serviceNamesToCapture.Count){throw "No service targets were selected for: $Reason"}
+            if(@($serviceNamesToCapture|Where-Object{$_ -notin $allowedServiceNames}).Count){throw "Service snapshot target is outside the managed action contract for: $Reason"}
+            $requiredServiceNames=@($contract.RequiredServiceNames)
+            if(@($requiredServiceNames|Where-Object{$_ -notin $serviceNamesToCapture}).Count){throw "Service snapshot is missing a required managed target for: $Reason"}
+            if(-not [bool]$contract.AllowServiceSubset -and ($serviceNamesToCapture.Count -ne $allowedServiceNames.Count -or @($allowedServiceNames|Where-Object{$_ -notin $serviceNamesToCapture}).Count)){
+                throw "Service snapshot targets do not match the managed action contract for: $Reason"
+            }
+            foreach($name in $serviceNamesToCapture){
                 try{
                     $service=Get-CimInstance Win32_Service -Filter "Name='$name'"
                     if($null -eq $service){throw "Service not found: $name"}
                     $services+=[pscustomobject]@{Name=$name;State=$service.State}
                 }catch{throw ("Service snapshot failed for {0}: {1}" -f $name,$_.Exception.Message)}
             }
-            if($services.Count -ne @($contract.ServiceNames).Count){throw "Service snapshot is incomplete for: $Reason"}
+            if($services.Count -ne $serviceNamesToCapture.Count){throw "Service snapshot is incomplete for: $Reason"}
         }
 
         if($actualScopes -contains 'Network'){
@@ -1140,8 +1154,14 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
     $expectedServices=@($contract.ServiceNames)
     if($scopes -contains 'Services'){
         $actualServiceNames=@($serviceEntries|ForEach-Object{[string]$_.Name}|Sort-Object)
-        $wantedServiceNames=@($expectedServices|Sort-Object)
-        if(($actualServiceNames -join '|') -ne ($wantedServiceNames -join '|')){throw "Restore snapshot service state does not match action '$reason'."}
+        if(-not $actualServiceNames.Count){throw "Restore snapshot is missing service state required by action '$reason'."}
+        if(@($actualServiceNames|Where-Object{$_ -notin $expectedServices}).Count){throw "Restore snapshot service state exceeds action '$reason'."}
+        $requiredServiceNames=@($contract.RequiredServiceNames)
+        if(@($requiredServiceNames|Where-Object{$_ -notin $actualServiceNames}).Count){throw "Restore snapshot service state is missing a required target for action '$reason'."}
+        if(-not [bool]$contract.AllowServiceSubset){
+            $wantedServiceNames=@($expectedServices|Sort-Object)
+            if(($actualServiceNames -join '|') -ne ($wantedServiceNames -join '|')){throw "Restore snapshot service state does not match action '$reason'."}
+        }
     }
     $seenServices=@{}
     foreach($service in $serviceEntries){
@@ -1526,12 +1546,20 @@ function Show-SafeRepairMenu {
                 if($snap){Start-NetworkDiscoveryServices}
             }
             '6'{
-                $firewallRules=@(Get-FirewallSharingRules)
-                $snap=New-RestoreSnapshot 'Combined non-destructive Safe Repair' @('Services','Firewall') -FirewallRules $firewallRules
+                $discoveryPlan=Get-NetworkDiscoveryRepairPlan
+                $serviceNames=@('Spooler')+@($discoveryPlan.Services|Where-Object{$_.Status -ne 'Running'}|ForEach-Object{[string]$_.Name})
+                $repairRules=@()
+                if((Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue) -and (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue)){
+                    $firewallRules=@(Get-FirewallSharingRules)
+                    $repairRules=@($firewallRules|Where-Object{Test-FirewallRuleNeedsSafeRepair $_})
+                }else{
+                    Write-Warn (L 'Firewall read/write cmdlets are unavailable; the combined repair will continue with service repairs only.' 'Cmdlet baca/tulis firewall tidak tersedia; perbaikan gabungan akan tetap menjalankan perbaikan layanan saja.')
+                }
+                $snap=New-RestoreSnapshot 'Combined non-destructive Safe Repair' @('Services','Firewall') -FirewallRules $repairRules -ServiceNames $serviceNames
                 if($snap){
                     Invoke-RestartSpooler
-                    Enable-PrivateFirewallSharing -FirewallRules $firewallRules
-                    Start-NetworkDiscoveryServices
+                    if($repairRules.Count){Enable-PrivateFirewallSharing -FirewallRules $repairRules}
+                    if($discoveryPlan.NeedsRepair){Start-NetworkDiscoveryServices}
                 }
             }
         }}catch{Write-Fail $_.Exception.Message}
