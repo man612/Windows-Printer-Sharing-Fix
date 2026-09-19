@@ -62,9 +62,18 @@ function Get-CimInstance{
 function Get-FirewallSharingRules{@($script:FirewallFixture)}
 function Set-NetFirewallRule{[CmdletBinding()]param([string]$Name,$Enabled,[Alias('Profile')]$FirewallProfile);$null=@($Name,$Enabled,$FirewallProfile)}
 function Get-NetFirewallRule{[CmdletBinding()]param([string]$Name);$null=$Name;[pscustomobject]@{Name='synthetic';Enabled='True';Profile='Domain, Private'}}
-function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null){$script:FirewallRepairNames=@($FirewallRules|ForEach-Object{[string]$_.Name})}
-function Invoke-RestartSpooler{$script:RestartCalls++}
-function Start-NetworkDiscoveryServices{$script:DiscoveryCalls++}
+function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null){
+    $script:FirewallRepairNames=@($FirewallRules|ForEach-Object{[string]$_.Name})
+    if($script:FailFirewall){throw 'synthetic firewall substep failure'}
+}
+function Invoke-RestartSpooler{
+    $script:RestartCalls++
+    if($script:FailRestart){throw 'synthetic Spooler substep failure'}
+}
+function Start-NetworkDiscoveryServices{
+    $script:DiscoveryCalls++
+    if($script:FailDiscovery){throw 'synthetic Network Discovery substep failure'}
+}
 function Get-NetworkProfilesSafe{@()}
 
 function Read-LatestState {
@@ -83,6 +92,10 @@ function Reset-Harness {
     $script:FirewallRepairNames=@()
     $script:RestartCalls=0
     $script:DiscoveryCalls=0
+    $script:FailMessages=@()
+    $script:FailRestart=$false
+    $script:FailFirewall=$false
+    $script:FailDiscovery=$false
 }
 
 try {
