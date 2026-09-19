@@ -1580,9 +1580,10 @@ function Connect-SharedPrinterTemporarilyRelaxed {
         Write-Info ((L 'This shared printer is already connected; Point and Print protection was not changed: {0}' 'Printer sharing ini sudah terhubung; proteksi Point and Print tidak diubah: {0}') -f $unc)
         return
     }
-    $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint';$original=Get-RegistryValueStateStrict $path 'RestrictDriverInstallationToAdministrators'
+    $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint'
     Write-Warn (L 'This temporarily reduces Point and Print driver-installation protection. It will be restored immediately after the connection attempt.' 'Tindakan ini menurunkan proteksi pemasangan driver Point and Print hanya sementara. Nilai sebelumnya akan langsung dikembalikan setelah percobaan koneksi.')
     if((Read-Host (L 'Type RISK to continue' 'Ketik RISK untuk lanjut')).Trim().ToUpperInvariant() -ne 'RISK'){return}
+    $original=Get-RegistryValueStateStrict $path 'RestrictDriverInstallationToAdministrators'
 
     $hadPreviousLatest=Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf
     $previousLatest=$null
