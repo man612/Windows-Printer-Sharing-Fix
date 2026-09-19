@@ -1546,17 +1546,29 @@ function Set-RpcNamedPipeFallback {
     $applyClient=($role -match 'Client') -or $role -eq 'Unknown / local only'
     $applyHost=($role -match 'Host') -or $role -eq 'Unknown / local only'
     $registryNames=@()
-    if($applyClient){$registryNames+='RpcUseNamedPipeProtocol'}
-    if($applyHost){$registryNames+='RpcProtocols'}
-    if(-not $registryNames.Count){
+
+    if($applyClient){
+        $clientState=Get-RegistryValueStateStrict 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcUseNamedPipeProtocol'
+        if(-not $clientState.Present -or [int]$clientState.Value -ne 1){$registryNames+='RpcUseNamedPipeProtocol'}
+    }
+    if($applyHost){
+        $hostState=Get-RegistryValueStateStrict 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcProtocols'
+        if(-not $hostState.Present -or [int]$hostState.Value -ne 7){$registryNames+='RpcProtocols'}
+    }
+    if(-not $applyClient -and -not $applyHost){
         Write-Warn ((L 'RPC role could not be mapped to a managed compatibility target: {0}' 'Peran RPC tidak dapat dipetakan ke target kompatibilitas yang dikelola: {0}') -f $role)
         return
     }
+    if(-not $registryNames.Count){
+        Write-Info (L 'RPC Named Pipes compatibility targets are already configured; Restore history was left unchanged.' 'Target kompatibilitas RPC Named Pipes sudah dikonfigurasi; riwayat Restore tidak diubah.')
+        return
+    }
+
     $snap=New-RestoreSnapshot 'RPC Named Pipes compatibility fallback' @('Registry') -RegistryNames $registryNames
     if(-not $snap){return}
     Write-Warn (L 'RPC over TCP is the Windows default. Named Pipes is a compatibility fallback.' 'RPC melalui TCP adalah default Windows. Named Pipes hanya fallback kompatibilitas.')
-    if($applyClient){Set-RegistryDword 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcUseNamedPipeProtocol' 1;Write-Ok (L 'Client outgoing printer RPC set to Named Pipes fallback.' 'RPC printer keluar pada sisi klien diatur memakai fallback Named Pipes.')}
-    if($applyHost){Set-RegistryDword 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcProtocols' 7;Write-Ok (L 'Print host RPC listener set to allow supported protocol families.' 'Listener RPC pada host printer diatur agar menerima keluarga protokol yang didukung.')}
+    if('RpcUseNamedPipeProtocol' -in $registryNames){Set-RegistryDword 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcUseNamedPipeProtocol' 1;Write-Ok (L 'Client outgoing printer RPC set to Named Pipes fallback.' 'RPC printer keluar pada sisi klien diatur memakai fallback Named Pipes.')}
+    if('RpcProtocols' -in $registryNames){Set-RegistryDword 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcProtocols' 7;Write-Ok (L 'Print host RPC listener set to allow supported protocol families.' 'Listener RPC pada host printer diatur agar menerima keluarga protokol yang didukung.')}
     Write-Info ((L 'Restore snapshot: {0}' 'Snapshot restore: {0}') -f $snap)
 }
 
@@ -1627,6 +1639,11 @@ function Set-RpcPrivacyCompatibility {
     Write-Fail (L 'This disables RPC packet-level privacy enforcement for incoming printer connections.' 'Ini menonaktifkan penerapan privasi paket RPC untuk koneksi printer yang masuk.')
     Write-Warn (L 'Use only for proven legacy incompatibility and restore it after testing.' 'Gunakan hanya jika inkompatibilitas perangkat lama sudah terbukti, lalu restore setelah pengujian.')
     if((Read-Host (L 'Type RISK to continue' 'Ketik RISK untuk lanjut')).Trim().ToUpperInvariant() -ne 'RISK'){return}
+    $current=Get-RegistryValueStateStrict 'HKLM:\SYSTEM\CurrentControlSet\Control\Print' 'RpcAuthnLevelPrivacyEnabled'
+    if($current.Present -and [int]$current.Value -eq 0){
+        Write-Info (L 'RPC packet privacy is already disabled; Restore history was left unchanged.' 'Privasi paket RPC sudah dinonaktifkan; riwayat Restore tidak diubah.')
+        return
+    }
     $snap=New-RestoreSnapshot 'High-risk RPC privacy workaround' @('Registry')
     if($snap){Set-RegistryDword 'HKLM:\SYSTEM\CurrentControlSet\Control\Print' 'RpcAuthnLevelPrivacyEnabled' 0;Write-Warn (L 'RPC packet privacy is now disabled.' 'Privasi paket RPC sekarang dinonaktifkan.');Write-Info ((L 'Restore snapshot: {0}' 'Snapshot restore: {0}') -f $snap)}
 }
@@ -1687,6 +1704,15 @@ function Enable-Smb1ClientLegacy {
         Write-Fail (L 'Enable-WindowsOptionalFeature is unavailable; SMB1 client was not changed.' 'Enable-WindowsOptionalFeature tidak tersedia; klien SMB1 tidak diubah.')
         return
     }
+    $current=Get-WindowsFeatureState 'SMB1Protocol-Client'
+    if($current -match '^Enabled' -or $current -match '^EnablePending'){
+        Write-Info (L 'SMB1 client is already enabled or pending enablement; Restore history was left unchanged.' 'Klien SMB1 sudah aktif atau menunggu aktivasi; riwayat Restore tidak diubah.')
+        return
+    }
+    if($current -match '^Unknown'){
+        Write-Fail (L 'SMB1 client state could not be read reliably, so the legacy change was not started.' 'Kondisi klien SMB1 tidak dapat dibaca dengan andal, jadi perubahan legacy tidak dijalankan.')
+        return
+    }
     $snap=New-RestoreSnapshot 'Enable SMB1 client' @('SMB1')
     if(-not $snap){return}
     Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol-Client -NoRestart -ErrorAction Stop|Out-Null
@@ -1705,6 +1731,11 @@ function Enable-Smb1ClientLegacy {
 function Enable-InsecureGuestLegacy {
     Write-Fail (L 'Insecure guest SMB authentication weakens credential protection.' 'Autentikasi guest SMB yang tidak aman melemahkan proteksi kredensial.')
     if((Read-Host (L 'Type LEGACY to continue' 'Ketik LEGACY untuk lanjut')).Trim().ToUpperInvariant() -ne 'LEGACY'){return}
+    $current=Get-RegistryValueStateStrict 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' 'AllowInsecureGuestAuth'
+    if($current.Present -and [int]$current.Value -eq 1){
+        Write-Info (L 'Insecure SMB guest authentication is already enabled; Restore history was left unchanged.' 'Autentikasi guest SMB yang tidak aman sudah aktif; riwayat Restore tidak diubah.')
+        return
+    }
     $snap=New-RestoreSnapshot 'Enable insecure SMB guest' @('Registry')
     if($snap){Set-RegistryDword 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' 'AllowInsecureGuestAuth' 1;Write-Warn (L 'Insecure SMB guest authentication enabled.' 'Autentikasi guest SMB yang tidak aman diaktifkan.');Write-Info ((L 'Restore snapshot: {0}' 'Snapshot restore: {0}') -f $snap)}
 }
@@ -1712,6 +1743,11 @@ function Enable-InsecureGuestLegacy {
 function Set-LegacyLmCompatibility {
     Write-Fail (L 'This lowers machine-wide LAN Manager/NTLM authentication compatibility.' 'Ini menurunkan keamanan kompatibilitas autentikasi LAN Manager/NTLM untuk seluruh mesin.')
     if((Read-Host (L 'Type LEGACY to continue' 'Ketik LEGACY untuk lanjut')).Trim().ToUpperInvariant() -ne 'LEGACY'){return}
+    $current=Get-RegistryValueStateStrict 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' 'LmCompatibilityLevel'
+    if($current.Present -and [int]$current.Value -eq 1){
+        Write-Info (L 'LmCompatibilityLevel is already 1; Restore history was left unchanged.' 'LmCompatibilityLevel sudah bernilai 1; riwayat Restore tidak diubah.')
+        return
+    }
     $snap=New-RestoreSnapshot 'Legacy LAN Manager level' @('Registry')
     if($snap){Set-RegistryDword 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' 'LmCompatibilityLevel' 1;Write-Warn (L 'LmCompatibilityLevel=1 applied. Restore after testing.' 'LmCompatibilityLevel=1 diterapkan. Restore setelah pengujian.');Write-Info ((L 'Restore snapshot: {0}' 'Snapshot restore: {0}') -f $snap)}
 }
