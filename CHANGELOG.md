@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Legacy/high-risk compatibility actions now leave `Restore latest` unchanged when the target state is already active; RPC Named Pipes snapshots only remaining targets, and SMB1 changes abort when the baseline state is `Unknown` and cannot be restored reliably.
 - Safe Repair now preserves the previous `Restore latest` pointer when firewall, network-profile, or Network Discovery actions are already satisfied or cannot start; firewall snapshots are limited to rules that actually need mutation.
 - Firewall sharing repair now reads each modified rule back and reports success only when it is verified enabled for Domain/Private; successful/no-op firewall commands are treated as failures.
 - Service snapshots now capture only runtime `Running`/`Stopped` state, and Restore no longer changes service startup type that the repair never modified; legacy v4 snapshots containing `StartMode` remain readable but that field is not applied.
