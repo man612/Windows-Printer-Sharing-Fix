@@ -1557,9 +1557,25 @@ function Show-SafeRepairMenu {
                 }
                 $snap=New-RestoreSnapshot 'Combined non-destructive Safe Repair' @('Services','Firewall') -FirewallRules $repairRules -ServiceNames $serviceNames
                 if($snap){
-                    Invoke-RestartSpooler
-                    if($repairRules.Count){Enable-PrivateFirewallSharing -FirewallRules $repairRules}
-                    if($discoveryPlan.NeedsRepair){Start-NetworkDiscoveryServices}
+                    try{Invoke-RestartSpooler}
+                    catch{
+                        Write-Fail ((L 'Combined Safe Repair could not restart Print Spooler: {0}' 'Perbaikan Aman gabungan tidak dapat merestart Print Spooler: {0}') -f $_.Exception.Message)
+                        Write-Log ("Combined Safe Repair Spooler failure: {0}" -f $_.Exception.Message) 'ERROR'
+                    }
+                    if($repairRules.Count){
+                        try{Enable-PrivateFirewallSharing -FirewallRules $repairRules}
+                        catch{
+                            Write-Fail ((L 'Combined Safe Repair firewall step failed unexpectedly: {0}' 'Langkah firewall Perbaikan Aman gabungan gagal secara tidak terduga: {0}') -f $_.Exception.Message)
+                            Write-Log ("Combined Safe Repair firewall failure: {0}" -f $_.Exception.Message) 'ERROR'
+                        }
+                    }
+                    if($discoveryPlan.NeedsRepair){
+                        try{Start-NetworkDiscoveryServices}
+                        catch{
+                            Write-Fail ((L 'Combined Safe Repair Network Discovery step failed unexpectedly: {0}' 'Langkah Network Discovery Perbaikan Aman gabungan gagal secara tidak terduga: {0}') -f $_.Exception.Message)
+                            Write-Log ("Combined Safe Repair Network Discovery failure: {0}" -f $_.Exception.Message) 'ERROR'
+                        }
+                    }
                 }
             }
         }}catch{Write-Fail $_.Exception.Message}
