@@ -984,68 +984,85 @@ function Get-ManagedRegistryEntries([switch]$Strict) {
     return $out
 }
 
-function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Services','Network','Firewall','SMB1'),[object[]]$FirewallRules=$null,[object[]]$NetworkProfiles=$null) {
+function Get-RestoreActionContract([string]$Reason) {
+    switch($Reason){
+        'Restart Print Spooler' {return [pscustomobject]@{Scopes=@('Services');RegistryNames=@();ServiceNames=@('Spooler');AllowRegistrySubset=$false}}
+        'Enable sharing firewall rules' {return [pscustomobject]@{Scopes=@('Firewall');RegistryNames=@();ServiceNames=@();AllowRegistrySubset=$false}}
+        'Change selected network profile' {return [pscustomobject]@{Scopes=@('Network');RegistryNames=@();ServiceNames=@();AllowRegistrySubset=$false}}
+        'Start Network Discovery services' {return [pscustomobject]@{Scopes=@('Services');RegistryNames=@();ServiceNames=@('fdPHost','FDResPub');AllowRegistrySubset=$false}}
+        'Combined non-destructive Safe Repair' {return [pscustomobject]@{Scopes=@('Services','Firewall');RegistryNames=@();ServiceNames=@('Spooler','fdPHost','FDResPub');AllowRegistrySubset=$false}}
+        'RPC Named Pipes compatibility fallback' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('RpcUseNamedPipeProtocol','RpcProtocols');ServiceNames=@();AllowRegistrySubset=$true}}
+        'Temporary Point and Print relaxation' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('RestrictDriverInstallationToAdministrators');ServiceNames=@();AllowRegistrySubset=$false}}
+        'High-risk RPC privacy workaround' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('RpcAuthnLevelPrivacyEnabled');ServiceNames=@();AllowRegistrySubset=$false}}
+        'Enable SMB1 client' {return [pscustomobject]@{Scopes=@('SMB1');RegistryNames=@();ServiceNames=@();AllowRegistrySubset=$false}}
+        'Enable insecure SMB guest' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('AllowInsecureGuestAuth');ServiceNames=@();AllowRegistrySubset=$false}}
+        'Legacy LAN Manager level' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('LmCompatibilityLevel');ServiceNames=@();AllowRegistrySubset=$false}}
+        default {throw "Restore action contract is not recognized: $Reason"}
+    }
+}
+function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Services','Network','Firewall','SMB1'),[object[]]$FirewallRules=$null,[object[]]$NetworkProfiles=$null,[string[]]$RegistryNames=$null) {
     $dir=$null
-    try {
+    try{
+        $contract=Get-RestoreActionContract $Reason
+        $actualScopes=@($Scopes|ForEach-Object{[string]$_})
+        $expectedScopes=@($contract.Scopes|ForEach-Object{[string]$_})
+        if(@($actualScopes|Select-Object -Unique).Count -ne $actualScopes.Count -or $actualScopes.Count -ne $expectedScopes.Count -or @($actualScopes|Where-Object{$_ -notin $expectedScopes}).Count){
+            throw "Snapshot scopes do not match the managed action contract for: $Reason"
+        }
+
         $registry=@();$services=@();$profiles=@();$fw=@();$features=@()
 
-        if($Scopes -contains 'Registry'){
-            $registryTargets=@{
-                'RPC Named Pipes compatibility fallback'=@('RpcUseNamedPipeProtocol','RpcProtocols')
-                'Temporary Point and Print relaxation'=@('RestrictDriverInstallationToAdministrators')
-                'High-risk RPC privacy workaround'=@('RpcAuthnLevelPrivacyEnabled')
-                'Enable insecure SMB guest'=@('AllowInsecureGuestAuth')
-                'Legacy LAN Manager level'=@('LmCompatibilityLevel')
+        if($actualScopes -contains 'Registry'){
+            $allowedNames=@($contract.RegistryNames)
+            if($PSBoundParameters.ContainsKey('RegistryNames')){
+                $names=@($RegistryNames|ForEach-Object{[string]$_}|Where-Object{$_}|Select-Object -Unique)
+            }else{
+                $names=@($allowedNames)
             }
-            if(-not $registryTargets.ContainsKey($Reason)){throw "No action-specific registry snapshot scope is defined for: $Reason"}
-            $names=@($registryTargets[$Reason])
+            if(-not $names.Count){throw "No registry targets were selected for: $Reason"}
+            if(@($names|Where-Object{$_ -notin $allowedNames}).Count){throw "Registry snapshot target is outside the managed action contract for: $Reason"}
+            if(-not [bool]$contract.AllowRegistrySubset -and ($names.Count -ne $allowedNames.Count -or @($allowedNames|Where-Object{$_ -notin $names}).Count)){
+                throw "Registry snapshot targets do not match the managed action contract for: $Reason"
+            }
             $registry=@(Get-ManagedRegistryEntries -Strict|Where-Object{[string]$_.Name -in $names})
             if($registry.Count -ne $names.Count){throw "Action-specific registry snapshot is incomplete for: $Reason"}
         }
 
-        if($Scopes -contains 'Services'){
-            $serviceTargets=@{
-                'Restart Print Spooler'=@('Spooler')
-                'Start Network Discovery services'=@('fdPHost','FDResPub')
-                'Combined non-destructive Safe Repair'=@('Spooler','fdPHost','FDResPub')
-            }
-            if(-not $serviceTargets.ContainsKey($Reason)){throw "No action-specific service snapshot scope is defined for: $Reason"}
-            foreach($name in @($serviceTargets[$Reason])){
+        if($actualScopes -contains 'Services'){
+            foreach($name in @($contract.ServiceNames)){
                 try{
                     $service=Get-CimInstance Win32_Service -Filter "Name='$name'"
                     if($null -eq $service){throw "Service not found: $name"}
                     $services+=[pscustomobject]@{Name=$name;State=$service.State;StartMode=$service.StartMode}
                 }catch{throw ("Service snapshot failed for {0}: {1}" -f $name,$_.Exception.Message)}
             }
+            if($services.Count -ne @($contract.ServiceNames).Count){throw "Service snapshot is incomplete for: $Reason"}
         }
 
-        if($Scopes -contains 'Network'){
-            if($Reason -ne 'Change selected network profile'){throw "No action-specific network snapshot scope is defined for: $Reason"}
+        if($actualScopes -contains 'Network'){
             $sourceProfiles=if($PSBoundParameters.ContainsKey('NetworkProfiles')){@($NetworkProfiles)}else{@(Get-NetworkProfilesSafe)}
             $profiles=@($sourceProfiles|ForEach-Object{[pscustomobject]@{InterfaceIndex=[int]$_.InterfaceIndex;NetworkCategory=[string]$_.NetworkCategory}})
-            if(-not $profiles.Count){throw 'No network profile was supplied for the selected-network snapshot.'}
+            if($profiles.Count -ne 1){throw 'Selected-network snapshot must contain exactly one network profile.'}
         }
 
-        if($Scopes -contains 'Firewall'){
-            if($Reason -notin @('Enable sharing firewall rules','Combined non-destructive Safe Repair')){throw "No action-specific firewall snapshot scope is defined for: $Reason"}
+        if($actualScopes -contains 'Firewall'){
             $sourceRules=if($PSBoundParameters.ContainsKey('FirewallRules')){@($FirewallRules)}else{@(Get-FirewallSharingRules)}
             $changedRules=@($sourceRules|Where-Object{[string]$_.Profile -match 'Private|Domain|Any'})
             $fw=@($changedRules|ForEach-Object{[pscustomobject]@{Name=[string]$_.Name;Enabled=[string]$_.Enabled;Profile=[string]$_.Profile}})
         }
 
-        if($Scopes -contains 'SMB1'){
-            if($Reason -ne 'Enable SMB1 client'){throw "No action-specific SMB1 snapshot scope is defined for: $Reason"}
+        if($actualScopes -contains 'SMB1'){
             $features=@([pscustomobject]@{Name='SMB1Protocol-Client';State=(Get-WindowsFeatureState 'SMB1Protocol-Client')})
         }
 
         $dir=Join-Path $script:BackupRoot ((Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[Guid]::NewGuid().ToString('N').Substring(0,6))
         New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop|Out-Null
-        $state=[pscustomobject]@{Version=$script:Version;Created=(Get-Date).ToString('o');Reason=$Reason;Scopes=@($Scopes);Registry=$registry;Services=$services;NetworkProfiles=$profiles;FirewallRules=$fw;WindowsFeatures=$features}
+        $state=[pscustomobject]@{Version=$script:Version;Created=(Get-Date).ToString('o');Reason=$Reason;Scopes=@($actualScopes);Registry=$registry;Services=$services;NetworkProfiles=$profiles;FirewallRules=$fw;WindowsFeatures=$features}
         $state|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $dir 'managed-state.json') -Encoding UTF8 -ErrorAction Stop
-        Write-Log "Snapshot: $dir reason=$Reason scopes=$($Scopes -join ',')"
+        Write-Log "Snapshot: $dir reason=$Reason scopes=$($actualScopes -join ',')"
         $dir|Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8 -ErrorAction Stop
         return $dir
-    } catch {
+    }catch{
         if($dir -and (Test-Path -LiteralPath $dir -PathType Container)){Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue}
         Write-Fail ((L 'Snapshot failed: {0}' 'Pembuatan snapshot gagal: {0}') -f $_.Exception.Message)
         Write-Log $_.Exception.Message 'ERROR'
@@ -1060,47 +1077,28 @@ function Restore-ServiceStartMode([string]$Name,[string]$Mode) {
 }
 
 function Get-ValidatedRestoreSnapshot([string]$Directory) {
-    if (-not $Directory) { throw 'Restore snapshot pointer is empty.' }
+    if(-not $Directory){throw 'Restore snapshot pointer is empty.'}
     $backupFull=[IO.Path]::GetFullPath([string]$script:BackupRoot).TrimEnd([char]'\',[char]'/')
     $dirFull=[IO.Path]::GetFullPath($Directory).TrimEnd([char]'\',[char]'/')
     $parent=[IO.Path]::GetDirectoryName($dirFull).TrimEnd([char]'\',[char]'/')
-    if (-not [string]::Equals($parent,$backupFull,[StringComparison]::OrdinalIgnoreCase)) {
-        throw 'Restore snapshot is outside the managed backup root.'
-    }
+    if(-not [string]::Equals($parent,$backupFull,[StringComparison]::OrdinalIgnoreCase)){throw 'Restore snapshot is outside the managed backup root.'}
     $leaf=[IO.Path]::GetFileName($dirFull)
-    if ($leaf -notmatch '^\d{8}-\d{6}-[0-9a-fA-F]{6}$') { throw 'Restore snapshot directory name is invalid.' }
+    if($leaf -notmatch '^\d{8}-\d{6}-[0-9a-fA-F]{6}$'){throw 'Restore snapshot directory name is invalid.'}
     $dirItem=Get-Item -LiteralPath $dirFull -Force -ErrorAction Stop
-    if (-not $dirItem.PSIsContainer -or (($dirItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
-        throw 'Restore snapshot directory is not a normal managed directory.'
-    }
+    if(-not $dirItem.PSIsContainer -or (($dirItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){throw 'Restore snapshot directory is not a normal managed directory.'}
 
     $file=Join-Path $dirFull 'managed-state.json'
-    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw 'Restore snapshot state file is missing.' }
-    $state=Get-Content -LiteralPath $file -Raw -ErrorAction Stop | ConvertFrom-Json
+    if(-not(Test-Path -LiteralPath $file -PathType Leaf)){throw 'Restore snapshot state file is missing.'}
+    $state=Get-Content -LiteralPath $file -Raw -ErrorAction Stop|ConvertFrom-Json
     $required=@('Version','Reason','Scopes','Registry','Services','NetworkProfiles','FirewallRules','WindowsFeatures')
-    foreach($property in $required){
-        if($property -notin @($state.PSObject.Properties.Name)){throw "Restore snapshot is missing required field: $property"}
-    }
-    if ([string]$state.Version -notmatch '^4(?:\.|$)') { throw 'Restore snapshot was not created by a compatible v4 release.' }
+    foreach($property in $required){if($property -notin @($state.PSObject.Properties.Name)){throw "Restore snapshot is missing required field: $property"}}
+    if([string]$state.Version -notmatch '^4(?:\.|$)'){throw 'Restore snapshot was not created by a compatible v4 release.'}
 
-    $reasonScopes=@{
-        'Restart Print Spooler'=@('Services')
-        'Enable sharing firewall rules'=@('Firewall')
-        'Change selected network profile'=@('Network')
-        'Start Network Discovery services'=@('Services')
-        'Combined non-destructive Safe Repair'=@('Services','Firewall')
-        'RPC Named Pipes compatibility fallback'=@('Registry')
-        'Temporary Point and Print relaxation'=@('Registry')
-        'High-risk RPC privacy workaround'=@('Registry')
-        'Enable SMB1 client'=@('SMB1')
-        'Enable insecure SMB guest'=@('Registry')
-        'Legacy LAN Manager level'=@('Registry')
-    }
     $reason=[string]$state.Reason
-    if (-not $reasonScopes.ContainsKey($reason)) { throw 'Restore snapshot reason is not recognized.' }
-    $scopes=@($state.Scopes | ForEach-Object {[string]$_})
-    $expectedScopes=@($reasonScopes[$reason])
-    if (@($scopes | Select-Object -Unique).Count -ne $scopes.Count -or $scopes.Count -ne $expectedScopes.Count -or @($scopes | Where-Object {$_ -notin $expectedScopes}).Count) {
+    $contract=Get-RestoreActionContract $reason
+    $scopes=@($state.Scopes|ForEach-Object{[string]$_})
+    $expectedScopes=@($contract.Scopes|ForEach-Object{[string]$_})
+    if(@($scopes|Select-Object -Unique).Count -ne $scopes.Count -or $scopes.Count -ne $expectedScopes.Count -or @($scopes|Where-Object{$_ -notin $expectedScopes}).Count){
         throw 'Restore snapshot scopes do not match the recorded managed action.'
     }
 
@@ -1115,26 +1113,46 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
         if($scopeName -notin $scopes -and @($collections[$scopeName]).Count){throw "Restore snapshot contains state outside its declared scope: $scopeName"}
     }
 
-    $allowedRegistry=@{}
+    $managedRegistry=@{}
     foreach($managed in @(Get-ManagedRegistryEntries)){
         $key=(([string]$managed.Path).TrimEnd([char]'\').ToUpperInvariant()+'|'+([string]$managed.Name).ToUpperInvariant())
-        $allowedRegistry[$key]=$true
+        $managedRegistry[$key]=$managed
+    }
+    $allowedRegistryKeys=@{}
+    foreach($name in @($contract.RegistryNames)){
+        foreach($managed in @($managedRegistry.Values|Where-Object{[string]$_.Name -eq [string]$name})){
+            $key=(([string]$managed.Path).TrimEnd([char]'\').ToUpperInvariant()+'|'+([string]$managed.Name).ToUpperInvariant())
+            $allowedRegistryKeys[$key]=$true
+        }
+    }
+    $registryEntries=@($state.Registry)
+    if($scopes -contains 'Registry'){
+        if(-not $registryEntries.Count){throw 'Restore snapshot is missing registry state required by its action contract.'}
+        if(-not [bool]$contract.AllowRegistrySubset -and $registryEntries.Count -ne @($contract.RegistryNames).Count){throw 'Restore snapshot registry state does not match its action contract.'}
+        if([bool]$contract.AllowRegistrySubset -and $registryEntries.Count -gt @($contract.RegistryNames).Count){throw 'Restore snapshot registry state exceeds its action contract.'}
     }
     $seenRegistry=@{}
-    foreach($entry in @($state.Registry)){
+    foreach($entry in $registryEntries){
         $key=(([string]$entry.Path).TrimEnd([char]'\').ToUpperInvariant()+'|'+([string]$entry.Name).ToUpperInvariant())
-        if(-not $allowedRegistry.ContainsKey($key)){throw "Restore snapshot contains unmanaged registry state: $($entry.Path)\\$($entry.Name)"}
+        if(-not $managedRegistry.ContainsKey($key)){throw "Restore snapshot contains unmanaged registry state: $($entry.Path)\$($entry.Name)"}
+        if(-not $allowedRegistryKeys.ContainsKey($key)){throw "Restore snapshot registry state does not belong to action '$reason': $($entry.Name)"}
         if($seenRegistry.ContainsKey($key)){throw 'Restore snapshot contains duplicate registry state.'}
         $seenRegistry[$key]=$true
-        if(-not ($entry.Present -is [bool])){throw 'Restore snapshot registry presence value is invalid.'}
+        if(-not($entry.Present -is [bool])){throw 'Restore snapshot registry presence value is invalid.'}
         if($entry.Present -and [string]$entry.Kind -notin @('DWord','QWord','String','ExpandString','MultiString','Binary')){throw 'Restore snapshot registry value kind is invalid.'}
     }
 
-    $allowedServices=@('Spooler','fdPHost','FDResPub')
+    $serviceEntries=@($state.Services)
+    $expectedServices=@($contract.ServiceNames)
+    if($scopes -contains 'Services'){
+        $actualServiceNames=@($serviceEntries|ForEach-Object{[string]$_.Name}|Sort-Object)
+        $wantedServiceNames=@($expectedServices|Sort-Object)
+        if(($actualServiceNames -join '|') -ne ($wantedServiceNames -join '|')){throw "Restore snapshot service state does not match action '$reason'."}
+    }
     $seenServices=@{}
-    foreach($service in @($state.Services)){
+    foreach($service in $serviceEntries){
         $name=[string]$service.Name
-        if($name -notin $allowedServices){throw "Restore snapshot contains unmanaged service state: $name"}
+        if($name -notin $expectedServices){throw "Restore snapshot contains service state outside action '$reason': $name"}
         $key=$name.ToUpperInvariant()
         if($seenServices.ContainsKey($key)){throw 'Restore snapshot contains duplicate service state.'}
         $seenServices[$key]=$true
@@ -1144,8 +1162,10 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
 
     $currentProfiles=@{}
     foreach($networkProfile in @(Get-NetworkProfilesSafe)){$currentProfiles[[int]$networkProfile.InterfaceIndex]=$true}
+    $networkEntries=@($state.NetworkProfiles)
+    if($scopes -contains 'Network' -and $networkEntries.Count -ne 1){throw 'Restore snapshot must contain exactly one selected network profile.'}
     $seenProfiles=@{}
-    foreach($networkProfile in @($state.NetworkProfiles)){
+    foreach($networkProfile in $networkEntries){
         $index=[int]$networkProfile.InterfaceIndex
         if($index -le 0 -or -not $currentProfiles.ContainsKey($index)){throw "Restore snapshot references an unavailable network profile: $index"}
         if($seenProfiles.ContainsKey($index)){throw 'Restore snapshot contains duplicate network profile state.'}
@@ -1163,11 +1183,13 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
         if($seenRules.ContainsKey($key)){throw 'Restore snapshot contains duplicate firewall rule state.'}
         $seenRules[$key]=$true
         if([string]$rule.Enabled -notin @('True','False')){throw "Restore snapshot has an invalid firewall enabled state: $name"}
-        $profiles=@(([string]$rule.Profile -split ',') | ForEach-Object {$_.Trim()} | Where-Object {$_})
-        if(-not $profiles.Count -or @($profiles | Where-Object {$_ -notin @('Domain','Private','Public','Any')}).Count){throw "Restore snapshot has an invalid firewall profile: $name"}
+        $profiles=@(([string]$rule.Profile -split ',')|ForEach-Object{$_.Trim()}|Where-Object{$_})
+        if(-not $profiles.Count -or @($profiles|Where-Object{$_ -notin @('Domain','Private','Public','Any')}).Count){throw "Restore snapshot has an invalid firewall profile: $name"}
     }
 
-    foreach($feature in @($state.WindowsFeatures)){
+    $featureEntries=@($state.WindowsFeatures)
+    if($scopes -contains 'SMB1' -and ($featureEntries.Count -ne 1 -or [string]$featureEntries[0].Name -ne 'SMB1Protocol-Client')){throw 'Restore snapshot SMB1 state does not match its action contract.'}
+    foreach($feature in $featureEntries){
         if([string]$feature.Name -ne 'SMB1Protocol-Client'){throw "Restore snapshot contains an unmanaged Windows feature: $($feature.Name)"}
         if([string]$feature.State -notmatch '^(Enabled|Disabled|Unknown)'){throw 'Restore snapshot has an invalid SMB1 client state.'}
     }
@@ -1446,11 +1468,22 @@ function Show-SafeRepairMenu {
 }
 
 function Set-RpcNamedPipeFallback {
-    $d=Invoke-Diagnosis -Quiet
-    $snap=New-RestoreSnapshot 'RPC Named Pipes compatibility fallback' @('Registry');if(-not $snap){return}
+    $diagnosis=Invoke-Diagnosis -Quiet
+    $role=[string]$diagnosis.Role
+    $applyClient=($role -match 'Client') -or $role -eq 'Unknown / local only'
+    $applyHost=($role -match 'Host') -or $role -eq 'Unknown / local only'
+    $registryNames=@()
+    if($applyClient){$registryNames+='RpcUseNamedPipeProtocol'}
+    if($applyHost){$registryNames+='RpcProtocols'}
+    if(-not $registryNames.Count){
+        Write-Warn ((L 'RPC role could not be mapped to a managed compatibility target: {0}' 'Peran RPC tidak dapat dipetakan ke target kompatibilitas yang dikelola: {0}') -f $role)
+        return
+    }
+    $snap=New-RestoreSnapshot 'RPC Named Pipes compatibility fallback' @('Registry') -RegistryNames $registryNames
+    if(-not $snap){return}
     Write-Warn (L 'RPC over TCP is the Windows default. Named Pipes is a compatibility fallback.' 'RPC melalui TCP adalah default Windows. Named Pipes hanya fallback kompatibilitas.')
-    if($d.Role -match 'Client' -or $d.Role -eq 'Unknown / local only'){Set-RegistryDword 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcUseNamedPipeProtocol' 1;Write-Ok (L 'Client outgoing printer RPC set to Named Pipes fallback.' 'RPC printer keluar pada sisi klien diatur memakai fallback Named Pipes.')}
-    if($d.Role -match 'Host' -or $d.Role -eq 'Unknown / local only'){Set-RegistryDword 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcProtocols' 7;Write-Ok (L 'Print host RPC listener set to allow supported protocol families.' 'Listener RPC pada host printer diatur agar menerima keluarga protokol yang didukung.')}
+    if($applyClient){Set-RegistryDword 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcUseNamedPipeProtocol' 1;Write-Ok (L 'Client outgoing printer RPC set to Named Pipes fallback.' 'RPC printer keluar pada sisi klien diatur memakai fallback Named Pipes.')}
+    if($applyHost){Set-RegistryDword 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' 'RpcProtocols' 7;Write-Ok (L 'Print host RPC listener set to allow supported protocol families.' 'Listener RPC pada host printer diatur agar menerima keluarga protokol yang didukung.')}
     Write-Info ((L 'Restore snapshot: {0}' 'Snapshot restore: {0}') -f $snap)
 }
 
