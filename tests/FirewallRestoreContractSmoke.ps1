@@ -45,7 +45,7 @@ function Write-Snapshot([string]$Leaf,[string]$Reason,[string[]]$Scopes,[object[
 }
 function Assert-Rejected([string]$Directory,[string]$Label){
     $accepted=$false
-    try{[void](Get-ValidatedRestoreSnapshot $Directory);$accepted=$true}catch{}
+    try{[void](Get-ValidatedRestoreSnapshot $Directory);$accepted=$true}catch{$null=$_.Exception.Message}
     if($accepted){throw "$Label was accepted by Restore validation."}
 }
 
