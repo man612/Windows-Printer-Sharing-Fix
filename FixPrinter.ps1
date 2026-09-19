@@ -1057,6 +1057,9 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
             $sourceProfiles=if($PSBoundParameters.ContainsKey('NetworkProfiles')){@($NetworkProfiles)}else{@(Get-NetworkProfilesSafe)}
             $profiles=@($sourceProfiles|ForEach-Object{[pscustomobject]@{InterfaceIndex=[int]$_.InterfaceIndex;NetworkCategory=[string]$_.NetworkCategory}})
             if($profiles.Count -ne 1){throw 'Selected-network snapshot must contain exactly one network profile.'}
+            if($Reason -eq 'Change selected network profile' -and [string]$profiles[0].NetworkCategory -ne 'Public'){
+                throw 'Network-profile repair snapshot requires a Public baseline.'
+            }
         }
 
         if($actualScopes -contains 'Firewall'){
@@ -1069,7 +1072,11 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
         }
 
         if($actualScopes -contains 'SMB1'){
-            $features=@([pscustomobject]@{Name='SMB1Protocol-Client';State=(Get-WindowsFeatureState 'SMB1Protocol-Client')})
+            $featureState=Get-WindowsFeatureState 'SMB1Protocol-Client'
+            if($Reason -eq 'Enable SMB1 client' -and [string]$featureState -ne 'Disabled'){
+                throw "SMB1 legacy snapshot requires an exactly Disabled baseline; current state is $featureState"
+            }
+            $features=@([pscustomobject]@{Name='SMB1Protocol-Client';State=[string]$featureState})
         }
 
         $dir=Join-Path $script:BackupRoot ((Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[Guid]::NewGuid().ToString('N').Substring(0,6))
@@ -1181,7 +1188,7 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
     }
 
     $currentProfiles=@{}
-    foreach($networkProfile in @(Get-NetworkProfilesSafe)){$currentProfiles[[int]$networkProfile.InterfaceIndex]=$true}
+    foreach($currentNetworkProfile in @(Get-NetworkProfilesSafe)){$currentProfiles[[int]$currentNetworkProfile.InterfaceIndex]=$currentNetworkProfile}
     $networkEntries=@($state.NetworkProfiles)
     if($scopes -contains 'Network' -and $networkEntries.Count -ne 1){throw 'Restore snapshot must contain exactly one selected network profile.'}
     $seenProfiles=@{}
@@ -1191,6 +1198,14 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
         if($seenProfiles.ContainsKey($index)){throw 'Restore snapshot contains duplicate network profile state.'}
         $seenProfiles[$index]=$true
         if([string]$networkProfile.NetworkCategory -notin @('Public','Private','DomainAuthenticated')){throw "Restore snapshot has an invalid network category: $($networkProfile.NetworkCategory)"}
+        if($reason -eq 'Change selected network profile'){
+            if([string]$networkProfile.NetworkCategory -ne 'Public'){
+                throw 'Restore snapshot network baseline does not belong to the selected-network Safe Repair action.'
+            }
+            if([string]$currentProfiles[$index].NetworkCategory -eq 'DomainAuthenticated'){
+                throw 'Restore will not override a network profile that is currently DomainAuthenticated.'
+            }
+        }
     }
 
     $sharingRuleNames=@{}
@@ -1218,7 +1233,9 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
     if($scopes -contains 'SMB1' -and ($featureEntries.Count -ne 1 -or [string]$featureEntries[0].Name -ne 'SMB1Protocol-Client')){throw 'Restore snapshot SMB1 state does not match its action contract.'}
     foreach($feature in $featureEntries){
         if([string]$feature.Name -ne 'SMB1Protocol-Client'){throw "Restore snapshot contains an unmanaged Windows feature: $($feature.Name)"}
-        if([string]$feature.State -notmatch '^(Enabled|Disabled|Unknown)'){throw 'Restore snapshot has an invalid SMB1 client state.'}
+        if($reason -eq 'Enable SMB1 client' -and [string]$feature.State -ne 'Disabled'){
+            throw "Restore snapshot SMB1 baseline does not belong to the legacy enable action: $($feature.State)"
+        }
     }
 
     return [pscustomobject]@{Directory=$dirFull;State=$state}
@@ -1770,8 +1787,8 @@ function Enable-Smb1ClientLegacy {
         Write-Info (L 'SMB1 client is already enabled or pending enablement; Restore history was left unchanged.' 'Klien SMB1 sudah aktif atau menunggu aktivasi; riwayat Restore tidak diubah.')
         return
     }
-    if($current -match '^Unknown'){
-        Write-Fail (L 'SMB1 client state could not be read reliably, so the legacy change was not started.' 'Kondisi klien SMB1 tidak dapat dibaca dengan andal, jadi perubahan legacy tidak dijalankan.')
+    if([string]$current -ne 'Disabled'){
+        Write-Fail ((L 'SMB1 client baseline state {0} cannot be restored exactly by this tool, so the legacy change was not started.' 'Kondisi awal klien SMB1 {0} tidak dapat direstore secara persis oleh alat ini, jadi perubahan legacy tidak dijalankan.') -f $current)
         return
     }
     $snap=New-RestoreSnapshot 'Enable SMB1 client' @('SMB1')

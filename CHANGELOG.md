@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Selected-network Restore snapshots now require a Public baseline, and SMB1 legacy enablement now requires an exactly Disabled baseline; non-restorable SMB1 states are rejected before snapshot or mutation.
 - Firewall Restore contracts now reject empty firewall-only snapshots and Public-only firewall state that Safe Repair would never mutate.
 - Network Discovery and combined Safe Repair now snapshot only services that actually need mutation; combined repair also snapshots only firewall rules requiring repair, while always retaining Spooler as its required service target.
 - Temporary Point and Print now detects an already-connected target UNC before confirmation, snapshot creation, or security relaxation, leaving protection and Restore history untouched.
