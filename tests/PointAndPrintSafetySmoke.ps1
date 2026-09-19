@@ -23,7 +23,7 @@ function Write-Fail([string]$Text){}
 function Write-Ok([string]$Text){}
 function Write-Info([string]$Text){}
 function Write-Log([string]$Message,[string]$Level='INFO'){}
-function Get-RegistryValueState([string]$Path,[string]$Name){
+function Get-RegistryValueStateStrict([string]$Path,[string]$Name){
     $null=@($Path,$Name)
     [pscustomobject]@{Present=$true;Value=1;Kind='DWord'}
 }
