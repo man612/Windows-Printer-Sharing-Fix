@@ -989,7 +989,7 @@ function Get-RestoreActionContract([string]$Reason) {
         'Restart Print Spooler' {return [pscustomobject]@{Scopes=@('Services');RegistryNames=@();ServiceNames=@('Spooler');RequiredServiceNames=@('Spooler');AllowRegistrySubset=$false;AllowServiceSubset=$false}}
         'Enable sharing firewall rules' {return [pscustomobject]@{Scopes=@('Firewall');RegistryNames=@();ServiceNames=@();RequiredServiceNames=@();AllowRegistrySubset=$false;AllowServiceSubset=$false}}
         'Change selected network profile' {return [pscustomobject]@{Scopes=@('Network');RegistryNames=@();ServiceNames=@();RequiredServiceNames=@();AllowRegistrySubset=$false;AllowServiceSubset=$false}}
-        'Start Network Discovery services' {return [pscustomobject]@{Scopes=@('Services');RegistryNames=@();ServiceNames=@('fdPHost','FDResPub');RequiredServiceNames=@('fdPHost','FDResPub');AllowRegistrySubset=$false;AllowServiceSubset=$false}}
+        'Start Network Discovery services' {return [pscustomobject]@{Scopes=@('Services');RegistryNames=@();ServiceNames=@('fdPHost','FDResPub');RequiredServiceNames=@();AllowRegistrySubset=$false;AllowServiceSubset=$true}}
         'Combined non-destructive Safe Repair' {return [pscustomobject]@{Scopes=@('Services','Firewall');RegistryNames=@();ServiceNames=@('Spooler','fdPHost','FDResPub');RequiredServiceNames=@('Spooler');AllowRegistrySubset=$false;AllowServiceSubset=$true}}
         'RPC Named Pipes compatibility fallback' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('RpcUseNamedPipeProtocol','RpcProtocols');ServiceNames=@();RequiredServiceNames=@();AllowRegistrySubset=$true;AllowServiceSubset=$false}}
         'Temporary Point and Print relaxation' {return [pscustomobject]@{Scopes=@('Registry');RegistryNames=@('RestrictDriverInstallationToAdministrators');ServiceNames=@();RequiredServiceNames=@();AllowRegistrySubset=$false;AllowServiceSubset=$false}}
@@ -1542,7 +1542,8 @@ function Show-SafeRepairMenu {
                     Write-Info (L 'Network Discovery services are already running; Restore history was left unchanged.' 'Layanan Network Discovery sudah berjalan; riwayat Restore tidak diubah.')
                     break
                 }
-                $snap=New-RestoreSnapshot 'Start Network Discovery services' @('Services')
+                $serviceNames=@($plan.Services|Where-Object{$_.Status -ne 'Running'}|ForEach-Object{[string]$_.Name})
+                $snap=New-RestoreSnapshot 'Start Network Discovery services' @('Services') -ServiceNames $serviceNames
                 if($snap){Start-NetworkDiscoveryServices}
             }
             '6'{
