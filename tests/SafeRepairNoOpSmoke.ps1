@@ -18,6 +18,7 @@ $script:ChoiceQueue=@()
 $script:SelectedProfile=$null
 $script:FirewallFixture=@()
 $script:ServiceStates=@{}
+$script:SnapshotServiceNames=@()
 
 function L([string]$English,[string]$Indonesian){$English}
 function T([string]$Key){$Key}
@@ -38,10 +39,11 @@ function Read-Choice([string]$Prompt,[string[]]$Allowed){
     return $next
 }
 function New-RestoreSnapshot{
-    param([string]$Reason,[string[]]$Scopes,[object[]]$FirewallRules,[object[]]$NetworkProfiles)
+    param([string]$Reason,[string[]]$Scopes,[object[]]$FirewallRules,[object[]]$NetworkProfiles,[string[]]$ServiceNames)
     $null=@($Reason,$Scopes,$NetworkProfiles)
     $script:SnapshotCalls++
     if($PSBoundParameters.ContainsKey('FirewallRules')){$script:SnapshotFirewallNames=@($FirewallRules|ForEach-Object{[string]$_.Name})}
+    if($PSBoundParameters.ContainsKey('ServiceNames')){$script:SnapshotServiceNames=@($ServiceNames)}
     return 'synthetic-snapshot'
 }
 function Get-FirewallSharingRules{@($script:FirewallFixture)}
@@ -69,6 +71,7 @@ function Reset-Harness{
     $script:SelectedProfile=$null
     $script:FirewallFixture=@()
     $script:ServiceStates=@{}
+    $script:SnapshotServiceNames=@()
 }
 
 # Firewall no-op: only Public rule -> no snapshot.
@@ -112,11 +115,20 @@ $script:ChoiceQueue=@('5','B')
 Show-SafeRepairMenu
 if($script:SnapshotCalls -ne 0){throw 'Already-running Network Discovery Safe Repair created a Restore snapshot.'}
 
-# Network Discovery needs change -> snapshot is still created before mutation.
+# Network Discovery needs change -> snapshot only the stopped service before mutation.
 Reset-Harness
 $script:ServiceStates=@{fdPHost='Stopped';FDResPub='Running'}
 $script:ChoiceQueue=@('5','B')
 Show-SafeRepairMenu
 if($script:SnapshotCalls -ne 1){throw 'Network Discovery repair requiring change did not create a snapshot.'}
+if(($script:SnapshotServiceNames -join ',') -ne 'fdPHost'){throw 'Network Discovery snapshot included a service already Running.'}
 
-Write-Host 'Safe-repair no-op smoke passed: no-op firewall/network/discovery actions preserve Restore history, while real mutations still snapshot first.' -ForegroundColor Green
+# If both discovery services need repair, both remain in snapshot scope.
+Reset-Harness
+$script:ServiceStates=@{fdPHost='Stopped';FDResPub='Stopped'}
+$script:ChoiceQueue=@('5','B')
+Show-SafeRepairMenu
+$sortedServiceNames=@($script:SnapshotServiceNames|Sort-Object)
+if(($sortedServiceNames -join ',') -ne 'fdPHost,FDResPub'){throw 'Network Discovery snapshot omitted a stopped service.'}
+
+Write-Host 'Safe-repair no-op smoke passed: no-op firewall/network/discovery actions preserve Restore history, and Network Discovery snapshots only services that need mutation.' -ForegroundColor Green
