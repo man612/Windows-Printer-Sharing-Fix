@@ -18,9 +18,11 @@ $script:Language = 'EN'
 New-Item -ItemType Directory -Path $script:BackupRoot -Force | Out-Null
 
 function L([string]$English,[string]$Indonesian){$English}
+$script:OkMessages=@()
+$script:FailMessages=@()
 function Write-Warn([string]$Text){}
-function Write-Fail([string]$Text){}
-function Write-Ok([string]$Text){}
+function Write-Fail([string]$Text){$script:FailMessages += $Text}
+function Write-Ok([string]$Text){$script:OkMessages += $Text}
 function Write-Info([string]$Text){}
 function Write-Log([string]$Message,[string]$Level='INFO'){}
 function Get-RegistryValueStateStrict([string]$Path,[string]$Name){
@@ -37,6 +39,10 @@ function Reset-Harness {
     $script:AddCount=0
     $script:FailAdd=$false
     $script:FailRollback=$false
+    $script:AddChangesInventory=$true
+    $script:PrinterInstalled=$false
+    $script:OkMessages=@()
+    $script:FailMessages=@()
 }
 function Read-Host([string]$Prompt){
     $null=$Prompt
@@ -56,10 +62,15 @@ function Set-RegistryDword([string]$Path,[string]$Name,[int]$Value){
     $script:SetCount++
 }
 function Add-Printer{
-    param([string]$ConnectionName)
+    [CmdletBinding()] param([string]$ConnectionName)
     $null=$ConnectionName
     $script:AddCount++
     if($script:FailAdd){throw 'synthetic Add-Printer failure'}
+    if($script:AddChangesInventory){$script:PrinterInstalled=$true}
+}
+function Get-PrinterInventory{
+    if($script:PrinterInstalled){return @([pscustomobject]@{Name='\\host\printer';Type='Connection'})}
+    return @()
 }
 function Restore-RegistryValue($Entry){
     $null=$Entry
@@ -78,6 +89,8 @@ try {
     if($latest -ne $previous){throw 'Successful temporary Point and Print replaced existing Restore history.'}
     if(Test-Path -LiteralPath (Join-Path $script:BackupRoot '20260918-120000-abcdef')){throw 'Successful temporary Point and Print left its emergency snapshot behind.'}
     if($script:SetCount -ne 1 -or $script:RestoreCount -ne 1 -or $script:AddCount -ne 1){throw 'Successful Point and Print call counts are inconsistent.'}
+    if(-not $script:PrinterInstalled){throw 'Successful Point and Print did not leave the connection in inventory.'}
+    if(($script:OkMessages -join ' ') -notmatch 'Shared printer connection verified'){throw 'Successful Point and Print did not report verified connection.'}
 
     # With no previous history, success leaves no synthetic latest pointer.
     Reset-Harness
@@ -95,6 +108,19 @@ try {
     $latest=([string](Get-Content -LiteralPath $script:LatestStateFile | Select-Object -First 1)).Trim()
     if($latest -ne $previous){throw 'Failed connection attempt did not restore previous Restore history after successful rollback.'}
     if($script:RestoreCount -ne 1){throw 'Failed connection attempt did not execute rollback exactly once.'}
+
+    # A successful/no-op Add-Printer command must fail connection verification but still roll protection back.
+    Reset-Harness
+    $previous=Join-Path $script:BackupRoot '20260917-110003-fedcba'
+    New-Item -ItemType Directory -Path $previous -Force | Out-Null
+    $previous | Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8
+    $script:AddChangesInventory=$false
+    Connect-SharedPrinterTemporarilyRelaxed
+    $latest=([string](Get-Content -LiteralPath $script:LatestStateFile | Select-Object -First 1)).Trim()
+    if($latest -ne $previous){throw 'Unverified connection did not restore previous Restore history after successful rollback.'}
+    if($script:PrinterInstalled){throw 'No-op Add-Printer unexpectedly appeared in inventory.'}
+    if(-not $script:FailMessages.Count){throw 'No-op Add-Printer did not produce a connection verification failure.'}
+    if(($script:OkMessages -join ' ') -match 'Shared printer connection verified'){throw 'No-op Add-Printer produced false connection success.'}
 
     # Rollback failure must retain the emergency snapshot as latest.
     Reset-Harness
