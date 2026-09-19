@@ -20,13 +20,15 @@ New-Item -ItemType Directory -Path $script:BackupRoot -Force | Out-Null
 function L([string]$English,[string]$Indonesian){$English}
 $script:OkMessages=@()
 $script:FailMessages=@()
+$script:InfoMessages=@()
 function Write-Warn([string]$Text){}
 function Write-Fail([string]$Text){$script:FailMessages += $Text}
 function Write-Ok([string]$Text){$script:OkMessages += $Text}
-function Write-Info([string]$Text){}
+function Write-Info([string]$Text){$script:InfoMessages += $Text}
 function Write-Log([string]$Message,[string]$Level='INFO'){}
 function Get-RegistryValueStateStrict([string]$Path,[string]$Name){
     $null=@($Path,$Name)
+    $script:RegistryReadCount++
     [pscustomobject]@{Present=$true;Value=1;Kind='DWord'}
 }
 
@@ -34,6 +36,8 @@ function Reset-Harness {
     Remove-Item -LiteralPath $script:BackupRoot -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Path $script:BackupRoot -Force | Out-Null
     $script:ReadCount=0
+    $script:SnapshotCount=0
+    $script:RegistryReadCount=0
     $script:SetCount=0
     $script:RestoreCount=0
     $script:AddCount=0
@@ -43,6 +47,7 @@ function Reset-Harness {
     $script:PrinterInstalled=$false
     $script:OkMessages=@()
     $script:FailMessages=@()
+    $script:InfoMessages=@()
 }
 function Read-Host([string]$Prompt){
     $null=$Prompt
@@ -52,6 +57,7 @@ function Read-Host([string]$Prompt){
 }
 function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes){
     $null=@($Reason,$Scopes)
+    $script:SnapshotCount++
     $dir=Join-Path $script:BackupRoot '20260918-120000-abcdef'
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     $dir | Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8
@@ -79,6 +85,19 @@ function Restore-RegistryValue($Entry){
 }
 
 try {
+    # An already-connected target must return before RISK confirmation, snapshot, or security relaxation.
+    Reset-Harness
+    $previous=Join-Path $script:BackupRoot '20260917-105959-fedcba'
+    New-Item -ItemType Directory -Path $previous -Force | Out-Null
+    $previous | Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8
+    $script:PrinterInstalled=$true
+    Connect-SharedPrinterTemporarilyRelaxed
+    $latest=([string](Get-Content -LiteralPath $script:LatestStateFile | Select-Object -First 1)).Trim()
+    if($latest -ne $previous){throw 'Already-connected Point and Print changed Restore history.'}
+    if($script:ReadCount -ne 1){throw 'Already-connected Point and Print requested RISK confirmation unnecessarily.'}
+    if($script:SnapshotCount -ne 0 -or $script:RegistryReadCount -ne 0 -or $script:SetCount -ne 0 -or $script:AddCount -ne 0 -or $script:RestoreCount -ne 0){throw 'Already-connected Point and Print touched snapshot, registry, connection, or rollback paths.'}
+    if(($script:InfoMessages -join ' ') -notmatch 'already connected'){throw 'Already-connected Point and Print did not explain that protection was left unchanged.'}
+
     # Existing Restore history survives a successful temporary relaxation.
     Reset-Harness
     $previous=Join-Path $script:BackupRoot '20260917-110000-fedcba'
