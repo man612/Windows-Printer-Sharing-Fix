@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Registry writes, Spooler restart, network-profile changes, SMB1 client enablement, and targeted printer removal now verify resulting Windows state before reporting success.
 - Managed Restore now treats registry, firewall, network, SMB1 feature, and service failures as partial restore failures instead of reporting unconditional success, while continuing other restore categories and verifying feature/service end state.
 - Firewall, Network Discovery, and print-queue repairs now report success only after the underlying Windows operations complete as expected; queue cleanup also guarantees a Spooler recovery attempt and reports partial failure instead of a false `[OK]`.
 - Restore snapshots are now narrowed to the exact state each repair action can change, avoiding unrelated registry, service, network, or firewall rollback; failed snapshot capture also leaves no orphan directory or replaced latest pointer.
