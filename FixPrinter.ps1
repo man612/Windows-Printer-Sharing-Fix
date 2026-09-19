@@ -1014,7 +1014,11 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
 
         if($actualScopes -contains 'Registry'){
             $allowedNames=@($contract.RegistryNames)
-            $names=if($PSBoundParameters.ContainsKey('RegistryNames')){@($RegistryNames|ForEach-Object{[string]$_}|Where-Object{$_}|Select-Object -Unique)}else{@($allowedNames)}
+            if($PSBoundParameters.ContainsKey('RegistryNames')){
+                $names=@($RegistryNames|ForEach-Object{[string]$_}|Where-Object{$_}|Select-Object -Unique)
+            }else{
+                $names=@($allowedNames)
+            }
             if(-not $names.Count){throw "No registry targets were selected for: $Reason"}
             if(@($names|Where-Object{$_ -notin $allowedNames}).Count){throw "Registry snapshot target is outside the managed action contract for: $Reason"}
             if(-not [bool]$contract.AllowRegistrySubset -and ($names.Count -ne $allowedNames.Count -or @($allowedNames|Where-Object{$_ -notin $names}).Count)){
