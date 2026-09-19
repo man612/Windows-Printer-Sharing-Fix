@@ -55,7 +55,7 @@ function Assert-Rejected([string]$Directory,[string]$Label){
 try {
     $validDir=Join-Path $script:BackupRoot '20260918-120000-abcdef'
     $valid=New-State 'Combined non-destructive Safe Repair' @('Services','Firewall')
-    $valid.Services=@([pscustomobject]@{Name='Spooler';State='Stopped';StartMode='Manual'})
+    $valid.Services=@([pscustomobject]@{Name='Spooler';State='Stopped';StartMode='Manual'},[pscustomobject]@{Name='fdPHost';State='Running';StartMode='Manual'},[pscustomobject]@{Name='FDResPub';State='Running';StartMode='Manual'})
     $valid.FirewallRules=@([pscustomobject]@{Name='FPS-Test';Enabled='False';Profile='Private'})
     Write-Snapshot $validDir $valid
     $checked=Get-ValidatedRestoreSnapshot $validDir
