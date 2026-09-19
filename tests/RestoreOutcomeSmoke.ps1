@@ -78,7 +78,8 @@ function Set-NetFirewallRule {
 }
 function Get-NetFirewallRule {
     [CmdletBinding()] param([string]$Name)
-    [pscustomobject]@{Name=$Name;Enabled=$script:FirewallEnabled;Profile=$script:FirewallProfile}
+    $null=$Name
+    [pscustomobject]@{Name='FPS-Test';Enabled=$script:FirewallEnabled;Profile=$script:FirewallProfile}
 }
 function Set-NetConnectionProfile {
     [CmdletBinding()] param([int]$InterfaceIndex,[string]$NetworkCategory)
@@ -88,7 +89,8 @@ function Set-NetConnectionProfile {
 }
 function Get-NetConnectionProfile {
     [CmdletBinding()] param([int]$InterfaceIndex)
-    [pscustomobject]@{InterfaceIndex=$InterfaceIndex;NetworkCategory=$script:NetworkCategory}
+    $null=$InterfaceIndex
+    [pscustomobject]@{InterfaceIndex=7;NetworkCategory=$script:NetworkCategory}
 }
 function Get-WindowsFeatureState([string]$Name){$null=$Name;$script:FeatureState}
 function Enable-WindowsOptionalFeature {
