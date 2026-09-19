@@ -115,11 +115,11 @@ Managed state currently includes only the subset relevant to the action being pe
 
 Restore changes only those managed states. It does not import an old copy of the complete Windows Print registry tree.
 
-Before any restore mutation, the latest pointer and snapshot are treated as untrusted input. The snapshot directory must be a normal direct child of the managed backup root, the recorded reason and scopes must match a known v4 action, and every registry/service/network/firewall/SMB1 entry is validated against the corresponding managed allowlist or current Windows inventory. Validation completes before the confirmation prompt and before the first state-changing command.
+Before any restore mutation, the latest pointer and snapshot are treated as untrusted input. Registry snapshot capture uses strict registry reads so an access/read failure cannot be mistaken for an absent value. Restore writes are followed by state read-back for registry values, firewall rules, network profiles, Windows features, and services; a command returning without error is not sufficient for success.
 
 This reduces the chance of rolling unrelated printers or newer Windows configuration backwards, and prevents a damaged or edited snapshot from expanding Restore beyond state that the tool is designed to manage.
 
-Temporary Point and Print compatibility uses a managed snapshot as an emergency rollback anchor while protection is lowered. After the original registry state is restored successfully, the temporary snapshot is removed and the previous `Restore latest` pointer is reinstated. If rollback cannot be confirmed, the emergency snapshot is deliberately retained as the latest recovery state.
+Temporary Point and Print compatibility uses a managed snapshot as an emergency rollback anchor while protection is lowered. The printer connection is also read back from inventory before the connection attempt may report success. After the original registry state is restored successfully, the temporary snapshot is removed and the previous `Restore latest` pointer is reinstated. If rollback cannot be confirmed, the emergency snapshot is deliberately retained as the latest recovery state.
 
 ## Irreversible actions
 
