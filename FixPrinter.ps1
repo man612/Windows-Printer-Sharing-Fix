@@ -1575,9 +1575,15 @@ function Set-RpcNamedPipeFallback {
 function Connect-SharedPrinterTemporarilyRelaxed {
     $unc=(Read-Host (L 'Shared printer path, e.g. \\PRINT-PC\OfficePrinter' 'Path printer sharing, contoh \\PC-PRINT\PrinterKantor')).Trim()
     if($unc -notmatch '^\\\\[^\\]+\\[^\\]+$'){Write-Warn (L 'Invalid printer UNC path.' 'Path UNC printer tidak valid.');return}
-    $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint';$original=Get-RegistryValueStateStrict $path 'RestrictDriverInstallationToAdministrators'
+    $existing=@(Get-PrinterInventory|Where-Object{[string]$_.Name -eq [string]$unc})
+    if($existing.Count){
+        Write-Info ((L 'This shared printer is already connected; Point and Print protection was not changed: {0}' 'Printer sharing ini sudah terhubung; proteksi Point and Print tidak diubah: {0}') -f $unc)
+        return
+    }
+    $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint'
     Write-Warn (L 'This temporarily reduces Point and Print driver-installation protection. It will be restored immediately after the connection attempt.' 'Tindakan ini menurunkan proteksi pemasangan driver Point and Print hanya sementara. Nilai sebelumnya akan langsung dikembalikan setelah percobaan koneksi.')
     if((Read-Host (L 'Type RISK to continue' 'Ketik RISK untuk lanjut')).Trim().ToUpperInvariant() -ne 'RISK'){return}
+    $original=Get-RegistryValueStateStrict $path 'RestrictDriverInstallationToAdministrators'
 
     $hadPreviousLatest=Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf
     $previousLatest=$null

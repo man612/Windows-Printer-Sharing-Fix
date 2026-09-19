@@ -20,20 +20,27 @@ New-Item -ItemType Directory -Path $script:BackupRoot -Force | Out-Null
 function L([string]$English,[string]$Indonesian){$English}
 $script:OkMessages=@()
 $script:FailMessages=@()
+$script:InfoMessages=@()
 function Write-Warn([string]$Text){}
 function Write-Fail([string]$Text){$script:FailMessages += $Text}
 function Write-Ok([string]$Text){$script:OkMessages += $Text}
-function Write-Info([string]$Text){}
+function Write-Info([string]$Text){$script:InfoMessages += $Text}
 function Write-Log([string]$Message,[string]$Level='INFO'){}
 function Get-RegistryValueStateStrict([string]$Path,[string]$Name){
     $null=@($Path,$Name)
-    [pscustomobject]@{Present=$true;Value=1;Kind='DWord'}
+    $script:RegistryReadCount++
+    [pscustomobject]@{Present=$true;Value=$script:RegistryValue;Kind='DWord'}
 }
 
 function Reset-Harness {
     Remove-Item -LiteralPath $script:BackupRoot -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Path $script:BackupRoot -Force | Out-Null
     $script:ReadCount=0
+    $script:SnapshotCount=0
+    $script:RegistryValue=1
+    $script:ChangeRegistryOnRisk=$false
+    $script:RollbackValue=$null
+    $script:RegistryReadCount=0
     $script:SetCount=0
     $script:RestoreCount=0
     $script:AddCount=0
@@ -43,23 +50,27 @@ function Reset-Harness {
     $script:PrinterInstalled=$false
     $script:OkMessages=@()
     $script:FailMessages=@()
+    $script:InfoMessages=@()
 }
 function Read-Host([string]$Prompt){
     $null=$Prompt
     $script:ReadCount++
     if($script:ReadCount -eq 1){return '\\host\printer'}
+    if($script:ChangeRegistryOnRisk){$script:RegistryValue=1}
     return 'RISK'
 }
 function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes){
     $null=@($Reason,$Scopes)
+    $script:SnapshotCount++
     $dir=Join-Path $script:BackupRoot '20260918-120000-abcdef'
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     $dir | Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8
     return $dir
 }
 function Set-RegistryDword([string]$Path,[string]$Name,[int]$Value){
-    $null=@($Path,$Name,$Value)
+    $null=@($Path,$Name)
     $script:SetCount++
+    $script:RegistryValue=$Value
 }
 function Add-Printer{
     [CmdletBinding()] param([string]$ConnectionName)
@@ -73,12 +84,26 @@ function Get-PrinterInventory{
     return @()
 }
 function Restore-RegistryValue($Entry){
-    $null=$Entry
     $script:RestoreCount++
     if($script:FailRollback){throw 'synthetic rollback failure'}
+    $script:RollbackValue=$Entry.Value
+    $script:RegistryValue=[int]$Entry.Value
 }
 
 try {
+    # An already-connected target must return before RISK confirmation, snapshot, or security relaxation.
+    Reset-Harness
+    $previous=Join-Path $script:BackupRoot '20260917-105959-fedcba'
+    New-Item -ItemType Directory -Path $previous -Force | Out-Null
+    $previous | Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8
+    $script:PrinterInstalled=$true
+    Connect-SharedPrinterTemporarilyRelaxed
+    $latest=([string](Get-Content -LiteralPath $script:LatestStateFile | Select-Object -First 1)).Trim()
+    if($latest -ne $previous){throw 'Already-connected Point and Print changed Restore history.'}
+    if($script:ReadCount -ne 1){throw 'Already-connected Point and Print requested RISK confirmation unnecessarily.'}
+    if($script:SnapshotCount -ne 0 -or $script:RegistryReadCount -ne 0 -or $script:SetCount -ne 0 -or $script:AddCount -ne 0 -or $script:RestoreCount -ne 0){throw 'Already-connected Point and Print touched snapshot, registry, connection, or rollback paths.'}
+    if(($script:InfoMessages -join ' ') -notmatch 'already connected'){throw 'Already-connected Point and Print did not explain that protection was left unchanged.'}
+
     # Existing Restore history survives a successful temporary relaxation.
     Reset-Harness
     $previous=Join-Path $script:BackupRoot '20260917-110000-fedcba'
@@ -91,6 +116,13 @@ try {
     if($script:SetCount -ne 1 -or $script:RestoreCount -ne 1 -or $script:AddCount -ne 1){throw 'Successful Point and Print call counts are inconsistent.'}
     if(-not $script:PrinterInstalled){throw 'Successful Point and Print did not leave the connection in inventory.'}
     if(($script:OkMessages -join ' ') -notmatch 'Shared printer connection verified'){throw 'Successful Point and Print did not report verified connection.'}
+
+    # Baseline must be captured after RISK confirmation so a change while the prompt is open is not overwritten by stale rollback.
+    Reset-Harness
+    $script:RegistryValue=0
+    $script:ChangeRegistryOnRisk=$true
+    Connect-SharedPrinterTemporarilyRelaxed
+    if($script:RollbackValue -ne 1 -or $script:RegistryValue -ne 1){throw 'Point and Print rollback used a stale pre-confirmation registry baseline.'}
 
     # With no previous history, success leaves no synthetic latest pointer.
     Reset-Harness
