@@ -149,6 +149,7 @@ The stable PowerShell implementation is guarded by layered tests rather than a s
 - restore-safety smoke tests reject out-of-root, malformed, scope-mismatched, and unmanaged snapshot targets before confirmation or mutation;
 - repair-outcome smoke tests inject Windows-command failures and require the TUI to suppress success reporting while exercising recovery paths;
 - repair-postcondition smoke tests model successful/no-op Windows commands and require read-back confirmation before a repair may report success;
+- firewall repair additionally reads each exact File and Printer Sharing rule back after mutation and requires `Enabled=True` with Domain/Private-only scope before counting it as successful;
 - managed-Restore outcome smoke tests inject failures across restore categories, require remaining categories to continue, and prohibit success unless every requested restore operation succeeds;
 - service-restore-scope smoke tests prove new snapshots omit startup type and legacy snapshots restore runtime state without `Set-Service -StartupType`;
 - restore-action-contract smoke tests require RPC role-specific snapshots to equal the actual mutation set and reject cross-action managed targets;

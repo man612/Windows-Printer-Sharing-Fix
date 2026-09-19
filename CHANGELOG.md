@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Firewall sharing repair now reads each modified rule back and reports success only when it is verified enabled for Domain/Private; successful/no-op firewall commands are treated as failures.
 - Service snapshots now capture only runtime `Running`/`Stopped` state, and Restore no longer changes service startup type that the repair never modified; legacy v4 snapshots containing `StartMode` remain readable but that field is not applied.
 - Restore snapshot creation and validation now share a centralized per-action contract; RPC Named Pipes snapshots follow the detected Client/Host role, and managed registry state belonging to another action is rejected.
 - Managed Restore now verifies registry, firewall, and network read-back state, registry snapshots use strict reads before mutation, and temporary Point and Print reports connection success only after the target UNC appears in printer inventory.

@@ -1368,7 +1368,8 @@ function Invoke-ClearPrintQueue {
 }
 
 function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null) {
-    if(-not(Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue)){Write-Warn (L 'Modern firewall cmdlets unavailable.' 'Cmdlet firewall modern tidak tersedia.');return}
+    if(-not(Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue)){Write-Warn (L 'Modern firewall mutation cmdlet is unavailable.' 'Cmdlet perubahan firewall modern tidak tersedia.');return}
+    if(-not(Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue)){Write-Warn (L 'Modern firewall read-back cmdlet is unavailable; repair was not started.' 'Cmdlet pembacaan ulang firewall modern tidak tersedia; perbaikan tidak dijalankan.');return}
     $rules=@(if($PSBoundParameters.ContainsKey('FirewallRules')){@($FirewallRules)}else{@(Get-FirewallSharingRules)})
     if(-not $rules.Count){Write-Warn (L 'File and Printer Sharing firewall group could not be identified.' 'Grup firewall File and Printer Sharing tidak dapat diidentifikasi.');return}
     $eligible=@($rules|Where-Object{[string]$_.Profile -match 'Private|Domain|Any'})
@@ -1378,6 +1379,13 @@ function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null) {
     foreach($rule in $eligible){
         try{
             Set-NetFirewallRule -Name $rule.Name -Enabled True -Profile Domain,Private -ErrorAction Stop
+            $verified=Get-NetFirewallRule -Name $rule.Name -ErrorAction Stop|Select-Object -First 1
+            if($null -eq $verified){throw 'Firewall rule could not be read back after repair.'}
+            $expectedProfiles=@('Domain','Private'|Sort-Object)
+            $actualProfiles=@(([string]$verified.Profile -split ',')|ForEach-Object{$_.Trim()}|Where-Object{$_}|Sort-Object -Unique)
+            if(-not [string]::Equals('True',[string]$verified.Enabled,[StringComparison]::OrdinalIgnoreCase) -or ($expectedProfiles -join ',') -ne ($actualProfiles -join ',')){
+                throw "Firewall rule postcondition mismatch: Enabled=$($verified.Enabled) Profile=$($verified.Profile)"
+            }
             $succeeded++
         }catch{
             $failed+=([string]$rule.Name)
@@ -1385,12 +1393,11 @@ function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null) {
         }
     }
     if($failed.Count){
-        Write-Fail ((L 'Firewall repair updated {0} of {1} eligible rule(s); {2} failed. Check the log before assuming sharing is enabled.' 'Perbaikan firewall memperbarui {0} dari {1} aturan yang memenuhi syarat; {2} gagal. Periksa log sebelum menganggap sharing sudah aktif.') -f $succeeded,$eligible.Count,$failed.Count)
+        Write-Fail ((L 'Firewall repair verified {0} of {1} eligible rule(s); {2} failed or could not be verified. Check the log before assuming sharing is enabled.' 'Perbaikan firewall memverifikasi {0} dari {1} aturan yang memenuhi syarat; {2} gagal atau tidak dapat diverifikasi. Periksa log sebelum menganggap sharing sudah aktif.') -f $succeeded,$eligible.Count,$failed.Count)
         return
     }
-    Write-Ok ((L 'Enabled/limited {0} sharing firewall rule(s) to Domain/Private.' '{0} aturan firewall sharing diaktifkan/dibatasi hanya untuk Domain/Private.') -f $succeeded)
+    Write-Ok ((L 'Verified {0} sharing firewall rule(s) enabled for Domain/Private only.' '{0} aturan firewall sharing terverifikasi aktif hanya untuk Domain/Private.') -f $succeeded)
 }
-
 function Select-NetworkProfile {
     $p=@(Get-NetworkProfilesSafe|Where-Object{$_.IPv4Connectivity -ne 'Disconnected'})
     if(-not $p.Count){Write-Warn (L 'No active network profile found.' 'Tidak ditemukan profil jaringan aktif.');return $null}
