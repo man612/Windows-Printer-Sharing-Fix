@@ -88,6 +88,10 @@ try {
     $dir=New-RestoreSnapshot 'Start Network Discovery services' @('Services')
     Assert-Names @((Read-State $dir).Services) @('fdPHost','FDResPub') 'Network Discovery services'
 
+    $dir=New-RestoreSnapshot 'Start Network Discovery services' @('Services') -ServiceNames @('fdPHost')
+    Assert-Names @((Read-State $dir).Services) @('fdPHost') 'Network Discovery partial services'
+    [void](Get-ValidatedRestoreSnapshot $dir)
+
     $rules=@(Get-FirewallSharingRules)
     $dir=New-RestoreSnapshot 'Enable sharing firewall rules' @('Firewall') -FirewallRules $rules
     Assert-Names @((Read-State $dir).FirewallRules) @('FPS-Private','FPS-Domain') 'Firewall repair'
