@@ -1574,7 +1574,478 @@ function Set-RpcNamedPipeFallback {
 
 function Connect-SharedPrinterTemporarilyRelaxed {
     $unc=(Read-Host (L 'Shared printer path, e.g. \\PRINT-PC\OfficePrinter' 'Path printer sharing, contoh \\PC-PRINT\PrinterKantor')).Trim()
-    if($unc -notmatch '^\\\\[^\\]+\\[^\\]+$'){Write-Warn (L 'Invalid printer UNC path.' 'Path UNC printer tidak valid.');return}
+    if($unc -notmatch '^\\\\[^\\]+\\[^\\]+    $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint';$original=Get-RegistryValueStateStrict $path 'RestrictDriverInstallationToAdministrators'
+    Write-Warn (L 'This temporarily reduces Point and Print driver-installation protection. It will be restored immediately after the connection attempt.' 'Tindakan ini menurunkan proteksi pemasangan driver Point and Print hanya sementara. Nilai sebelumnya akan langsung dikembalikan setelah percobaan koneksi.')
+    if((Read-Host (L 'Type RISK to continue' 'Ketik RISK untuk lanjut')).Trim().ToUpperInvariant() -ne 'RISK'){return}
+
+    $hadPreviousLatest=Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf
+    $previousLatest=$null
+    if($hadPreviousLatest){
+        try{$previousLatest=([string](Get-Content -LiteralPath $script:LatestStateFile -ErrorAction Stop|Select-Object -First 1)).Trim()}
+        catch{
+            Write-Warn ((L 'Could not preserve the current Restore pointer, so the temporary Point and Print change was not started: {0}' 'Pointer Restore saat ini tidak dapat diamankan, jadi perubahan Point and Print sementara tidak dijalankan: {0}') -f $_.Exception.Message)
+            Write-Log ("Temporary Point and Print aborted before mutation because the existing Restore pointer could not be read: {0}" -f $_.Exception.Message) 'ERROR'
+            return
+        }
+    }
+
+    $snap=New-RestoreSnapshot 'Temporary Point and Print relaxation' @('Registry');if(-not $snap){return}
+    try{
+        Set-RegistryDword $path 'RestrictDriverInstallationToAdministrators' 0
+        if(Get-Command Add-Printer -ErrorAction SilentlyContinue){
+            Add-Printer -ConnectionName $unc -ErrorAction Stop
+        }else{
+            $process=Start-Process rundll32.exe -ArgumentList ('printui.dll,PrintUIEntry /in /n "{0}"' -f $unc) -Wait -PassThru
+            if($process.ExitCode -ne 0){throw "PrintUI connection exited with code $($process.ExitCode)."}
+        }
+        $connected=@(Get-PrinterInventory|Where-Object{[string]$_.Name -eq [string]$unc})
+        if(-not $connected.Count){throw "Shared printer connection could not be verified: $unc"}
+        Write-Ok ((L 'Shared printer connection verified: {0}' 'Koneksi printer sharing terverifikasi: {0}') -f $unc)
+    }catch{Write-Fail $_.Exception.Message}
+    finally{
+        $rollbackSucceeded=$false
+        try{
+            Restore-RegistryValue ([pscustomobject]@{Path=$path;Name='RestrictDriverInstallationToAdministrators';Present=$original.Present;Value=$original.Value;Kind=$original.Kind})
+            $rollbackSucceeded=$true
+            Write-Ok (L 'Point and Print protection returned to its previous state.' 'Proteksi Point and Print sudah dikembalikan ke kondisi sebelumnya.')
+        }catch{
+            Write-Fail ((L 'Point and Print protection could not be restored automatically: {0}' 'Proteksi Point and Print tidak dapat dikembalikan otomatis: {0}') -f $_.Exception.Message)
+            Write-Log ("Temporary Point and Print rollback failed; emergency restore snapshot retained at $snap. Error: {0}" -f $_.Exception.Message) 'ERROR'
+        }
+
+        if($rollbackSucceeded){
+            try{
+                if($hadPreviousLatest){
+                    if(-not $previousLatest){throw 'Previous Restore pointer was empty.'}
+                    $previousLatest|Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8 -ErrorAction Stop
+                }else{
+                    Remove-Item -LiteralPath $script:LatestStateFile -Force -ErrorAction SilentlyContinue
+                }
+                if(Test-Path -LiteralPath $snap -PathType Container){Remove-Item -LiteralPath $snap -Recurse -Force -ErrorAction Stop}
+                Write-Log 'Temporary Point and Print rollback succeeded; previous Restore history was preserved.'
+            }catch{
+                Write-Warn ((L 'Point and Print protection was restored, but temporary Restore history cleanup was incomplete: {0}' 'Proteksi Point and Print sudah kembali, tetapi pembersihan riwayat Restore sementara belum lengkap: {0}') -f $_.Exception.Message)
+                Write-Log ("Temporary Point and Print rollback succeeded but Restore history cleanup failed: {0}" -f $_.Exception.Message) 'WARN'
+            }
+        }else{
+            Write-Warn ((L 'The temporary Restore snapshot was kept as the latest snapshot because rollback could not be confirmed: {0}' 'Snapshot Restore sementara dipertahankan sebagai snapshot terbaru karena rollback belum dapat dipastikan: {0}') -f $snap)
+        }
+    }
+}
+
+function Set-RpcPrivacyCompatibility {
+    Write-Header (L 'RPC PRIVACY COMPATIBILITY' 'KOMPATIBILITAS PRIVASI RPC')
+    Write-Fail (L 'This disables RPC packet-level privacy enforcement for incoming printer connections.' 'Ini menonaktifkan penerapan privasi paket RPC untuk koneksi printer yang masuk.')
+    Write-Warn (L 'Use only for proven legacy incompatibility and restore it after testing.' 'Gunakan hanya jika inkompatibilitas perangkat lama sudah terbukti, lalu restore setelah pengujian.')
+    if((Read-Host (L 'Type RISK to continue' 'Ketik RISK untuk lanjut')).Trim().ToUpperInvariant() -ne 'RISK'){return}
+    $current=Get-RegistryValueStateStrict 'HKLM:\SYSTEM\CurrentControlSet\Control\Print' 'RpcAuthnLevelPrivacyEnabled'
+    if($current.Present -and [int]$current.Value -eq 0){
+        Write-Info (L 'RPC packet privacy is already disabled; Restore history was left unchanged.' 'Privasi paket RPC sudah dinonaktifkan; riwayat Restore tidak diubah.')
+        return
+    }
+    $snap=New-RestoreSnapshot 'High-risk RPC privacy workaround' @('Registry')
+    if($snap){Set-RegistryDword 'HKLM:\SYSTEM\CurrentControlSet\Control\Print' 'RpcAuthnLevelPrivacyEnabled' 0;Write-Warn (L 'RPC packet privacy is now disabled.' 'Privasi paket RPC sekarang dinonaktifkan.');Write-Info ((L 'Restore snapshot: {0}' 'Snapshot restore: {0}') -f $snap)}
+}
+
+function Show-WppHelp {
+    $w=Get-WppState
+    if($w.Enabled){
+        Write-Warn (L 'Windows Protected Print Mode appears enabled.' 'Windows Protected Print Mode tampak aktif.')
+        Write-Info (L 'Legacy third-party-driver printers may be removed or blocked.' 'Printer dengan driver pihak ketiga yang lama mungkin dihapus atau diblokir.')
+        if($w.GroupPolicy.Present -and [int]$w.GroupPolicy.Value -eq 1){Write-Warn (L 'WPP appears policy-enforced. This utility will not bypass organizational policy.' 'WPP tampak dipaksakan melalui policy. Utilitas ini tidak akan melewati kebijakan organisasi.')}
+        else{Write-Info (L 'Manage WPP in Settings > Bluetooth & devices > Printers & scanners > Printer preferences.' 'Kelola WPP melalui Settings > Bluetooth & devices > Printers & scanners > Printer preferences.');if(Read-YesNo (L 'Open Settings now?' 'Buka Settings sekarang?') $false){Start-Process 'ms-settings:printers'}}
+    }else{Write-Ok (L 'WPP is not detected as enabled.' 'WPP tidak terdeteksi aktif.')}
+}
+
+function Reset-ClientPrinterConnectionTargeted {
+    $p=@(Get-PrinterInventory|Where-Object{$_.Name -like '\\*' -or $_.Type -eq 'Connection'})
+    if(-not $p.Count){Write-Warn (L 'No network printer connection detected.' 'Tidak ada koneksi printer jaringan yang terdeteksi.');return}
+    for($i=0;$i -lt $p.Count;$i++){Write-Host ('[{0}] {1}' -f ($i+1),$p[$i].Name)}
+    $allowed=@(1..$p.Count|ForEach-Object{[string]$_})+'B'
+    $c=Read-Choice (L 'Choose one connection to remove, or B' 'Pilih satu koneksi yang akan dilepas, atau B untuk kembali') $allowed;if($c -eq 'B'){return}
+    $target=$p[[int]$c-1].Name
+    Write-Warn (L 'Removing a printer connection is not recreated by generic Restore. You must reconnect the same UNC path manually if needed.' 'Koneksi printer yang dilepas tidak dapat dibuat ulang oleh Restore umum. Jika diperlukan, sambungkan kembali path UNC yang sama secara manual.')
+    if(-not(Read-YesNo ((L 'Remove only {0}?' 'Lepas hanya {0}?') -f $target) $true)){return}
+    if(Get-Command Remove-Printer -ErrorAction SilentlyContinue){
+        Remove-Printer -Name $target -ErrorAction Stop
+    }else{
+        $process=Start-Process rundll32.exe -ArgumentList ('printui.dll,PrintUIEntry /dn /n "{0}"' -f $target) -Wait -PassThru
+        if($process.ExitCode -ne 0){throw "PrintUI removal exited with code $($process.ExitCode)."}
+    }
+    $remaining=@(Get-PrinterInventory|Where-Object{[string]$_.Name -eq [string]$target})
+    if($remaining.Count){throw "Targeted printer connection is still installed: $target"}
+    Write-Ok ((L 'Removed targeted connection: {0}' 'Koneksi yang dipilih berhasil dilepas: {0}') -f $target)
+    Write-Info (L 'Reconnect the same UNC path after restarting the spooler if needed.' 'Jika perlu, sambungkan kembali path UNC yang sama setelah restart Spooler.')
+    Write-Log "Targeted printer connection removed: $target" 'WARN'
+}
+
+function Show-CompatibilityMenu {
+    while($true){
+        Write-Header (L 'COMPATIBILITY REPAIR' 'PERBAIKAN KOMPATIBILITAS')
+        Write-Warn (L 'Use these only when diagnosis points to a specific compatibility problem.' 'Gunakan bagian ini hanya jika hasil diagnosis mengarah ke masalah kompatibilitas tertentu.')
+        Write-Rule
+        Write-Host (L '[1] RPC Named Pipes fallback (role-aware; keeps RPC privacy)' '[1] Fallback RPC Named Pipes (sesuai peran; privasi RPC tetap aktif)')
+        Write-Host (L '[2] Connect shared printer with TEMPORARY Point and Print relaxation' '[2] Sambungkan printer sharing dengan relaksasi Point and Print SEMENTARA')
+        Write-Host (L '[3] Check Windows Protected Print Mode (WPP)' '[3] Periksa Windows Protected Print Mode (WPP)')
+        Write-Host (L '[4] Remove one targeted network-printer connection for clean reconnect' '[4] Lepas satu koneksi printer jaringan untuk reconnect bersih')
+        Write-Host (L '[5] Disable RPC packet privacy [HIGH RISK]' '[5] Nonaktifkan privasi paket RPC [RISIKO TINGGI]') -ForegroundColor Yellow
+        Write-Host "[B] $(T 'Back')"
+        $c=Read-Choice (T 'Select') @('1','2','3','4','5','B');if($c -eq 'B'){return}
+        try{switch($c){'1'{Set-RpcNamedPipeFallback};'2'{Connect-SharedPrinterTemporarilyRelaxed};'3'{Show-WppHelp};'4'{Reset-ClientPrinterConnectionTargeted};'5'{Set-RpcPrivacyCompatibility}}}catch{Write-Fail $_.Exception.Message}
+        Pause-Tui
+    }
+}
+
+function Enable-Smb1ClientLegacy {
+    Write-Fail (L 'SMB1 is obsolete and unsafe. Use only when a specific old device is proven SMB1-only.' 'SMB1 sudah usang dan tidak aman. Gunakan hanya jika perangkat lama tertentu benar-benar terbukti hanya mendukung SMB1.')
+    if((Read-Host (L 'Type LEGACY to continue' 'Ketik LEGACY untuk lanjut')).Trim().ToUpperInvariant() -ne 'LEGACY'){return}
+    if(-not(Get-Command Enable-WindowsOptionalFeature -ErrorAction SilentlyContinue)){
+        Write-Fail (L 'Enable-WindowsOptionalFeature is unavailable; SMB1 client was not changed.' 'Enable-WindowsOptionalFeature tidak tersedia; klien SMB1 tidak diubah.')
+        return
+    }
+    $current=Get-WindowsFeatureState 'SMB1Protocol-Client'
+    if($current -match '^Enabled' -or $current -match '^EnablePending'){
+        Write-Info (L 'SMB1 client is already enabled or pending enablement; Restore history was left unchanged.' 'Klien SMB1 sudah aktif atau menunggu aktivasi; riwayat Restore tidak diubah.')
+        return
+    }
+    if($current -match '^Unknown'){
+        Write-Fail (L 'SMB1 client state could not be read reliably, so the legacy change was not started.' 'Kondisi klien SMB1 tidak dapat dibaca dengan andal, jadi perubahan legacy tidak dijalankan.')
+        return
+    }
+    $snap=New-RestoreSnapshot 'Enable SMB1 client' @('SMB1')
+    if(-not $snap){return}
+    Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol-Client -NoRestart -ErrorAction Stop|Out-Null
+    $verified=Get-WindowsFeatureState 'SMB1Protocol-Client'
+    if($verified -notmatch '^Enabled' -and $verified -notmatch '^EnablePending'){
+        throw "SMB1 client enablement could not be verified; current state is $verified"
+    }
+    if($verified -match '^EnablePending'){
+        Write-Warn (L 'SMB1 CLIENT enablement is pending a Windows restart. SMB1 server was not enabled.' 'Pengaktifan KLIEN SMB1 menunggu restart Windows. Server SMB1 tidak diaktifkan.')
+    }else{
+        Write-Warn (L 'SMB1 CLIENT enabled. SMB1 server was not enabled.' 'KLIEN SMB1 diaktifkan. Server SMB1 tidak diaktifkan.')
+    }
+    Write-Info ((L 'Restore snapshot: {0}' 'Snapshot restore: {0}') -f $snap)
+}
+
+function Enable-InsecureGuestLegacy {
+    Write-Fail (L 'Insecure guest SMB authentication weakens credential protection.' 'Autentikasi guest SMB yang tidak aman melemahkan proteksi kredensial.')
+    if((Read-Host (L 'Type LEGACY to continue' 'Ketik LEGACY untuk lanjut')).Trim().ToUpperInvariant() -ne 'LEGACY'){return}
+    $current=Get-RegistryValueStateStrict 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' 'AllowInsecureGuestAuth'
+    if($current.Present -and [int]$current.Value -eq 1){
+        Write-Info (L 'Insecure SMB guest authentication is already enabled; Restore history was left unchanged.' 'Autentikasi guest SMB yang tidak aman sudah aktif; riwayat Restore tidak diubah.')
+        return
+    }
+    $snap=New-RestoreSnapshot 'Enable insecure SMB guest' @('Registry')
+    if($snap){Set-RegistryDword 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' 'AllowInsecureGuestAuth' 1;Write-Warn (L 'Insecure SMB guest authentication enabled.' 'Autentikasi guest SMB yang tidak aman diaktifkan.');Write-Info ((L 'Restore snapshot: {0}' 'Snapshot restore: {0}') -f $snap)}
+}
+
+function Set-LegacyLmCompatibility {
+    Write-Fail (L 'This lowers machine-wide LAN Manager/NTLM authentication compatibility.' 'Ini menurunkan keamanan kompatibilitas autentikasi LAN Manager/NTLM untuk seluruh mesin.')
+    if((Read-Host (L 'Type LEGACY to continue' 'Ketik LEGACY untuk lanjut')).Trim().ToUpperInvariant() -ne 'LEGACY'){return}
+    $current=Get-RegistryValueStateStrict 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' 'LmCompatibilityLevel'
+    if($current.Present -and [int]$current.Value -eq 1){
+        Write-Info (L 'LmCompatibilityLevel is already 1; Restore history was left unchanged.' 'LmCompatibilityLevel sudah bernilai 1; riwayat Restore tidak diubah.')
+        return
+    }
+    $snap=New-RestoreSnapshot 'Legacy LAN Manager level' @('Registry')
+    if($snap){Set-RegistryDword 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' 'LmCompatibilityLevel' 1;Write-Warn (L 'LmCompatibilityLevel=1 applied. Restore after testing.' 'LmCompatibilityLevel=1 diterapkan. Restore setelah pengujian.');Write-Info ((L 'Restore snapshot: {0}' 'Snapshot restore: {0}') -f $snap)}
+}
+
+function Show-LegacyMenu {
+    while($true){
+        Write-Header (L 'LEGACY COMPATIBILITY' 'KOMPATIBILITAS LEGACY')
+        Write-Fail (L 'There is intentionally no one-click insecure Full Fix anymore.' 'Tidak ada lagi Full Fix tidak aman sekali klik; ini disengaja.')
+        Write-Rule
+        Write-Host (L '[1] Enable SMB1 CLIENT only' '[1] Aktifkan KLIEN SMB1 saja')
+        Write-Host (L '[2] Allow insecure SMB guest authentication' '[2] Izinkan autentikasi guest SMB yang tidak aman')
+        Write-Host (L '[3] Set LAN Manager compatibility level 1 [VERY HIGH RISK]' '[3] Atur kompatibilitas LAN Manager level 1 [RISIKO SANGAT TINGGI]') -ForegroundColor Yellow
+        Write-Host (L '[4] Blank-password remote logon: NOT AUTOMATED (use a password instead)' '[4] Login remote tanpa password: TIDAK DIOTOMATISKAN (gunakan password)')
+        Write-Host "[B] $(T 'Back')"
+        $c=Read-Choice (T 'Select') @('1','2','3','4','B');if($c -eq 'B'){return}
+        try{switch($c){'1'{Enable-Smb1ClientLegacy};'2'{Enable-InsecureGuestLegacy};'3'{Set-LegacyLmCompatibility};'4'{Write-Warn (L 'This utility intentionally refuses to disable LimitBlankPasswordUse. Use password-protected credentials instead.' 'Utilitas ini sengaja menolak menonaktifkan LimitBlankPasswordUse. Gunakan akun yang dilindungi password.')}}}catch{Write-Fail $_.Exception.Message}
+        Pause-Tui
+    }
+}
+
+function Invoke-PrintUiTestPageRequest([string]$PrinterName) {
+    if([string]::IsNullOrWhiteSpace($PrinterName)){return [pscustomobject]@{Submitted=$false;ExitCode=$null}}
+    if($PrinterName.Contains('"')){return [pscustomobject]@{Submitted=$false;ExitCode=$null}}
+    $exe=if($env:SystemRoot){Join-Path $env:SystemRoot 'System32\rundll32.exe'}else{'rundll32.exe'}
+    try {
+        $printerArg=('/n"{0}"' -f $PrinterName)
+        $process=Start-Process -FilePath $exe -ArgumentList @('printui.dll,PrintUIEntry','/k',$printerArg) -Wait -PassThru -ErrorAction Stop
+        return [pscustomobject]@{Submitted=([int]$process.ExitCode -eq 0);ExitCode=[int]$process.ExitCode}
+    } catch {
+        return [pscustomobject]@{Submitted=$false;ExitCode=$null}
+    }
+}
+
+function New-FunctionalVerificationRecord([object]$Printer,[string]$RequestStatus,[string]$Outcome,[string]$DiagnosticCollectedAtUtc='') {
+    $read = { param($Object,$Name,$Default) $prop=$Object.PSObject.Properties[$Name];if($prop -and $null -ne $prop.Value){return [string]$prop.Value};return $Default }
+    $name=& $read $Printer 'Name' ''
+    $type=& $read $Printer 'Type' ''
+    $network=($name -like '\\*' -or $type -eq 'Connection')
+    return [pscustomobject]@{
+        VerifiedAtUtc=(Get-Date).ToUniversalTime().ToString('o')
+        DiagnosticCollectedAtUtc=$DiagnosticCollectedAtUtc
+        RequestStatus=$RequestStatus
+        Outcome=$Outcome
+        NetworkConnection=[bool]$network
+        DriverModel=(& $read $Printer 'DriverModel' 'Unknown')
+        DriverProviderClass=(& $read $Printer 'DriverProviderClass' 'Unknown')
+        DriverTechnology=(& $read $Printer 'DriverTechnology' 'OtherOrUnknown')
+    }
+}
+
+function Invoke-GuidedTestPageVerification {
+    Write-Header (L 'GUIDED TEST-PAGE VERIFICATION' 'VERIFIKASI TEST PAGE TERPANDU')
+    if($null -eq $script:LastDiagnostic){
+        Write-Info (L 'No diagnosis is cached yet; running one read-only diagnosis first.' 'Belum ada diagnosis tersimpan; menjalankan satu diagnosis read-only terlebih dahulu.')
+        [void](Invoke-Diagnosis -Quiet)
+    }
+    $rawPrinters=@(Get-PrinterInventory)
+    if(-not $rawPrinters.Count){Write-Warn (L 'No installed printers were found.' 'Tidak ditemukan printer yang terpasang.');return}
+    $printers=@(Add-PrinterDriverClassifications $rawPrinters @(Get-PrinterDriverMetadataSafe))
+    Write-Info (L 'Choose an already-installed printer for one Windows test page.' 'Pilih printer yang sudah terpasang untuk satu test page Windows.')
+    for($i=0;$i -lt $printers.Count;$i++){
+        $p=$printers[$i]
+        Write-Host ('[{0}] {1} | {2} | {3}/{4}' -f ($i+1),$p.Name,$p.DriverName,$p.DriverModel,$p.DriverProviderClass)
+    }
+    Write-Host "[B] $(T 'Back')"
+    $allowed=@(1..$printers.Count|ForEach-Object{[string]$_})+'B'
+    $choice=Read-Choice (T 'Select') $allowed
+    if($choice -eq 'B'){return}
+    $selected=$printers[[int]$choice-1]
+    Write-Rule
+    Write-Warn (L 'This creates a real Windows test-page print job and may consume paper, labels, ink, or toner.' 'Ini membuat print job test page Windows sungguhan dan dapat memakai kertas, label, tinta, atau toner.')
+    Write-Info (L 'A successful command only means Windows accepted the request; it does not prove the physical printer produced output.' 'Perintah yang berhasil hanya berarti Windows menerima permintaan; ini bukan bukti bahwa printer fisik benar-benar mencetak.')
+    if(-not(Read-YesNo (L 'Send one Windows test page now?' 'Kirim satu test page Windows sekarang?') $true)){Write-Info (L 'Test-page request cancelled.' 'Permintaan test page dibatalkan.');return}
+    $request=Invoke-PrintUiTestPageRequest ([string]$selected.Name)
+    $diagTime=if($script:LastDiagnostic){[string]$script:LastDiagnostic.CollectedAtUtc}else{''}
+    if(-not $request.Submitted){
+        $script:LastFunctionalVerification=New-FunctionalVerificationRecord $selected 'Failed' 'NotConfirmed' $diagTime
+        Write-Fail (L 'Windows did not return a successful test-page request.' 'Windows tidak mengembalikan hasil sukses untuk permintaan test page.')
+        Write-Log 'Test-page verification [printer identifier omitted] request=Failed outcome=NotConfirmed' 'WARN'
+        return
+    }
+    Write-Ok (L 'The Windows test-page request returned successfully.' 'Permintaan test page Windows kembali dengan status sukses.')
+    Write-Info (L 'Check the printer itself. The command result is not physical-print confirmation.' 'Periksa printer secara langsung. Hasil perintah bukan konfirmasi bahwa hasil cetak fisik keluar.')
+    $physical=Read-Choice (L 'Did the test page physically print correctly? [Y] Yes / [N] No / [U] Unsure' 'Apakah test page benar-benar tercetak dengan benar? [Y] Ya / [N] Tidak / [U] Tidak yakin') @('Y','N','U')
+    $outcome=switch($physical){'Y'{'Printed'};'N'{'DidNotPrint'};default{'NotConfirmed'}}
+    $script:LastFunctionalVerification=New-FunctionalVerificationRecord $selected 'Submitted' $outcome $diagTime
+    switch($outcome){
+        'Printed'{Write-Ok (L 'Physical test page confirmed by the user.' 'Test page fisik dikonfirmasi berhasil oleh pengguna.')}
+        'DidNotPrint'{Write-Warn (L 'The request was submitted, but the user reports that the page did not print.' 'Permintaan terkirim, tetapi pengguna melaporkan halaman tidak tercetak.')}
+        default{Write-Info (L 'Physical output remains unconfirmed.' 'Hasil cetak fisik masih belum terkonfirmasi.')}
+    }
+    Write-Log ("Test-page verification [printer identifier omitted] request=Submitted outcome={0} networkConnection={1} driverModel={2} provider={3}" -f $outcome,$script:LastFunctionalVerification.NetworkConnection,$script:LastFunctionalVerification.DriverModel,$script:LastFunctionalVerification.DriverProviderClass)
+}
+
+function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null,[object]$FunctionalVerification=$null) {
+    if($null -eq $D){throw 'Diagnostic object is required.'}
+    $state = { param($Value) if($null -eq $Value){return [pscustomobject]@{Present=$false;Value=$null;Kind=$null}}; return [pscustomobject]@{Present=[bool]$Value.Present;Value=$Value.Value;Kind=if($Value.Kind){[string]$Value.Kind}else{$null}} }
+    $profiles=@($D.Profiles|ForEach-Object{[pscustomobject]@{NetworkCategory=[string]$_.NetworkCategory;IPv4Connectivity=[string]$_.IPv4Connectivity;IPv6Connectivity=[string]$_.IPv6Connectivity}})
+    $events=@($D.PrintErrors|ForEach-Object{[pscustomobject]@{TimeCreatedUtc=if($_.TimeCreated){$_.TimeCreated.ToUniversalTime().ToString('o')}else{$null};Id=[int]$_.Id;Level=[string]$_.LevelDisplayName;Category=[string]$_.Category;Win32Code=if($null -ne $_.Win32Code){[int64]$_.Win32Code}else{$null};CodeClass=if($_.CodeClass){[string]$_.CodeClass}else{$null}}})
+    $findings=@($D.Findings|ForEach-Object{[pscustomobject]@{Severity=[string]$_.Severity;Text=[string]$_.Text}})
+    $policySources=[ordered]@{}
+    $policySourcesProp=$D.PSObject.Properties['PolicySources']
+    foreach($name in @('RpcPrivacy','RpcUseNamedPipe','RpcProtocols','RpcTcpPort','ForceKerberosForRpc','RemoteRpcEndpoint','PointAndPrint','WppGroupPolicy')){
+        $entry=$null;if($policySourcesProp -and $policySourcesProp.Value){$entryProp=$policySourcesProp.Value.PSObject.Properties[$name];if($entryProp){$entry=$entryProp.Value}}
+        $policySources[$name]=if($entry){[ordered]@{Configured=[bool]$entry.Configured;Source=[string]$entry.Source;Evidence=[string]$entry.Evidence}}else{[ordered]@{Configured=$false;Source='NotConfigured';Evidence='None'}}
+    }
+    $target=$null
+    if($null -ne $TargetPath){
+        $rpcPortProp=$TargetPath.PSObject.Properties['RpcConfiguredPort'];$rpcPortReachableProp=$TargetPath.PSObject.Properties['RpcConfiguredPortReachable'];$smbSignalsProp=$TargetPath.PSObject.Properties['SmbSecuritySignals']
+        [object[]]$smbSignals=@();if($smbSignalsProp){[object[]]$smbSignals=@($smbSignalsProp.Value)}
+        $target=[pscustomobject]@{TestedAtUtc=[string]$TargetPath.TestedAtUtc;DnsResolved=[bool]$TargetPath.DnsResolved;Smb445Reachable=[bool]$TargetPath.Smb445Reachable;Rpc135Reachable=[bool]$TargetPath.Rpc135Reachable;RpcConfiguredPort=if($rpcPortProp -and $null -ne $rpcPortProp.Value){[int]$rpcPortProp.Value}else{$null};RpcConfiguredPortReachable=if($rpcPortReachableProp -and $null -ne $rpcPortReachableProp.Value){[bool]$rpcPortReachableProp.Value}else{$null};ShareNamespaceAccessible=[bool]$TargetPath.ShareNamespaceAccessible;PrinterInstalled=[bool]$TargetPath.PrinterInstalled;SmbSecuritySignals=$smbSignals;LikelyLayer=[string]$TargetPath.LikelyLayer}
+    }
+    $verification=$null
+    if($null -ne $FunctionalVerification){$verification=[pscustomobject]@{VerifiedAtUtc=[string]$FunctionalVerification.VerifiedAtUtc;DiagnosticCollectedAtUtc=[string]$FunctionalVerification.DiagnosticCollectedAtUtc;RequestStatus=[string]$FunctionalVerification.RequestStatus;Outcome=[string]$FunctionalVerification.Outcome;NetworkConnection=[bool]$FunctionalVerification.NetworkConnection;DriverModel=[string]$FunctionalVerification.DriverModel;DriverProviderClass=[string]$FunctionalVerification.DriverProviderClass;DriverTechnology=[string]$FunctionalVerification.DriverTechnology}}
+    $next=Get-NextInvestigation $D $TargetPath
+    $driverSummary=Get-PrinterDriverClassificationSummary $D.Printers
+    $wppReadiness=Get-WppReadinessEvidence $D.OS $D.WPP $D.Printers
+    return [ordered]@{
+        Schema='windows-printer-sharing-fix/diagnosis'
+        SchemaVersion=1
+        ToolVersion=$script:Version
+        CollectedAtUtc=[string]$D.CollectedAtUtc
+        ExportedAtUtc=(Get-Date).ToUniversalTime().ToString('o')
+        Language=$script:Language
+        Sanitized=$true
+        Privacy='Machine/user/network identifiers, printer/share names, IP addresses, and raw event messages are omitted.'
+        Windows=[ordered]@{Name=[string]$D.OS.Name;DisplayVersion=[string]$D.OS.DisplayVersion;Build=[int]$D.OS.Build;Revision=if($D.OS.PSObject.Properties['Revision'] -and $null -ne $D.OS.Revision){[int]$D.OS.Revision}else{$null};FullBuild=if($D.OS.PSObject.Properties['FullBuild']){[string]$D.OS.FullBuild}else{[string]$D.OS.Build};InstallationType=[string]$D.OS.InstallationType;IsServer=[bool]$D.OS.IsServer;PowerShell=[string]$D.PowerShell}
+        Role=[string]$D.Role
+        Spooler=[ordered]@{Present=($null -ne $D.Spooler);Status=if($D.Spooler){[string]$D.Spooler.Status}else{'Missing'}}
+        PrinterSummary=[ordered]@{Total=@($D.Printers).Count;Shared=@($D.SharedPrinters).Count;NetworkConnections=@($D.Connections).Count}
+        DriverSummary=[ordered]@{TotalBindings=[int]$driverSummary.Total;Models=[ordered]@{V3=[int]$driverSummary.V3;V4=[int]$driverSummary.V4;Unknown=[int]$driverSummary.ModelUnknown};Providers=[ordered]@{MicrosoftProvided=[int]$driverSummary.MicrosoftProvided;ThirdParty=[int]$driverSummary.ThirdParty;Unknown=[int]$driverSummary.ProviderUnknown};Technologies=[ordered]@{MicrosoftIppClassDriver=[int]$driverSummary.MicrosoftIppClassDriver;UniversalPrintClassDriver=[int]$driverSummary.UniversalPrintClassDriver}}
+        NetworkProfiles=$profiles
+        WPP=[ordered]@{Enabled=[bool]$D.WPP.Enabled;GroupPolicy=(& $state $D.WPP.GroupPolicy);Mode=(& $state $D.WPP.Mode);EnabledBy=(& $state $D.WPP.EnabledBy)}
+        WppReadiness=[ordered]@{OsSupportsWpp=[bool]$wppReadiness.OsSupportsWpp;WppEnabled=[bool]$wppReadiness.WppEnabled;EvidenceScope=[string]$wppReadiness.EvidenceScope;LocalBindingState=[string]$wppReadiness.LocalBindingState;TotalBindings=[int]$wppReadiness.TotalBindings;KnownWindowsReadyPrintBindings=[int]$wppReadiness.KnownWindowsReadyPrintBindings;MicrosoftIppClassDriverBindings=[int]$wppReadiness.MicrosoftIppClassDriverBindings;UniversalPrintClassDriverBindings=[int]$wppReadiness.UniversalPrintClassDriverBindings;ThirdPartyDriverBindings=[int]$wppReadiness.ThirdPartyDriverBindings;UnknownOrOtherBindings=[int]$wppReadiness.UnknownOrOtherBindings;DeviceCompatibilityProven=$false}
+        SmbSecurity=[ordered]@{Client=[ordered]@{Available=[bool]$D.SmbSecurity.Client.Available;RequireSigning=$D.SmbSecurity.Client.RequireSigning;RequireEncryption=$D.SmbSecurity.Client.RequireEncryption;InsecureGuestAllowed=$D.SmbSecurity.Client.InsecureGuestAllowed;AuditServerDoesNotSupportSigning=$D.SmbSecurity.Client.AuditServerDoesNotSupportSigning;AuditServerDoesNotSupportEncryption=$D.SmbSecurity.Client.AuditServerDoesNotSupportEncryption};Server=[ordered]@{Available=[bool]$D.SmbSecurity.Server.Available;RequireSigning=$D.SmbSecurity.Server.RequireSigning;EncryptData=$D.SmbSecurity.Server.EncryptData;RejectUnencryptedAccess=$D.SmbSecurity.Server.RejectUnencryptedAccess;AuditClientDoesNotSupportSigning=$D.SmbSecurity.Server.AuditClientDoesNotSupportSigning;AuditClientDoesNotSupportEncryption=$D.SmbSecurity.Server.AuditClientDoesNotSupportEncryption}}
+        Policies=[ordered]@{RpcPrivacy=(& $state $D.RpcPrivacy);RpcUseNamedPipe=(& $state $D.RpcUseNamedPipe);RpcProtocols=(& $state $D.RpcProtocols);RpcTcpPort=(& $state $D.RpcTcpPort);ForceKerberosForRpc=(& $state $D.ForceKerberosForRpc);RemoteRpcEndpoint=(& $state $D.RemoteRpcEndpoint);PointAndPrint=(& $state $D.PointAndPrint);GuestAuth=(& $state $D.GuestAuth);LmCompatibility=(& $state $D.LmCompatibility);BlankPassword=(& $state $D.BlankPassword)}
+        PolicySources=$policySources
+        NextInvestigation=[ordered]@{Layer=[string]$next.Layer;Reason=[string]$next.Reason;RemoteTransportTested=[bool]$next.RemoteTransportTested;Signals=@($next.Signals);RootCauseClaimed=$false}
+        SMB1Client=[string]$D.SMB1Client
+        PrintServiceEvents=$events
+        Findings=$findings
+        TimingMs=$D.TimingMs
+        TargetPath=$target
+        FunctionalVerification=$verification
+    }
+}
+
+function Export-DiagnosticJson([object]$Diagnostic=$null,[string]$OutputPath='') {
+    if($null -eq $Diagnostic){$Diagnostic=$script:LastDiagnostic}
+    if($null -eq $Diagnostic){Write-Info (L 'No diagnosis is cached yet; running one read-only diagnosis now.' 'Belum ada diagnosis tersimpan; menjalankan satu diagnosis read-only sekarang.');$Diagnostic=Invoke-Diagnosis -Quiet}
+    if(-not $script:ExportRoot){throw 'Export workspace is not initialized.'}
+    if(-not(Test-Path -LiteralPath $script:ExportRoot)){New-Item -ItemType Directory -Path $script:ExportRoot -Force|Out-Null}
+    if(-not $OutputPath){$OutputPath=Join-Path $script:ExportRoot ('diagnostic-{0}.json' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))}
+    $payload=ConvertTo-DiagnosticExportObject $Diagnostic $script:LastTargetPathDiagnostic $script:LastFunctionalVerification
+    $payload|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $OutputPath -Encoding UTF8
+    Write-Ok ((L 'Structured diagnostic JSON exported: {0}' 'JSON diagnosis terstruktur diekspor: {0}') -f $OutputPath)
+    Write-Log "Diagnostic JSON exported: $OutputPath"
+    return $OutputPath
+}
+
+function Export-DiagnosticText {
+    $d=Invoke-Diagnosis -Quiet
+    $path=Join-Path $script:LogRoot ('diagnostic-{0}.txt' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    $lines=@(
+        "Windows Printer Sharing Fix v$($script:Version) - $(L 'Diagnostic Report' 'Laporan Diagnosis')",
+        "$(L 'Generated' 'Dibuat'): $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+        "OS: $($d.OS.Name) $($d.OS.DisplayVersion) build $(if($d.OS.PSObject.Properties['FullBuild'] -and $d.OS.FullBuild){$d.OS.FullBuild}else{$d.OS.Build})",
+        "$(L 'Role' 'Peran'): $(Localize-SystemValue $d.Role)",
+        "Spooler: $(if($d.Spooler){Localize-SystemValue ([string]$d.Spooler.Status)}else{Localize-SystemValue 'Missing'})",
+        "WPP: $($d.WPP.Enabled)",
+        "$(L 'SMB1 client' 'Klien SMB1'): $(Localize-SystemValue ([string]$d.SMB1Client))",'',(L 'Findings:' 'Temuan:')
+    )
+    foreach($f in $d.Findings){$lines+="[$($f.Severity)] $($f.Text)"}
+    $lines+='';$lines+=(L 'Printers:' 'Printer:')
+    foreach($p in $d.Printers){$lines+="- $($p.Name) | driver=$($p.DriverName) | share=$($p.ShareName) | model=$($p.DriverModel) | provider=$($p.DriverProviderClass) | technology=$($p.DriverTechnology)"}
+    $lines|Set-Content -LiteralPath $path -Encoding UTF8
+    Write-Ok ((L 'Diagnostic report exported: {0}' 'Laporan diagnosis diekspor: {0}') -f $path)
+}
+
+function Show-ToolsMenu {
+    while($true){
+        Write-Header (L 'TOOLS AND LOGS' 'ALAT DAN LOG')
+        Write-Host (L '[1] Printers & scanners Settings' '[1] Settings Printers & scanners')
+        Write-Host (L '[2] Print Management' '[2] Print Management')
+        Write-Host (L '[3] Services' '[3] Services')
+        Write-Host (L '[4] Network Connections' '[4] Koneksi Jaringan')
+        Write-Host (L '[5] Open current log' '[5] Buka log saat ini')
+        Write-Host (L '[6] Open backup folder' '[6] Buka folder backup')
+        Write-Host (L '[7] Export fresh diagnostic report (.txt)' '[7] Ekspor laporan diagnosis baru (.txt)')
+        Write-Host (L '[8] Export latest diagnosis as sanitized JSON' '[8] Ekspor diagnosis terakhir sebagai JSON sanitized')
+        Write-Host (L '[9] Test a shared printer path' '[9] Tes path printer sharing')
+        Write-Host (L '[10] Guided Windows test-page verification' '[10] Verifikasi test page Windows terpandu')
+        Write-Host "[B] $(T 'Back')"
+        $c=Read-Choice (T 'Select') @('1','2','3','4','5','6','7','8','9','10','B');if($c -eq 'B'){return}
+        switch($c){'1'{Start-Process 'ms-settings:printers' -ErrorAction SilentlyContinue};'2'{Start-Process 'printmanagement.msc' -ErrorAction SilentlyContinue};'3'{Start-Process 'services.msc'};'4'{Start-Process 'ncpa.cpl'};'5'{Start-Process notepad.exe -ArgumentList ('"{0}"' -f $script:CurrentLog)};'6'{Start-Process explorer.exe -ArgumentList ('"{0}"' -f $script:BackupRoot)};'7'{Export-DiagnosticText;Pause-Tui};'8'{[void](Export-DiagnosticJson);Pause-Tui};'9'{Invoke-SharedPrinterPathDiagnosis;Pause-Tui};'10'{Invoke-GuidedTestPageVerification;Pause-Tui}}
+    }
+}
+
+function Show-GuideMenu {
+    Write-Header (T 'Guide')
+    Write-Info (L 'Recommended flow: diagnose first, apply the smallest relevant repair, then verify printing.' 'Alur yang disarankan: diagnosis dulu, terapkan perbaikan sekecil mungkin, lalu verifikasi printer.')
+    Write-Rule
+    Write-Host (L '1. DIAGNOSE FIRST' '1. DIAGNOSIS DULU') -ForegroundColor Green
+    Write-Host (L '   Read the detected role, Spooler state, network profile, WPP, SMB1, policies, and PrintService events.' '   Baca peran PC, kondisi Spooler, profil jaringan, WPP, SMB1, policy, dan event PrintService.')
+    Write-Host ''
+    Write-Host (L '2. SAFE REPAIR FOR COMMON PROBLEMS' '2. PERBAIKAN AMAN UNTUK MASALAH UMUM') -ForegroundColor Cyan
+    Write-Host (L '   Use it for Spooler, stuck queues, sharing firewall rules, one network profile, or Network Discovery.' '   Gunakan untuk Spooler, antrean macet, firewall sharing, satu profil jaringan, atau Network Discovery.')
+    Write-Host ''
+    Write-Host (L '3. COMPATIBILITY ONLY WITH EVIDENCE' '3. KOMPATIBILITAS HANYA JIKA ADA BUKTI') -ForegroundColor Yellow
+    Write-Host (L '   Named Pipes, temporary Point and Print relaxation, WPP checks, and RPC privacy are not first-line fixes.' '   Named Pipes, relaksasi Point and Print sementara, pemeriksaan WPP, dan privasi RPC bukan perbaikan pertama.')
+    Write-Host ''
+    Write-Host (L '4. LEGACY IS THE LAST RESORT' '4. LEGACY ADALAH PILIHAN TERAKHIR') -ForegroundColor Yellow
+    Write-Host (L '   SMB1, insecure guest authentication, and LAN Manager level 1 reduce Windows security.' '   SMB1, autentikasi guest tidak aman, dan LAN Manager level 1 menurunkan keamanan Windows.')
+    Write-Host ''
+    Write-Host (L '5. VERIFY, THEN RESTORE IF IT DID NOT HELP' '5. VERIFIKASI, LALU RESTORE JIKA TIDAK MEMBANTU') -ForegroundColor Green
+    Write-Host (L '   Print a real test page. Avoid stacking more tweaks when the previous change did not solve the problem.' '   Cetak test page nyata. Hindari menumpuk tweak jika perubahan sebelumnya tidak menyelesaikan masalah.')
+    Write-Rule
+    Write-Info (L 'Tip: Tools and Logs can test a \\HOST\Printer path read-only, or run an explicit guided Windows test page for functional verification.' 'Tip: Alat dan Log dapat mengetes path \\HOST\Printer secara read-only, atau menjalankan test page Windows terpandu untuk verifikasi fungsi.')
+    Pause-Tui
+}
+
+function Show-LanguageMenu {
+    Write-Header (T 'Language')
+    Write-Host '[1] English (default)'
+    Write-Host '[2] Bahasa Indonesia'
+    Write-Host "[B] $(T 'Back')"
+    $c=Read-Choice (T 'Select') @('1','2','B');if($c -eq 'B'){return}
+    $script:Language=if($c -eq '2'){'ID'}else{'EN'}
+    $script:Language|Set-Content -LiteralPath $script:LanguageFile -Encoding ASCII
+}
+
+function Write-MainMenuItem([string]$Number,[string]$Label,[ConsoleColor]$Color='Gray',[string]$Note='') {
+    $text='[{0}] {1}' -f $Number,$Label
+    if($Note){$text+='  <{0}>' -f $Note}
+    Write-Host $text -ForegroundColor $Color
+}
+
+function Show-MainMenu {
+    while($true){
+        Write-Header (T 'Main')
+        $os=Get-OsInfo
+        $spool=Get-Service Spooler -ErrorAction SilentlyContinue
+        $languageName=if($script:Language -eq 'ID'){'Indonesia'}else{'English'}
+        $spoolState=if($spool){Localize-SystemValue ([string]$spool.Status)}else{Localize-SystemValue 'Missing'}
+        Write-Host ((L '  OS: {0} build {1}    Language: {2}    Spooler: {3}' '  OS: {0} build {1}    Bahasa: {2}    Spooler: {3}') -f $os.Name,$os.Build,$languageName,$spoolState) -ForegroundColor DarkGray
+        Write-Rule
+        Write-Info (L 'Start with diagnosis. Repairs do nothing until you choose them.' 'Mulai dari diagnosis. Perbaikan tidak berjalan sampai kamu memilihnya.')
+        Write-Rule
+        Write-MainMenuItem '1' (T 'Diagnose') Green (T 'Recommended')
+        Write-MainMenuItem '2' (T 'Safe') Cyan
+        Write-MainMenuItem '3' (T 'Compat') Gray
+        Write-MainMenuItem '4' (T 'Legacy') Yellow
+        Write-Rule
+        Write-MainMenuItem '5' (T 'Restore') Gray
+        Write-MainMenuItem '6' (T 'Tools') Gray
+        Write-MainMenuItem '7' (T 'Guide') Cyan
+        Write-MainMenuItem '8' (T 'Language') Gray
+        Write-MainMenuItem '9' (T 'Exit') DarkGray
+        Write-Rule
+        $c=Read-Choice (T 'Select') @('1','2','3','4','5','6','7','8','9')
+        switch($c){'1'{[void](Invoke-Diagnosis)};'2'{Show-SafeRepairMenu};'3'{Show-CompatibilityMenu};'4'{Show-LegacyMenu};'5'{Invoke-RestoreLatest};'6'{Show-ToolsMenu};'7'{Show-GuideMenu};'8'{Show-LanguageMenu};'9'{return}}
+    }
+}
+$headlessIntent = $DiagnoseOnly -or -not [string]::IsNullOrWhiteSpace($JsonOutput)
+try {
+    Initialize-Workspace
+    if($JsonOutput -and -not $DiagnoseOnly){throw '-JsonOutput/-Json can only be used with -DiagnoseOnly.'}
+    if($DiagnoseOnly){
+        if(-not(Test-IsAdministrator)){
+            [Console]::Error.WriteLine('Headless diagnosis requires an elevated PowerShell session. No UAC prompt is opened in -DiagnoseOnly mode.')
+            exit 5
+        }
+        $outputPath=if($JsonOutput){[IO.Path]::GetFullPath($JsonOutput)}else{Join-Path $script:ExportRoot 'diagnostic-headless.json'}
+        $outputParent=Split-Path -Parent $outputPath
+        if($outputParent -and -not(Test-Path -LiteralPath $outputParent)){New-Item -ItemType Directory -Path $outputParent -Force|Out-Null}
+        $diagnostic=Invoke-Diagnosis -Quiet
+        [void](Export-DiagnosticJson -Diagnostic $diagnostic -OutputPath $outputPath)
+        Write-Output $outputPath
+        exit 0
+    }
+    if(-not(Ensure-Administrator)){if(-not(Test-IsAdministrator)){exit 0}}
+    Show-MainMenu
+} catch {
+    if($headlessIntent){
+        [Console]::Error.WriteLine(('Headless diagnosis failed: {0}' -f $_.Exception.Message))
+        try{Write-Log $_.Exception.ToString() 'FATAL'}catch{Write-Verbose ('Fatal log write failed: {0}' -f $_.Exception.Message)}
+        exit 1
+    }
+    Write-Host ((L 'Fatal error: {0}' 'Error fatal: {0}') -f $_.Exception.Message) -ForegroundColor Red
+    Write-Log $_.Exception.ToString() 'FATAL'
+    Pause-Tui
+    exit 1
+}
+){Write-Warn (L 'Invalid printer UNC path.' 'Path UNC printer tidak valid.');return}
+    $existing=@(Get-PrinterInventory|Where-Object{[string]$_.Name -eq [string]$unc})
+    if($existing.Count){
+        Write-Info ((L 'This shared printer is already connected; Point and Print protection was not changed: {0}' 'Printer sharing ini sudah terhubung; proteksi Point and Print tidak diubah: {0}') -f $unc)
+        return
+    }
     $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint';$original=Get-RegistryValueStateStrict $path 'RestrictDriverInstallationToAdministrators'
     Write-Warn (L 'This temporarily reduces Point and Print driver-installation protection. It will be restored immediately after the connection attempt.' 'Tindakan ini menurunkan proteksi pemasangan driver Point and Print hanya sementara. Nilai sebelumnya akan langsung dikembalikan setelah percobaan koneksi.')
     if((Read-Host (L 'Type RISK to continue' 'Ketik RISK untuk lanjut')).Trim().ToUpperInvariant() -ne 'RISK'){return}
