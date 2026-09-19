@@ -69,6 +69,7 @@ function Get-ValidatedRestoreSnapshot([string]$Directory){$null=$Directory;[pscu
 function Restore-RegistryValue($Entry){$null=$Entry;$script:RegistryCalls++}
 function Set-NetFirewallRule {
     [CmdletBinding()] param([string]$Name,$Enabled,[Alias('Profile')]$FirewallProfile)
+    $null=$Name
     $script:FirewallCalls++
     if($script:FirewallFails){Write-Error 'synthetic restore firewall failure';return}
     if(-not $script:FirewallNoOp){
@@ -83,6 +84,7 @@ function Get-NetFirewallRule {
 }
 function Set-NetConnectionProfile {
     [CmdletBinding()] param([int]$InterfaceIndex,[string]$NetworkCategory)
+    $null=$InterfaceIndex
     $script:NetworkCalls++
     if($script:NetworkFails){Write-Error 'synthetic restore network failure';return}
     if(-not $script:NetworkNoOp){$script:NetworkCategory=[string]$NetworkCategory}
