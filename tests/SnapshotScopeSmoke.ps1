@@ -24,7 +24,8 @@ function Write-Warn([string]$Text){}
 function Write-Ok([string]$Text){}
 function Write-Info([string]$Text){}
 function Write-Log([string]$Message,[string]$Level='INFO'){$null=@($Message,$Level)}
-function Get-ManagedRegistryEntries {
+function Get-ManagedRegistryEntries([switch]$Strict) {
+    $null=$Strict
     @(
         [pscustomobject]@{Path='P';Name='RpcAuthnLevelPrivacyEnabled';Present=$true;Value=1;Kind='DWord'},
         [pscustomobject]@{Path='P';Name='RpcUseNamedPipeProtocol';Present=$true;Value=0;Kind='DWord'},

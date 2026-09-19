@@ -208,13 +208,36 @@ function Get-OsInfo {
 }
 
 function Get-RegistryValueState([string]$Path,[string]$Name) {
-    if (-not (Test-Path -LiteralPath $Path)) { return [pscustomobject]@{Present=$false;Value=$null;Kind=$null} }
-    try {
-        $item = Get-Item -LiteralPath $Path
-        $value = $item.GetValue($Name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-        if ($null -eq $value) { return [pscustomobject]@{Present=$false;Value=$null;Kind=$null} }
+    if(-not(Test-Path -LiteralPath $Path)){return [pscustomobject]@{Present=$false;Value=$null;Kind=$null}}
+    try{
+        $item=Get-Item -LiteralPath $Path
+        $value=$item.GetValue($Name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        if($null -eq $value){return [pscustomobject]@{Present=$false;Value=$null;Kind=$null}}
         return [pscustomobject]@{Present=$true;Value=$value;Kind=$item.GetValueKind($Name).ToString()}
-    } catch { return [pscustomobject]@{Present=$false;Value=$null;Kind=$null} }
+    }catch{return [pscustomobject]@{Present=$false;Value=$null;Kind=$null}}
+}
+
+function Get-RegistryValueStateStrict([string]$Path,[string]$Name) {
+    if(-not(Test-Path -LiteralPath $Path)){return [pscustomobject]@{Present=$false;Value=$null;Kind=$null}}
+    $item=Get-Item -LiteralPath $Path -ErrorAction Stop
+    $value=$item.GetValue($Name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    if($null -eq $value){return [pscustomobject]@{Present=$false;Value=$null;Kind=$null}}
+    return [pscustomobject]@{Present=$true;Value=$value;Kind=$item.GetValueKind($Name).ToString()}
+}
+
+function Convert-RegistryComparableValue($Value) {
+    if($null -eq $Value){return '<null>'}
+    if($Value -is [System.Array]){
+        return (@($Value)|ForEach-Object{if($null -eq $_){'<null>'}else{[string]$_}}) -join ([char]31)
+    }
+    return [string]$Value
+}
+
+function Test-RegistryStateMatches([object]$Expected,[object]$Actual) {
+    if([bool]$Expected.Present -ne [bool]$Actual.Present){return $false}
+    if(-not [bool]$Expected.Present){return $true}
+    if(-not [string]::Equals([string]$Expected.Kind,[string]$Actual.Kind,[StringComparison]::OrdinalIgnoreCase)){return $false}
+    return [string]::Equals((Convert-RegistryComparableValue $Expected.Value),(Convert-RegistryComparableValue $Actual.Value),[StringComparison]::Ordinal)
 }
 
 function Set-RegistryDword([string]$Path,[string]$Name,[int]$Value) {
@@ -233,12 +256,22 @@ function Restore-RegistryValue($Entry) {
     if($Entry.Present){
         if(-not(Test-Path -LiteralPath $path)){New-Item -Path $path -Force -ErrorAction Stop|Out-Null}
         $types=@{DWord='DWord';QWord='QWord';String='String';ExpandString='ExpandString';MultiString='MultiString';Binary='Binary'}
-        $type=if($types.ContainsKey([string]$Entry.Kind)){$types[[string]$Entry.Kind]}else{'String'}
-        New-ItemProperty -Path $path -Name $name -PropertyType $type -Value $Entry.Value -Force -ErrorAction Stop|Out-Null
+        $kind=[string]$Entry.Kind
+        if(-not $types.ContainsKey($kind)){throw "Unsupported registry value kind for restore: $kind"}
+        $value=switch($kind){
+            'DWord' {[int]$Entry.Value}
+            'QWord' {[long]$Entry.Value}
+            'MultiString' {[string[]]@($Entry.Value)}
+            'Binary' {[byte[]]@($Entry.Value)}
+            default {[string]$Entry.Value}
+        }
+        New-ItemProperty -Path $path -Name $name -PropertyType $types[$kind] -Value $value -Force -ErrorAction Stop|Out-Null
     }else{
-        $current=Get-RegistryValueState $path $name
+        $current=Get-RegistryValueStateStrict $path $name
         if($current.Present){Remove-ItemProperty -Path $path -Name $name -ErrorAction Stop}
     }
+    $verified=Get-RegistryValueStateStrict $path $name
+    if(-not(Test-RegistryStateMatches $Entry $verified)){throw "Registry restore could not be verified: $path\$name"}
 }
 
 function Get-PrinterInventory {
@@ -933,7 +966,7 @@ function Invoke-SharedPrinterPathDiagnosis {
     Write-Log "Target test [identifier omitted] dns=$dns smb445=$smb rpc135=$rpc rpcConfiguredPort=$configuredRpcPort rpcConfiguredReachable=$configuredRpcReachable root=$root installed=$installed smbSecuritySignals=$($smbSecuritySignals -join ',') likely=$likelyLayer next=$($next.Layer) reason=$($next.Reason)"
 }
 
-function Get-ManagedRegistryEntries {
+function Get-ManagedRegistryEntries([switch]$Strict) {
     $targets=@(
         @('HKLM:\SYSTEM\CurrentControlSet\Control\Print','RpcAuthnLevelPrivacyEnabled'),
         @('HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC','RpcUseNamedPipeProtocol'),
@@ -943,7 +976,12 @@ function Get-ManagedRegistryEntries {
         @('HKLM:\SYSTEM\CurrentControlSet\Control\Lsa','LmCompatibilityLevel'),
         @('HKLM:\SYSTEM\CurrentControlSet\Control\Lsa','LimitBlankPasswordUse')
     )
-    $out=@();foreach($t in $targets){$s=Get-RegistryValueState $t[0] $t[1];$out+=[pscustomobject]@{Path=$t[0];Name=$t[1];Present=$s.Present;Value=$s.Value;Kind=$s.Kind}};return $out
+    $out=@()
+    foreach($target in $targets){
+        $state=if($Strict){Get-RegistryValueStateStrict $target[0] $target[1]}else{Get-RegistryValueState $target[0] $target[1]}
+        $out+=[pscustomobject]@{Path=$target[0];Name=$target[1];Present=$state.Present;Value=$state.Value;Kind=$state.Kind}
+    }
+    return $out
 }
 
 function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Services','Network','Firewall','SMB1'),[object[]]$FirewallRules=$null,[object[]]$NetworkProfiles=$null) {
@@ -961,7 +999,7 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
             }
             if(-not $registryTargets.ContainsKey($Reason)){throw "No action-specific registry snapshot scope is defined for: $Reason"}
             $names=@($registryTargets[$Reason])
-            $registry=@(Get-ManagedRegistryEntries|Where-Object{[string]$_.Name -in $names})
+            $registry=@(Get-ManagedRegistryEntries -Strict|Where-Object{[string]$_.Name -in $names})
             if($registry.Count -ne $names.Count){throw "Action-specific registry snapshot is incomplete for: $Reason"}
         }
 
@@ -1173,7 +1211,17 @@ function Invoke-RestoreLatest {
             Write-Log ("Restore failed: {0}" -f $message) 'ERROR'
         }else{
             foreach($entry in $firewallEntries){
-                try{Set-NetFirewallRule -Name $entry.Name -Enabled ([string]$entry.Enabled) -Profile ([string]$entry.Profile) -ErrorAction Stop}
+                try{
+                    Set-NetFirewallRule -Name $entry.Name -Enabled ([string]$entry.Enabled) -Profile ([string]$entry.Profile) -ErrorAction Stop
+                    if(-not(Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue)){throw 'Get-NetFirewallRule is unavailable for restore verification.'}
+                    $verifiedRule=Get-NetFirewallRule -Name $entry.Name -ErrorAction Stop|Select-Object -First 1
+                    if($null -eq $verifiedRule){throw 'Firewall rule could not be read back after restore.'}
+                    $expectedProfiles=@(([string]$entry.Profile -split ',')|ForEach-Object{$_.Trim()}|Where-Object{$_}|Sort-Object -Unique)
+                    $actualProfiles=@(([string]$verifiedRule.Profile -split ',')|ForEach-Object{$_.Trim()}|Where-Object{$_}|Sort-Object -Unique)
+                    if(-not [string]::Equals([string]$entry.Enabled,[string]$verifiedRule.Enabled,[StringComparison]::OrdinalIgnoreCase) -or ($expectedProfiles -join ',') -ne ($actualProfiles -join ',')){
+                        throw "Firewall rule postcondition mismatch: Enabled=$($verifiedRule.Enabled) Profile=$($verifiedRule.Profile)"
+                    }
+                }
                 catch{
                     $message=("Firewall rule {0}: {1}" -f $entry.Name,$_.Exception.Message)
                     $failures+=$message
@@ -1191,7 +1239,14 @@ function Invoke-RestoreLatest {
             Write-Log ("Restore failed: {0}" -f $message) 'ERROR'
         }else{
             foreach($entry in $networkEntries){
-                try{Set-NetConnectionProfile -InterfaceIndex ([int]$entry.InterfaceIndex) -NetworkCategory ([string]$entry.NetworkCategory) -ErrorAction Stop}
+                try{
+                    Set-NetConnectionProfile -InterfaceIndex ([int]$entry.InterfaceIndex) -NetworkCategory ([string]$entry.NetworkCategory) -ErrorAction Stop
+                    if(-not(Get-Command Get-NetConnectionProfile -ErrorAction SilentlyContinue)){throw 'Get-NetConnectionProfile is unavailable for restore verification.'}
+                    $verifiedNetwork=Get-NetConnectionProfile -InterfaceIndex ([int]$entry.InterfaceIndex) -ErrorAction Stop|Select-Object -First 1
+                    if($null -eq $verifiedNetwork -or [string]$verifiedNetwork.NetworkCategory -ne [string]$entry.NetworkCategory){
+                        throw "Network profile postcondition mismatch: expected $($entry.NetworkCategory), got $($verifiedNetwork.NetworkCategory)"
+                    }
+                }
                 catch{
                     $message=("Network profile {0}: {1}" -f $entry.InterfaceIndex,$_.Exception.Message)
                     $failures+=$message
@@ -1402,7 +1457,7 @@ function Set-RpcNamedPipeFallback {
 function Connect-SharedPrinterTemporarilyRelaxed {
     $unc=(Read-Host (L 'Shared printer path, e.g. \\PRINT-PC\OfficePrinter' 'Path printer sharing, contoh \\PC-PRINT\PrinterKantor')).Trim()
     if($unc -notmatch '^\\\\[^\\]+\\[^\\]+$'){Write-Warn (L 'Invalid printer UNC path.' 'Path UNC printer tidak valid.');return}
-    $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint';$original=Get-RegistryValueState $path 'RestrictDriverInstallationToAdministrators'
+    $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint';$original=Get-RegistryValueStateStrict $path 'RestrictDriverInstallationToAdministrators'
     Write-Warn (L 'This temporarily reduces Point and Print driver-installation protection. It will be restored immediately after the connection attempt.' 'Tindakan ini menurunkan proteksi pemasangan driver Point and Print hanya sementara. Nilai sebelumnya akan langsung dikembalikan setelah percobaan koneksi.')
     if((Read-Host (L 'Type RISK to continue' 'Ketik RISK untuk lanjut')).Trim().ToUpperInvariant() -ne 'RISK'){return}
 
@@ -1420,8 +1475,15 @@ function Connect-SharedPrinterTemporarilyRelaxed {
     $snap=New-RestoreSnapshot 'Temporary Point and Print relaxation' @('Registry');if(-not $snap){return}
     try{
         Set-RegistryDword $path 'RestrictDriverInstallationToAdministrators' 0
-        if(Get-Command Add-Printer -ErrorAction SilentlyContinue){Add-Printer -ConnectionName $unc}else{Start-Process rundll32.exe -ArgumentList ('printui.dll,PrintUIEntry /in /n "{0}"' -f $unc) -Wait}
-        Write-Ok ((L 'Connection attempt completed: {0}' 'Percobaan koneksi selesai: {0}') -f $unc)
+        if(Get-Command Add-Printer -ErrorAction SilentlyContinue){
+            Add-Printer -ConnectionName $unc -ErrorAction Stop
+        }else{
+            $process=Start-Process rundll32.exe -ArgumentList ('printui.dll,PrintUIEntry /in /n "{0}"' -f $unc) -Wait -PassThru
+            if($process.ExitCode -ne 0){throw "PrintUI connection exited with code $($process.ExitCode)."}
+        }
+        $connected=@(Get-PrinterInventory|Where-Object{[string]$_.Name -eq [string]$unc})
+        if(-not $connected.Count){throw "Shared printer connection could not be verified: $unc"}
+        Write-Ok ((L 'Shared printer connection verified: {0}' 'Koneksi printer sharing terverifikasi: {0}') -f $unc)
     }catch{Write-Fail $_.Exception.Message}
     finally{
         $rollbackSucceeded=$false

@@ -25,7 +25,8 @@ function Write-Ok([string]$Text){}
 function Write-Info([string]$Text){}
 function Write-Log([string]$Message,[string]$Level='INFO'){}
 function Pause-Tui{}
-function Get-ManagedRegistryEntries {
+function Get-ManagedRegistryEntries([switch]$Strict) {
+    $null=$Strict
     @([pscustomobject]@{Path='HKLM:\SYSTEM\CurrentControlSet\Control\Print';Name='RpcAuthnLevelPrivacyEnabled';Present=$false;Value=$null;Kind=$null})
 }
 function Get-NetworkProfilesSafe {

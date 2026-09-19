@@ -28,7 +28,7 @@ function Reset-Messages {$script:Ok=@();$script:Warn=@();$script:Fail=@();$scrip
 
 # Helpers must surface underlying failures.
 $script:RegistryPresent=$true
-function Get-RegistryValueState([string]$Path,[string]$Name){$null=@($Path,$Name);[pscustomobject]@{Present=$script:RegistryPresent;Value=1;Kind='DWord'}}
+function Get-RegistryValueStateStrict([string]$Path,[string]$Name){$null=@($Path,$Name);[pscustomobject]@{Present=$script:RegistryPresent;Value=1;Kind='DWord'}}
 function Remove-ItemProperty {[CmdletBinding()]param([string]$Path,[string]$Name);$null=@($Path,$Name);Write-Error 'synthetic registry removal failure'}
 $registryThrew=$false
 try{Restore-RegistryValue ([pscustomobject]@{Path='HKLM:\X';Name='Y';Present=$false;Value=$null;Kind=$null})}catch{$registryThrew=$true}
@@ -55,6 +55,11 @@ $script:ServiceStartCalls=0
 $script:ServiceStopCalls=0
 $script:FirewallFails=$false
 $script:NetworkFails=$false
+$script:FirewallNoOp=$false
+$script:NetworkNoOp=$false
+$script:FirewallEnabled='True'
+$script:FirewallProfile='Private'
+$script:NetworkCategory='Private'
 $script:FeatureFails=$false
 $script:ServiceStartFails=$false
 $script:FeatureState='Enabled'
@@ -64,15 +69,30 @@ function Get-ValidatedRestoreSnapshot([string]$Directory){$null=$Directory;[pscu
 function Restore-RegistryValue($Entry){$null=$Entry;$script:RegistryCalls++}
 function Set-NetFirewallRule {
     [CmdletBinding()] param([string]$Name,$Enabled,[Alias('Profile')]$FirewallProfile)
-    $null=@($Name,$Enabled,$FirewallProfile)
+    $null=$Name
     $script:FirewallCalls++
-    if($script:FirewallFails){Write-Error 'synthetic restore firewall failure'}
+    if($script:FirewallFails){Write-Error 'synthetic restore firewall failure';return}
+    if(-not $script:FirewallNoOp){
+        $script:FirewallEnabled=[string]$Enabled
+        $script:FirewallProfile=[string]$FirewallProfile
+    }
+}
+function Get-NetFirewallRule {
+    [CmdletBinding()] param([string]$Name)
+    $null=$Name
+    [pscustomobject]@{Name='FPS-Test';Enabled=$script:FirewallEnabled;Profile=$script:FirewallProfile}
 }
 function Set-NetConnectionProfile {
     [CmdletBinding()] param([int]$InterfaceIndex,[string]$NetworkCategory)
-    $null=@($InterfaceIndex,$NetworkCategory)
+    $null=$InterfaceIndex
     $script:NetworkCalls++
-    if($script:NetworkFails){Write-Error 'synthetic restore network failure'}
+    if($script:NetworkFails){Write-Error 'synthetic restore network failure';return}
+    if(-not $script:NetworkNoOp){$script:NetworkCategory=[string]$NetworkCategory}
+}
+function Get-NetConnectionProfile {
+    [CmdletBinding()] param([int]$InterfaceIndex)
+    $null=$InterfaceIndex
+    [pscustomobject]@{InterfaceIndex=7;NetworkCategory=$script:NetworkCategory}
 }
 function Get-WindowsFeatureState([string]$Name){$null=$Name;$script:FeatureState}
 function Enable-WindowsOptionalFeature {
@@ -124,6 +144,8 @@ function Reset-Harness {
     $script:FeatureEnableCalls=0;$script:FeatureDisableCalls=0
     $script:ServiceModeCalls=0;$script:ServiceStartCalls=0;$script:ServiceStopCalls=0
     $script:FirewallFails=$false;$script:NetworkFails=$false;$script:FeatureFails=$false;$script:ServiceStartFails=$false
+    $script:FirewallNoOp=$false;$script:NetworkNoOp=$false
+    $script:FirewallEnabled='True';$script:FirewallProfile='Private';$script:NetworkCategory='Private'
     $script:FeatureState='Enabled';$script:ServiceState='Stopped'
     $script:CurrentState=New-RestoreState
 }
@@ -142,6 +164,19 @@ try {
     Invoke-RestoreLatest
     if($script:Ok.Count -ne 0 -or $script:Fail.Count -ne 1){throw 'Partial Restore failure produced false success or no failure.'}
     if($script:RegistryCalls -ne 1 -or $script:FirewallCalls -ne 1 -or $script:NetworkCalls -ne 1 -or $script:FeatureDisableCalls -ne 1 -or $script:ServiceStartCalls -ne 1){throw 'Restore stopped instead of attempting remaining categories after firewall failure.'}
+
+    # Successful/no-op firewall command must be rejected by read-back.
+    Reset-Harness
+    $script:FirewallNoOp=$true
+    Invoke-RestoreLatest
+    if($script:Ok.Count -ne 0 -or $script:Fail.Count -ne 1){throw 'Firewall restore no-op produced false success or no failure.'}
+    if($script:NetworkCalls -ne 1 -or $script:FeatureDisableCalls -ne 1 -or $script:ServiceStartCalls -ne 1){throw 'Firewall no-op prevented later restore categories from being attempted.'}
+
+    # Successful/no-op network command must be rejected by read-back.
+    Reset-Harness
+    $script:NetworkNoOp=$true
+    Invoke-RestoreLatest
+    if($script:Ok.Count -ne 0 -or $script:Fail.Count -ne 1){throw 'Network restore no-op produced false success or no failure.'}
 
     # Service start failure must be reported after all earlier categories complete.
     Reset-Harness
