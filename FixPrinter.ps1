@@ -1063,6 +1063,9 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
             $sourceRules=if($PSBoundParameters.ContainsKey('FirewallRules')){@($FirewallRules)}else{@(Get-FirewallSharingRules)}
             $changedRules=@($sourceRules|Where-Object{[string]$_.Profile -match 'Private|Domain|Any'})
             $fw=@($changedRules|ForEach-Object{[pscustomobject]@{Name=[string]$_.Name;Enabled=[string]$_.Enabled;Profile=[string]$_.Profile}})
+            if($Reason -eq 'Enable sharing firewall rules' -and -not $fw.Count){
+                throw 'Firewall repair snapshot requires at least one managed Domain/Private/Any rule.'
+            }
         }
 
         if($actualScopes -contains 'SMB1'){
@@ -1192,8 +1195,12 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
 
     $sharingRuleNames=@{}
     foreach($rule in @(Get-FirewallSharingRules)){$sharingRuleNames[([string]$rule.Name).ToUpperInvariant()]=$true}
+    $firewallEntries=@($state.FirewallRules)
+    if($reason -eq 'Enable sharing firewall rules' -and -not $firewallEntries.Count){
+        throw 'Restore snapshot is missing firewall state required by its action contract.'
+    }
     $seenRules=@{}
-    foreach($rule in @($state.FirewallRules)){
+    foreach($rule in $firewallEntries){
         $name=[string]$rule.Name
         $key=$name.ToUpperInvariant()
         if(-not $sharingRuleNames.ContainsKey($key)){throw "Restore snapshot contains a firewall rule outside File and Printer Sharing: $name"}
@@ -1202,6 +1209,9 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
         if([string]$rule.Enabled -notin @('True','False')){throw "Restore snapshot has an invalid firewall enabled state: $name"}
         $profiles=@(([string]$rule.Profile -split ',')|ForEach-Object{$_.Trim()}|Where-Object{$_})
         if(-not $profiles.Count -or @($profiles|Where-Object{$_ -notin @('Domain','Private','Public','Any')}).Count){throw "Restore snapshot has an invalid firewall profile: $name"}
+        if($reason -in @('Enable sharing firewall rules','Combined non-destructive Safe Repair') -and [string]$rule.Profile -notmatch 'Private|Domain|Any'){
+            throw "Restore snapshot firewall rule is outside the Safe Repair profile scope: $name"
+        }
     }
 
     $featureEntries=@($state.WindowsFeatures)
