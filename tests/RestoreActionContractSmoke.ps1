@@ -39,8 +39,23 @@ function Get-ManagedRegistryEntries([switch]$Strict){
 
 $script:Role='Client'
 $script:Mutated=@()
+$script:RpcState=@{
+  RpcUseNamedPipeProtocol=[pscustomobject]@{Present=$true;Value=0;Kind='DWord'}
+  RpcProtocols=[pscustomobject]@{Present=$true;Value=0;Kind='DWord'}
+}
+function Reset-RpcState {
+    $script:RpcState=@{
+      RpcUseNamedPipeProtocol=[pscustomobject]@{Present=$true;Value=0;Kind='DWord'}
+      RpcProtocols=[pscustomobject]@{Present=$true;Value=0;Kind='DWord'}
+    }
+}
+function Get-RegistryValueStateStrict([string]$Path,[string]$Name){
+    $null=$Path
+    if($script:RpcState.ContainsKey($Name)){return $script:RpcState[$Name]}
+    return [pscustomobject]@{Present=$false;Value=$null;Kind=$null}
+}
 function Invoke-Diagnosis{param([switch]$Quiet);$null=$Quiet;[pscustomobject]@{Role=$script:Role}}
-function Set-RegistryDword([string]$Path,[string]$Name,[int]$Value){$null=@($Path,$Value);$script:Mutated+=$Name}
+function Set-RegistryDword([string]$Path,[string]$Name,[int]$Value){$null=$Path;$script:Mutated+=$Name;$script:RpcState[$Name]=[pscustomobject]@{Present=$true;Value=$Value;Kind='DWord'}}
 
 function Read-StateFromLatest {
     $dir=([string](Get-Content -LiteralPath $script:LatestStateFile|Select-Object -First 1)).Trim()
@@ -54,7 +69,7 @@ function Assert-ExactNames([object[]]$Items,[string[]]$Expected,[string]$Label){
 
 try{
     # Client role: snapshot and mutation must contain only client target.
-    $script:Role='Client';$script:Mutated=@()
+    $script:Role='Client';$script:Mutated=@();Reset-RpcState
     Set-RpcNamedPipeFallback
     $client=Read-StateFromLatest
     Assert-ExactNames @($client.State.Registry) @('RpcUseNamedPipeProtocol') 'Client RPC snapshot'
@@ -63,7 +78,7 @@ try{
     [void](Get-ValidatedRestoreSnapshot $client.Directory)
 
     # Host role: snapshot and mutation must contain only host target.
-    $script:Role='Host';$script:Mutated=@()
+    $script:Role='Host';$script:Mutated=@();Reset-RpcState
     Set-RpcNamedPipeFallback
     $hostCase=Read-StateFromLatest
     Assert-ExactNames @($hostCase.State.Registry) @('RpcProtocols') 'Host RPC snapshot'
@@ -72,7 +87,7 @@ try{
     [void](Get-ValidatedRestoreSnapshot $hostCase.Directory)
 
     # Unknown/local role: both managed targets are captured and changed.
-    $script:Role='Unknown / local only';$script:Mutated=@()
+    $script:Role='Unknown / local only';$script:Mutated=@();Reset-RpcState
     Set-RpcNamedPipeFallback
     $both=Read-StateFromLatest
     Assert-ExactNames @($both.State.Registry) @('RpcProtocols','RpcUseNamedPipeProtocol') 'Unknown/local RPC snapshot'
