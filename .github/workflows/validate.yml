@@ -133,6 +133,10 @@ jobs:
         shell: powershell
         run: .\tests\RepairOutcomeSmoke.ps1
 
+      - name: Validate no-op Safe Repair snapshot lifecycle
+        shell: powershell
+        run: .\tests\SafeRepairNoOpSmoke.ps1
+
       - name: Validate repair postconditions
         shell: powershell
         run: .\tests\RepairPostconditionSmoke.ps1
