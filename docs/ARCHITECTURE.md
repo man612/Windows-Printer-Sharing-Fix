@@ -105,12 +105,14 @@ Each legacy behavior is isolated:
 
 Before repair changes, v4 writes a timestamped `managed-state.json` snapshot under the runtime data root (`%LOCALAPPDATA%\WindowsPrinterSharingFix` by default). Existing repository-local v4 backup state is migrated when possible so an upgrade does not silently discard the latest managed restore state.
 
+Legacy v4 service snapshots that contain `StartMode` remain valid for compatibility, but Restore intentionally ignores that field because no managed repair changes service startup type.
+
 Restore action identity is enforced by a centralized contract shared by snapshot creation and validation. Each action defines its allowed scope and managed registry/service targets. RPC Named Pipes is the only registry action whose contract permits a subset, because Client-only and Host-only machines change different values; the snapshot must match the exact role-specific mutation set. A managed target from a different action is rejected even if that target is otherwise known to the application.
 
 Managed state currently includes only the subset relevant to the action being performed:
 
 - only the registry values that action can modify;
-- only the services that action can stop/start or reconfigure;
+- only the runtime state of services that action can stop/start; service startup type is not managed because repair actions never change it;
 - only the selected network profile when changing a network category;
 - only File and Printer Sharing firewall rules that the repair can actually rewrite;
 - the SMB1 client optional-feature state only for the SMB1 client action.
@@ -148,6 +150,7 @@ The stable PowerShell implementation is guarded by layered tests rather than a s
 - repair-outcome smoke tests inject Windows-command failures and require the TUI to suppress success reporting while exercising recovery paths;
 - repair-postcondition smoke tests model successful/no-op Windows commands and require read-back confirmation before a repair may report success;
 - managed-Restore outcome smoke tests inject failures across restore categories, require remaining categories to continue, and prohibit success unless every requested restore operation succeeds;
+- service-restore-scope smoke tests prove new snapshots omit startup type and legacy snapshots restore runtime state without `Set-Service -StartupType`;
 - restore-action-contract smoke tests require RPC role-specific snapshots to equal the actual mutation set and reject cross-action managed targets;
 - PSScriptAnalyzer 1.25.0 runs Error/Warning analysis using the documented repository profile;
 - intentional TUI/style conflicts are explicitly excluded, while actionable diagnostics are fixed rather than hidden;

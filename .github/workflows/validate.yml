@@ -141,6 +141,10 @@ jobs:
         shell: powershell
         run: .\tests\RestoreOutcomeSmoke.ps1
 
+      - name: Validate service Restore scope
+        shell: powershell
+        run: .\tests\ServiceRestoreScopeSmoke.ps1
+
       - name: Validate reproducible release package
         shell: powershell
         run: .\tests\ReproduciblePackageSmoke.ps1
