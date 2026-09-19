@@ -72,6 +72,11 @@ try {
     Assert-Rejected $private 'Private network action baseline'
     $domain=Write-TamperedSnapshot '20260919-151001-bbbbbb' 'Change selected network profile' @('Network') @([pscustomobject]@{InterfaceIndex=7;NetworkCategory='DomainAuthenticated'}) @()
     Assert-Rejected $domain 'DomainAuthenticated network action baseline'
+    # A historically valid Public snapshot must still be rejected if the interface is currently DomainAuthenticated.
+    $script:CurrentNetworkCategory='DomainAuthenticated'
+    $domainNow=Write-TamperedSnapshot '20260919-151002-cccccc' 'Change selected network profile' @('Network') @([pscustomobject]@{InterfaceIndex=7;NetworkCategory='Public'}) @()
+    Assert-Rejected $domainNow 'Current DomainAuthenticated network profile'
+    $script:CurrentNetworkCategory='Private'
 
     # Valid SMB1 legacy baseline is exactly Disabled.
     $script:FeatureState='Disabled'
