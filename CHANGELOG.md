@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Combined Safe Repair now snapshots only the firewall rules and Network Discovery services that actually need mutation, while always retaining Spooler as the required service target.
 - Temporary Point and Print now detects an already-connected target UNC before confirmation, snapshot creation, or security relaxation, leaving protection and Restore history untouched.
 - Legacy/high-risk compatibility actions now leave `Restore latest` unchanged when the target state is already active; RPC Named Pipes snapshots only remaining targets, and SMB1 changes abort when the baseline state is `Unknown` and cannot be restored reliably.
 - Safe Repair now preserves the previous `Restore latest` pointer when firewall, network-profile, or Network Discovery actions are already satisfied or cannot start; firewall snapshots are limited to rules that actually need mutation.
