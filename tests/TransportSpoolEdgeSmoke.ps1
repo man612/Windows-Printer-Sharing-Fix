@@ -32,7 +32,9 @@ $temp=Join-Path $env:TEMP ('wpsf-spool-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temp -Force|Out-Null
 try{
     function Get-RegistryValueStateStrict([string]$Path,[string]$Name){[pscustomobject]@{Present=$true;Value=$temp;Kind='String'}}
-    if((Get-EffectiveSpoolDirectory) -ne $temp){throw 'Customized spool path ignored.'}
+    $actual=[string](Get-EffectiveSpoolDirectory)
+    $expected=[IO.Path]::GetFullPath($temp)
+    if($actual.TrimEnd([char]'\') -ine $expected.TrimEnd([char]'\')){throw "Customized spool path ignored. Expected=$expected Actual=$actual"}
 }finally{Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue}
 $listener=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,0)
 $listener.Start()
