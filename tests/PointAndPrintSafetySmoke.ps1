@@ -168,6 +168,9 @@ try {
     $marker=Get-PendingPointAndPrintMarkerPath
     if(-not(Test-Path -LiteralPath $marker -PathType Leaf)){throw 'Rollback failure did not persist a recovery marker.'}
     if(([string](Get-Content -LiteralPath $marker|Select-Object -First 1)).Trim() -ne $emergency){throw 'Recovery marker points to the wrong snapshot.'}
+    # A subsequent managed action can change latest_backup.txt, but cannot hide an emergency marker.
+    $newer=Join-Path $script:BackupRoot '20260918-130000-newer'
+    $newer|Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8
     $before=$script:FailMessages.Count
     function Get-ValidatedRestoreSnapshot([string]$Directory){
         [pscustomobject]@{Directory=$Directory;State=[pscustomobject]@{Reason='Temporary Point and Print relaxation';Registry=@([pscustomobject]@{Path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint';Name='RestrictDriverInstallationToAdministrators';Present=$true;Value=1;Kind='DWord'})}}
