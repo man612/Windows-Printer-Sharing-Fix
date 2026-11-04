@@ -876,7 +876,10 @@
           ]
         },
         "ShareNamespaceAccessible": {
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "PrinterInstalled": {
           "type": "boolean"
@@ -889,6 +892,28 @@
         },
         "LikelyLayer": {
           "type": "string"
+        },
+        "RpcTransport": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Tcp",
+            "NamedPipes",
+            null
+          ]
+        },
+        "RpcConfiguredPortSource": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "LocalOnly",
+            "ConfirmedRemote",
+            null
+          ]
         }
       }
     },
