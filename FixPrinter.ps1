@@ -664,27 +664,23 @@ function Resolve-HostAddresses([string]$ComputerName,[int]$TimeoutMs=2500) {
 function Test-TcpPort([string]$ComputerName,[int]$Port,[int]$TimeoutMs=2500,[System.Net.IPAddress[]]$Addresses=$null) {
     $targets=@(if($PSBoundParameters.ContainsKey('Addresses')){@($Addresses)}else{@(Resolve-HostAddresses $ComputerName $TimeoutMs)})
     if(-not $targets.Count){return $false}
-    $clock=[System.Diagnostics.Stopwatch]::StartNew()
-    foreach($address in $targets){
-        $remaining=$TimeoutMs-[int]$clock.ElapsedMilliseconds
-        if($remaining -le 0){return $false}
+    foreach($address in @($targets|Select-Object -First 8)){
         $client=New-Object System.Net.Sockets.TcpClient($address.AddressFamily)
         $async=$null
-        try {
+        try{
             $async=$client.BeginConnect($address,$Port,$null,$null)
-            if($async.AsyncWaitHandle.WaitOne($remaining,$false)){
+            if($async.AsyncWaitHandle.WaitOne($TimeoutMs,$false)){
                 $client.EndConnect($async)
                 if($client.Connected){return $true}
             }
-        } catch { Write-Verbose ('TCP probe failed for port {0}: {1}' -f $Port,$_.Exception.Message) }
-        finally {
+        }catch{Write-Verbose ('TCP probe failed for port {0}: {1}' -f $Port,$_.Exception.Message)}
+        finally{
             if($async -and $async.AsyncWaitHandle){$async.AsyncWaitHandle.Close()}
             $client.Close()
         }
     }
     return $false
 }
-
 function Get-NextInvestigationSignals($D) {
     $signals=New-Object System.Collections.Generic.List[string]
     $wppProp=$D.PSObject.Properties['WPP']
@@ -705,12 +701,12 @@ function Get-NextInvestigationSignals($D) {
     return @($signals)
 }
 
-function Test-NextInvestigationEventCategory($D,[string]$Category) {
-    $eventsProp=$D.PSObject.Properties['PrintErrors']
-    if(-not $eventsProp){return $false}
-    return (@($eventsProp.Value|Where-Object{[string]$_.Category -eq $Category}).Count -gt 0)
+function Test-NextInvestigationEventCategory($D,[string]$Category,[object]$TargetPath=$null) {
+    # Recent events are machine-wide until correlated with the exact printer path.
+    if($null -eq $TargetPath){return $false}
+    $matched=$TargetPath.PSObject.Properties['MatchedPrintEventCategories']
+    return ($null -ne $matched -and $Category -in @($matched.Value))
 }
-
 function New-NextInvestigation([string]$Layer,[string]$Reason,[bool]$RemoteTransportTested,[string[]]$Signals=@()) {
     return [pscustomobject]@{Layer=$Layer;Reason=$Reason;RemoteTransportTested=$RemoteTransportTested;Signals=@($Signals);RootCauseClaimed=$false}
 }
@@ -727,22 +723,26 @@ function Get-NextInvestigation($D,[object]$TargetPath=$null) {
     if($null -eq $TargetPath){return New-NextInvestigation 'RemoteTransportUntested' 'TargetPathNotTested' $false $signals}
     if(-not [bool]$TargetPath.DnsResolved){return New-NextInvestigation 'NameResolutionOrBasicNetwork' 'TargetDnsFailed' $true $signals}
     if(-not [bool]$TargetPath.Smb445Reachable){return New-NextInvestigation 'SmbFirewallOrRouting' 'TargetSmb445Failed' $true $signals}
-    if(-not [bool]$TargetPath.Rpc135Reachable){return New-NextInvestigation 'RpcReachability' 'TargetRpc135Failed' $true $signals}
+    $transportProp=$TargetPath.PSObject.Properties['RpcTransport']
+    $namedPipes=($transportProp -and [string]$transportProp.Value -eq 'NamedPipes')
+    if($namedPipes){$signals+='RpcTransport:NamedPipes'}
+    if(-not $namedPipes -and -not [bool]$TargetPath.Rpc135Reachable){return New-NextInvestigation 'RpcReachability' 'TargetRpc135Failed' $true $signals}
     $rpcPortProp=$TargetPath.PSObject.Properties['RpcConfiguredPort']
     $rpcPortReachableProp=$TargetPath.PSObject.Properties['RpcConfiguredPortReachable']
-    if($rpcPortProp -and $null -ne $rpcPortProp.Value -and $rpcPortReachableProp -and $rpcPortReachableProp.Value -eq $false){return New-NextInvestigation 'RpcReachability' 'TargetConfiguredRpcPortFailed' $true $signals}
+    $portSource=$TargetPath.PSObject.Properties['RpcConfiguredPortSource']
+    if(-not $namedPipes -and $rpcPortProp -and $null -ne $rpcPortProp.Value -and $rpcPortReachableProp -and $rpcPortReachableProp.Value -eq $false -and $portSource -and [string]$portSource.Value -eq 'ConfirmedRemote'){return New-NextInvestigation 'RpcReachability' 'TargetConfiguredRpcPortFailed' $true $signals}
     if(-not [bool]$TargetPath.ShareNamespaceAccessible){return New-NextInvestigation 'ShareNamespaceOrCredentials' 'TargetNamespaceFailed' $true $signals}
     $installed=[bool]$TargetPath.PrinterInstalled
     $wppProp=$D.PSObject.Properties['WPP']
     if(-not $installed -and $wppProp -and $wppProp.Value -and $wppProp.Value.Enabled){return New-NextInvestigation 'WppCompatibility' 'WppEnabledPrinterNotInstalled' $true $signals}
-    if(-not $installed -and (Test-NextInvestigationEventCategory $D 'DriverOrPackage')){return New-NextInvestigation 'DriverOrPackage' 'RecentDriverOrPackageEvents' $true $signals}
-    if(-not $installed -and (Test-NextInvestigationEventCategory $D 'Policy')){return New-NextInvestigation 'Policy' 'RecentPolicyEvents' $true $signals}
-    if(-not $installed -and (Test-NextInvestigationEventCategory $D 'SharingOrConnection')){return New-NextInvestigation 'SharingOrConnection' 'RecentSharingOrConnectionEvents' $true $signals}
+    if(-not $installed -and (Test-NextInvestigationEventCategory $D 'DriverOrPackage' $TargetPath)){return New-NextInvestigation 'DriverOrPackage' 'RecentDriverOrPackageEvents' $true $signals}
+    if(-not $installed -and (Test-NextInvestigationEventCategory $D 'Policy' $TargetPath)){return New-NextInvestigation 'Policy' 'RecentPolicyEvents' $true $signals}
+    if(-not $installed -and (Test-NextInvestigationEventCategory $D 'SharingOrConnection' $TargetPath)){return New-NextInvestigation 'SharingOrConnection' 'RecentSharingOrConnectionEvents' $true $signals}
     if(-not $installed){return New-NextInvestigation 'PrinterConnectionSetup' 'PrinterNotInstalledAfterTransport' $true $signals}
-    if(Test-NextInvestigationEventCategory $D 'SpoolerOrRpc'){return New-NextInvestigation 'SpoolerOrRpc' 'RecentSpoolerOrRpcEvents' $true $signals}
-    if(Test-NextInvestigationEventCategory $D 'PortOrProcessor'){return New-NextInvestigation 'PortOrProcessor' 'RecentPortOrProcessorEvents' $true $signals}
-    if(Test-NextInvestigationEventCategory $D 'PrintJob'){return New-NextInvestigation 'PrintJob' 'RecentPrintJobEvents' $true $signals}
-    if(Test-NextInvestigationEventCategory $D 'DirectoryOrGpo'){return New-NextInvestigation 'DirectoryOrGpo' 'RecentDirectoryOrGpoEvents' $true $signals}
+    if(Test-NextInvestigationEventCategory $D 'SpoolerOrRpc' $TargetPath){return New-NextInvestigation 'SpoolerOrRpc' 'RecentSpoolerOrRpcEvents' $true $signals}
+    if(Test-NextInvestigationEventCategory $D 'PortOrProcessor' $TargetPath){return New-NextInvestigation 'PortOrProcessor' 'RecentPortOrProcessorEvents' $true $signals}
+    if(Test-NextInvestigationEventCategory $D 'PrintJob' $TargetPath){return New-NextInvestigation 'PrintJob' 'RecentPrintJobEvents' $true $signals}
+    if(Test-NextInvestigationEventCategory $D 'DirectoryOrGpo' $TargetPath){return New-NextInvestigation 'DirectoryOrGpo' 'RecentDirectoryOrGpoEvents' $true $signals}
     return New-NextInvestigation 'FunctionalVerification' 'PrerequisitesHealthy' $true $signals
 }
 
@@ -914,11 +914,14 @@ function Show-DiagnosticReport($D) {
     Pause-Tui
 }
 
+function Test-SafePrinterUncPath([string]$Path) {
+    return (-not [string]::IsNullOrWhiteSpace($Path) -and $Path -match '^\\\\[^\\/:"<>|?*]+\\[^\\/:"<>|?*]+$')
+}
 function Invoke-SharedPrinterPathDiagnosis {
     Write-Rule; Write-Host (L 'SHARED PRINTER PATH TEST' 'TES PATH PRINTER SHARING') -ForegroundColor White
     $unc=(Read-Host (L 'Enter printer path like \\PRINT-PC\OfficePrinter (blank = cancel)' 'Masukkan path printer seperti \\PC-PRINT\PrinterKantor (kosong = batal)')).Trim(); if(-not $unc){return}
-    if($unc -notmatch '^\\\\([^\\]+)\\([^\\]+)$'){Write-Warn (L 'Invalid UNC printer path.' 'Path UNC printer tidak valid.');return}
-    $hostName=$Matches[1]
+    if(-not(Test-SafePrinterUncPath $unc)){Write-Warn (L 'Invalid UNC printer path.' 'Path UNC printer tidak valid.');return}
+    $hostName=($unc -split '\\')[2]
     $testedAt=(Get-Date).ToUniversalTime().ToString('o')
     $diagForCorrelation=$script:LastDiagnostic
     if($null -eq $diagForCorrelation){$diagForCorrelation=Invoke-Diagnosis -Quiet}
@@ -930,16 +933,15 @@ function Invoke-SharedPrinterPathDiagnosis {
     }
     $addresses=@(Resolve-HostAddresses $hostName 2500); $dns=($addresses.Count -gt 0)
     $smb=if($dns){Test-TcpPort $hostName 445 2500 $addresses}else{$false}; $rpc=if($dns){Test-TcpPort $hostName 135 2500 $addresses}else{$false}; $root=$false
-    $configuredRpcReachable=if($null -ne $configuredRpcPort -and $dns){Test-TcpPort $hostName $configuredRpcPort 2500 $addresses}else{$null}
+    $rpcTransport=if($diagForCorrelation.RpcUseNamedPipe.Present -and [int]$diagForCorrelation.RpcUseNamedPipe.Value -eq 1){'NamedPipes'}else{'Tcp'}
+    # A local port policy is not proof that a remote host listens on that port.
+    $configuredRpcReachable=$null
     if($smb){try{$root=Test-Path -LiteralPath ("\\{0}\" -f $hostName) -ErrorAction SilentlyContinue}catch{Write-Verbose ('Share namespace probe failed: {0}' -f $_.Exception.Message)}}
     $installed=@((Get-PrinterInventory)|Where-Object{$_.Name -eq $unc}).Count -gt 0
     if($dns){Write-Ok ((L 'Host resolves: {0}' 'Host berhasil di-resolve: {0}') -f $hostName)}else{Write-Fail ((L 'Host does not resolve: {0}' 'Host tidak dapat di-resolve: {0}') -f $hostName)}
     if($smb){Write-Ok (L 'TCP 445 (SMB) reachable.' 'TCP 445 (SMB) dapat dijangkau.')}else{Write-Fail (L 'TCP 445 (SMB) not reachable.' 'TCP 445 (SMB) tidak dapat dijangkau.')}
-    if($rpc){Write-Ok (L 'TCP 135 (RPC Endpoint Mapper) reachable.' 'TCP 135 (RPC Endpoint Mapper) dapat dijangkau.')}else{Write-Warn (L 'TCP 135 (RPC Endpoint Mapper) not reachable.' 'TCP 135 (RPC Endpoint Mapper) tidak dapat dijangkau.')}
-    if($null -ne $configuredRpcPort){
-        if($configuredRpcReachable){Write-Ok ((L 'Configured print RPC TCP port {0} is reachable.' 'Port TCP RPC printer {0} yang dikonfigurasi dapat dijangkau.') -f $configuredRpcPort)}
-        else{Write-Warn ((L 'Configured print RPC TCP port {0} is not reachable.' 'Port TCP RPC printer {0} yang dikonfigurasi tidak dapat dijangkau.') -f $configuredRpcPort)}
-    }
+    if($rpc){Write-Ok (L 'TCP 135 (RPC Endpoint Mapper) reachable.' 'TCP 135 (RPC Endpoint Mapper) dapat dijangkau.')}elseif($rpcTransport -eq 'NamedPipes'){Write-Info (L 'TCP 135 unavailable, but the client uses RPC Named Pipes; verify the host listener and an actual print connection.' 'TCP 135 tidak tersedia, tetapi klien memakai RPC Named Pipes; periksa listener host dan koneksi cetak.') }else{Write-Warn (L 'TCP 135 (RPC Endpoint Mapper) not reachable.' 'TCP 135 (RPC Endpoint Mapper) tidak dapat dijangkau.')}
+    if($null -ne $configuredRpcPort){Write-Info ((L 'Local RPC TCP port policy: {0}; remote host port unknown.' 'Kebijakan port TCP RPC lokal: {0}; port host remote belum diketahui.') -f $configuredRpcPort)}
     if($root){Write-Ok ((L 'Host share namespace accessible: \\{0}' 'Namespace share host dapat diakses: \\{0}') -f $hostName)}elseif($smb){Write-Warn (L 'SMB port is reachable but the share namespace was not accessible; credentials, sharing, or policy may be involved.' 'Port SMB dapat dijangkau tetapi namespace share tidak dapat diakses; kredensial, pengaturan sharing, atau kebijakan Windows mungkin terlibat.')}
     $smbSecuritySignals=@()
     if($smb -and -not $root){
@@ -948,7 +950,8 @@ function Invoke-SharedPrinterPathDiagnosis {
         if($smbSecuritySignals.Count){Write-Info ((L 'Recent normalized SMB security evidence: {0}' 'Bukti keamanan SMB ternormalisasi terbaru: {0}') -f ($smbSecuritySignals -join ', '))}
     }
     if($installed){Write-Ok ((L 'Printer installed locally: {0}' 'Printer sudah terpasang lokal: {0}') -f $unc)}else{Write-Info ((L 'Printer not currently installed locally: {0}' 'Printer belum terpasang lokal: {0}') -f $unc)}
-    $target=[pscustomobject]@{TestedAtUtc=$testedAt;DnsResolved=[bool]$dns;Smb445Reachable=[bool]$smb;Rpc135Reachable=[bool]$rpc;RpcConfiguredPort=$configuredRpcPort;RpcConfiguredPortReachable=$configuredRpcReachable;ShareNamespaceAccessible=[bool]$root;PrinterInstalled=[bool]$installed;SmbSecuritySignals=@($smbSecuritySignals);LikelyLayer=''}
+    $matchedEvents=@($diagForCorrelation.PrintErrors|Where-Object{([string]$_.Message).IndexOf($unc,[StringComparison]::OrdinalIgnoreCase) -ge 0}|ForEach-Object{[string]$_.Category}|Where-Object{$_}|Select-Object -Unique)
+    $target=[pscustomobject]@{TestedAtUtc=$testedAt;DnsResolved=[bool]$dns;Smb445Reachable=[bool]$smb;Rpc135Reachable=[bool]$rpc;RpcTransport=$rpcTransport;RpcConfiguredPort=$configuredRpcPort;RpcConfiguredPortSource='LocalOnly';RpcConfiguredPortReachable=$configuredRpcReachable;ShareNamespaceAccessible=[bool]$root;PrinterInstalled=[bool]$installed;MatchedPrintEventCategories=@($matchedEvents);SmbSecuritySignals=@($smbSecuritySignals);LikelyLayer=''}
     $next=Get-NextInvestigation $diagForCorrelation $target
     $likelyLayer=switch([string]$next.Layer){
         'LocalSpooler'{'LocalSpooler'}
@@ -1655,7 +1658,7 @@ function Set-RpcNamedPipeFallback {
 
 function Connect-SharedPrinterTemporarilyRelaxed {
     $unc=(Read-Host (L 'Shared printer path, e.g. \\PRINT-PC\OfficePrinter' 'Path printer sharing, contoh \\PC-PRINT\PrinterKantor')).Trim()
-    if($unc -notmatch '^\\\\[^\\]+\\[^\\]+$'){Write-Warn (L 'Invalid printer UNC path.' 'Path UNC printer tidak valid.');return}
+    if(-not(Test-SafePrinterUncPath $unc)){Write-Warn (L 'Invalid printer UNC path.' 'Path UNC printer tidak valid.');return}
     $existing=@(Get-PrinterInventory|Where-Object{[string]$_.Name -eq [string]$unc})
     if($existing.Count){
         Write-Info ((L 'This shared printer is already connected; Point and Print protection was not changed: {0}' 'Printer sharing ini sudah terhubung; proteksi Point and Print tidak diubah: {0}') -f $unc)
