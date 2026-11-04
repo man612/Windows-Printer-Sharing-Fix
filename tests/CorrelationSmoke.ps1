@@ -14,8 +14,8 @@ function New-DiagnosticFixture([string]$Spooler='Running',[bool]$Wpp=$false,[str
     $service=if($Spooler -eq 'Missing'){$null}else{[pscustomobject]@{Status=$Spooler}}
     return [pscustomobject]@{Spooler=$service;WPP=[pscustomobject]@{Enabled=$Wpp};Profiles=@($profiles);PrintErrors=@($events)}
 }
-function New-Target([bool]$Dns=$true,[bool]$Smb=$true,[bool]$Rpc=$true,[bool]$Namespace=$true,[bool]$Installed=$false) {
-    return [pscustomobject]@{DnsResolved=$Dns;Smb445Reachable=$Smb;Rpc135Reachable=$Rpc;ShareNamespaceAccessible=$Namespace;PrinterInstalled=$Installed}
+function New-Target([bool]$Dns=$true,[bool]$Smb=$true,[bool]$Rpc=$true,[bool]$Namespace=$true,[bool]$Installed=$false,[string[]]$Matched=@()) {
+    return [pscustomobject]@{DnsResolved=$Dns;Smb445Reachable=$Smb;Rpc135Reachable=$Rpc;ShareNamespaceAccessible=$Namespace;PrinterInstalled=$Installed;MatchedPrintEventCategories=@($Matched)}
 }
 function Assert-Layer($D,$T,[string]$Layer,[string]$Reason) {
     $n=Get-NextInvestigation $D $T
@@ -33,14 +33,14 @@ Assert-Layer $healthy (New-Target -Smb $false -Rpc $false -Namespace $false) 'Sm
 Assert-Layer $healthy (New-Target -Rpc $false -Namespace $false) 'RpcReachability' 'TargetRpc135Failed'|Out-Null
 Assert-Layer $healthy (New-Target -Namespace $false) 'ShareNamespaceOrCredentials' 'TargetNamespaceFailed'|Out-Null
 Assert-Layer (New-DiagnosticFixture -Wpp $true) (New-Target) 'WppCompatibility' 'WppEnabledPrinterNotInstalled'|Out-Null
-Assert-Layer (New-DiagnosticFixture -Categories @('DriverOrPackage')) (New-Target) 'DriverOrPackage' 'RecentDriverOrPackageEvents'|Out-Null
-Assert-Layer (New-DiagnosticFixture -Categories @('Policy')) (New-Target) 'Policy' 'RecentPolicyEvents'|Out-Null
-Assert-Layer (New-DiagnosticFixture -Categories @('SharingOrConnection')) (New-Target) 'SharingOrConnection' 'RecentSharingOrConnectionEvents'|Out-Null
+Assert-Layer (New-DiagnosticFixture -Categories @('DriverOrPackage')) (New-Target -Matched @('DriverOrPackage')) 'DriverOrPackage' 'RecentDriverOrPackageEvents'|Out-Null
+Assert-Layer (New-DiagnosticFixture -Categories @('Policy')) (New-Target -Matched @('Policy')) 'Policy' 'RecentPolicyEvents'|Out-Null
+Assert-Layer (New-DiagnosticFixture -Categories @('SharingOrConnection')) (New-Target -Matched @('SharingOrConnection')) 'SharingOrConnection' 'RecentSharingOrConnectionEvents'|Out-Null
 Assert-Layer $healthy (New-Target) 'PrinterConnectionSetup' 'PrinterNotInstalledAfterTransport'|Out-Null
-Assert-Layer (New-DiagnosticFixture -Categories @('SpoolerOrRpc')) (New-Target -Installed $true) 'SpoolerOrRpc' 'RecentSpoolerOrRpcEvents'|Out-Null
-Assert-Layer (New-DiagnosticFixture -Categories @('PortOrProcessor')) (New-Target -Installed $true) 'PortOrProcessor' 'RecentPortOrProcessorEvents'|Out-Null
-Assert-Layer (New-DiagnosticFixture -Categories @('PrintJob')) (New-Target -Installed $true) 'PrintJob' 'RecentPrintJobEvents'|Out-Null
-Assert-Layer (New-DiagnosticFixture -Categories @('DirectoryOrGpo')) (New-Target -Installed $true) 'DirectoryOrGpo' 'RecentDirectoryOrGpoEvents'|Out-Null
+Assert-Layer (New-DiagnosticFixture -Categories @('SpoolerOrRpc')) (New-Target -Installed $true -Matched @('SpoolerOrRpc')) 'SpoolerOrRpc' 'RecentSpoolerOrRpcEvents'|Out-Null
+Assert-Layer (New-DiagnosticFixture -Categories @('PortOrProcessor')) (New-Target -Installed $true -Matched @('PortOrProcessor')) 'PortOrProcessor' 'RecentPortOrProcessorEvents'|Out-Null
+Assert-Layer (New-DiagnosticFixture -Categories @('PrintJob')) (New-Target -Installed $true -Matched @('PrintJob')) 'PrintJob' 'RecentPrintJobEvents'|Out-Null
+Assert-Layer (New-DiagnosticFixture -Categories @('DirectoryOrGpo')) (New-Target -Installed $true -Matched @('DirectoryOrGpo')) 'DirectoryOrGpo' 'RecentDirectoryOrGpoEvents'|Out-Null
 Assert-Layer $healthy (New-Target -Installed $true) 'FunctionalVerification' 'PrerequisitesHealthy'|Out-Null
 $signals=(Get-NextInvestigation (New-DiagnosticFixture -Wpp $true -Categories @('DriverOrPackage') -Public $true) $null).Signals
 foreach($expected in @('WppEnabled','PublicNetworkProfile','PrintService:DriverOrPackage')){if($expected -notin $signals){throw "Missing supporting signal: $expected"}}
