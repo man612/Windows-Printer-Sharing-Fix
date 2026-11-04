@@ -1751,6 +1751,13 @@ function Connect-SharedPrinterTemporarilyRelaxed {
 
     Assert-PrinterPolicyNotManaged $path 'RestrictDriverInstallationToAdministrators'
     $snap=New-RestoreSnapshot 'Temporary Point and Print relaxation' @('Registry');if(-not $snap){return}
+    # The durable marker survives a crash even if another action changes latest_backup.txt.
+    $emergencyMarker=Get-PendingPointAndPrintMarkerPath
+    try{$snap|Set-Content -LiteralPath $emergencyMarker -Encoding UTF8 -ErrorAction Stop}
+    catch{
+        Write-Fail ((L 'Could not write Point and Print recovery marker; no security setting was changed: {0}' 'Tidak dapat menyimpan penanda pemulihan Point and Print; pengaturan keamanan belum diubah: {0}') -f $_.Exception.Message)
+        return
+    }
     try{
         Set-RegistryDword $path 'RestrictDriverInstallationToAdministrators' 0
         if(Get-Command Add-Printer -ErrorAction SilentlyContinue){
@@ -1776,6 +1783,7 @@ function Connect-SharedPrinterTemporarilyRelaxed {
 
         if($rollbackSucceeded){
             try{
+                if(Test-Path -LiteralPath $emergencyMarker -PathType Leaf){Remove-Item -LiteralPath $emergencyMarker -Force -ErrorAction Stop}
                 if($hadPreviousLatest){
                     if(-not $previousLatest){throw 'Previous Restore pointer was empty.'}
                     $previousLatest|Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8 -ErrorAction Stop
@@ -2147,24 +2155,42 @@ function Write-MainMenuItem([string]$Number,[string]$Label,[ConsoleColor]$Color=
     Write-Host $text -ForegroundColor $Color
 }
 
-function Show-PendingPointAndPrintRecovery {
-    if(-not(Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf)){return}
-    try{
-        $path=([string](Get-Content -LiteralPath $script:LatestStateFile -ErrorAction Stop|Select-Object -First 1)).Trim()
-        $snapshot=Get-ValidatedRestoreSnapshot $path
-        if([string]$snapshot.State.Reason -ne 'Temporary Point and Print relaxation'){return}
-        $entry=@($snapshot.State.Registry|Where-Object{$_.Name -eq 'RestrictDriverInstallationToAdministrators'})|Select-Object -First 1
-        if(-not $entry){return}
-        $actual=Get-RegistryValueStateStrict ([string]$entry.Path) ([string]$entry.Name)
-        if(-not(Test-RegistryStateMatches $entry $actual)){
-            Write-Fail (L 'An interrupted Point and Print relaxation may still be active. Open Restore and select the emergency snapshot before further repairs.' 'Relaksasi Point and Print sebelumnya mungkin belum dipulihkan. Buka Restore dan pilih snapshot darurat sebelum perbaikan lain.')
-        }
-    }catch{Write-Log ("Point and Print emergency check failed: {0}" -f $_.Exception.Message) 'WARN'}
+function Get-PendingPointAndPrintMarkerPath {
+    return (Join-Path $script:BackupRoot 'pointandprint-pending.txt')
 }
+function Show-PendingPointAndPrintRecovery {
+    $marker=Get-PendingPointAndPrintMarkerPath
+    $hasMarker=Test-Path -LiteralPath $marker -PathType Leaf
+    if(-not $hasMarker -and -not(Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf)){return}
+    try{
+        $source=if($hasMarker){$marker}else{$script:LatestStateFile}
+        $path=([string](Get-Content -LiteralPath $source -ErrorAction Stop|Select-Object -First 1)).Trim()
+        $snapshot=Get-ValidatedRestoreSnapshot $path
+        if([string]$snapshot.State.Reason -ne 'Temporary Point and Print relaxation'){
+            if($hasMarker){throw 'Recovery marker does not reference an emergency Point and Print snapshot.'}
+            return
+        }
+        $entry=@($snapshot.State.Registry|Where-Object{$_.Name -eq 'RestrictDriverInstallationToAdministrators'})|Select-Object -First 1
+        if(-not $entry){throw 'Emergency snapshot does not contain the Point and Print restriction.'}
+        $actual=Get-RegistryValueStateStrict ([string]$entry.Path) ([string]$entry.Name)
+        if(Test-RegistryStateMatches $entry $actual){
+            if($hasMarker){
+                Remove-Item -LiteralPath $marker -Force -ErrorAction Stop
+                Write-Info (L 'Point and Print policy matches its captured baseline; stale emergency marker cleared.' 'Kebijakan Point and Print sudah sesuai kondisi awal; penanda darurat lama dibersihkan.')
+            }
+            return
+        }
+        Write-Fail (L 'Emergency: Point and Print driver-installation restriction differs from the captured baseline. Restore the emergency snapshot before making other changes.' 'Darurat: pembatasan instalasi driver Point and Print berbeda dari kondisi awal. Pulihkan snapshot darurat sebelum perubahan lain.')
+    }catch{
+        Write-Fail ((L 'Point and Print recovery state could not be verified: {0}. Do not assume the restriction is safe.' 'Kondisi pemulihan Point and Print tidak dapat diverifikasi: {0}. Jangan menganggap pembatasannya sudah aman.') -f $_.Exception.Message)
+        Write-Log ("Point and Print emergency check failed: {0}" -f $_.Exception.Message) 'ERROR'
+    }
+}
+
 function Show-MainMenu {
-    Show-PendingPointAndPrintRecovery
     while($true){
         Write-Header (T 'Main')
+        Show-PendingPointAndPrintRecovery
         $os=Get-OsInfo
         $spool=Get-Service Spooler -ErrorAction SilentlyContinue
         $languageName=if($script:Language -eq 'ID'){'Indonesia'}else{'English'}

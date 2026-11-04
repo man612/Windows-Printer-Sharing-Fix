@@ -165,6 +165,18 @@ try {
     $emergency=Join-Path $script:BackupRoot '20260918-120000-abcdef'
     if($latest -ne $emergency){throw 'Rollback failure did not retain the emergency snapshot as latest.'}
     if(-not(Test-Path -LiteralPath $emergency -PathType Container)){throw 'Rollback failure deleted the emergency snapshot.'}
+    $marker=Get-PendingPointAndPrintMarkerPath
+    if(-not(Test-Path -LiteralPath $marker -PathType Leaf)){throw 'Rollback failure did not persist a recovery marker.'}
+    if(([string](Get-Content -LiteralPath $marker|Select-Object -First 1)).Trim() -ne $emergency){throw 'Recovery marker points to the wrong snapshot.'}
+    $before=$script:FailMessages.Count
+    function Get-ValidatedRestoreSnapshot([string]$Directory){
+        [pscustomobject]@{Directory=$Directory;State=[pscustomobject]@{Reason='Temporary Point and Print relaxation';Registry=@([pscustomobject]@{Path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint';Name='RestrictDriverInstallationToAdministrators';Present=$true;Value=1;Kind='DWord'})}}
+    }
+    Show-PendingPointAndPrintRecovery
+    if($script:FailMessages.Count -le $before){throw 'Startup did not warn about interrupted driver-security relaxation.'}
+    $script:RegistryValue=1
+    Show-PendingPointAndPrintRecovery
+    if(Test-Path -LiteralPath $marker -PathType Leaf){throw 'Verified rollback baseline did not clear the emergency marker.'}
 
     Write-Host 'Point-and-Print safety smoke passed: successful rollback preserves Restore history; failed rollback retains emergency recovery state.' -ForegroundColor Green
 }
