@@ -1423,7 +1423,9 @@ function Invoke-RestoreHistory {
     $allowed=@(1..$valid.Count|ForEach-Object{[string]$_})+'B'
     $choice=Read-Choice (T 'Select') $allowed
     if($choice -eq 'B'){return}
-    Invoke-RestoreLatest -SnapshotDirectory $valid[[int]$choice-1].Directory
+    $selection=[int]$choice - 1
+    $chosen=$valid[$selection]
+    Invoke-RestoreLatest -SnapshotDirectory ([string]$chosen.Directory)
 }
 function Invoke-RestartSpooler {
     Stop-Service Spooler -Force -ErrorAction Stop

@@ -30,7 +30,7 @@ try{
         [pscustomobject]@{Directory=$Directory;State=[pscustomobject]@{Reason='Synthetic action';Created='2026-11-04T10:00:00Z'}}
     }
     Invoke-RestoreHistory
-    if($script:SelectedDirectory -ne $one){throw 'History did not select the second valid snapshot or included invalid data.'}
+    if($script:SelectedDirectory -ne $one){throw ("History selected unexpected snapshot: actual='{0}' expected='{1}'" -f $script:SelectedDirectory,$one)}
     $script:PolicyEvidence=[pscustomobject]@{Available=$true;Settings=@(
         [pscustomobject]@{RegistryKey='Software\Policies\Microsoft\Windows NT\Printers\RPC';ValueName='RpcUseNamedPipeProtocol';GpoId='{SYNTHETIC-GPO}';SomId='LDAP://synthetic';Precedence=1;Deleted=$false}
     )}
