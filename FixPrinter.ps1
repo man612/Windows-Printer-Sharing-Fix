@@ -664,12 +664,18 @@ function Resolve-HostAddresses([string]$ComputerName,[int]$TimeoutMs=2500) {
 function Test-TcpPort([string]$ComputerName,[int]$Port,[int]$TimeoutMs=2500,[System.Net.IPAddress[]]$Addresses=$null) {
     $targets=@(if($PSBoundParameters.ContainsKey('Addresses')){@($Addresses)}else{@(Resolve-HostAddresses $ComputerName $TimeoutMs)})
     if(-not $targets.Count){return $false}
+    # Allow more than one address without an unbounded 8 x timeout worst case.
+    $clock=[System.Diagnostics.Stopwatch]::StartNew()
+    $budgetMs=[Math]::Min(6000,[Math]::Max($TimeoutMs,$TimeoutMs*2))
     foreach($address in @($targets|Select-Object -First 8)){
+        $remaining=$budgetMs-[int]$clock.ElapsedMilliseconds
+        if($remaining -le 0){return $false}
+        $attemptMs=[Math]::Min($TimeoutMs,$remaining)
         $client=New-Object System.Net.Sockets.TcpClient($address.AddressFamily)
         $async=$null
         try{
             $async=$client.BeginConnect($address,$Port,$null,$null)
-            if($async.AsyncWaitHandle.WaitOne($TimeoutMs,$false)){
+            if($async.AsyncWaitHandle.WaitOne($attemptMs,$false)){
                 $client.EndConnect($async)
                 if($client.Connected){return $true}
             }
@@ -1430,6 +1436,7 @@ function Get-EffectiveSpoolDirectory {
     $path=if([string]::IsNullOrWhiteSpace($configured)){$fallback}else{[Environment]::ExpandEnvironmentVariables($configured)}
     if(-not [IO.Path]::IsPathRooted($path) -or $path.StartsWith('\\')){throw 'Spool directory must be a local absolute path.'}
     $full=[IO.Path]::GetFullPath($path)
+    if($full.TrimEnd([char]'\') -ieq ([IO.Path]::GetPathRoot($full)).TrimEnd([char]'\')){throw 'Refusing to clear queue files from a drive root.'}
     if(-not(Test-Path -LiteralPath $full -PathType Container)){throw "Spool directory not found: $full"}
     $directory=Get-Item -LiteralPath $full -Force -ErrorAction Stop
     if(($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Spool directory is a reparse point; automatic cleanup refused.'}
