@@ -57,6 +57,10 @@ jobs:
         shell: powershell
         run: .\tests\EvidenceSmoke.ps1
 
+      - name: Validate A1 read-only host/client preflight
+        shell: powershell
+        run: .\tests\A1ReadinessSmoke.ps1
+
       - name: Validate exact Windows build revision reporting
         shell: powershell
         run: .\tests\ExactBuildSmoke.ps1
