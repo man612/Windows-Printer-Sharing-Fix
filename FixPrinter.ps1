@@ -42,10 +42,10 @@ $script:LastFunctionalVerification = $null
 
 $script:Text = @{
     EN = @{
-        Title='WINDOWS PRINTER SHARING FIX'; Subtitle='Diagnosis-first repair utility'; Main='MAIN MENU'; Diagnose='Diagnose this PC'; Safe='Safe Repair'; Compat='Compatibility Repair (Advanced)'; Legacy='Legacy Compatibility (High Risk)'; Restore='Restore latest managed changes'; Tools='Tools and Logs'; Guide='Guide'; Language='Language'; Exit='Exit'; Select='Select'; Back='Back'; Recommended='RECOMMENDED'; Invalid='Invalid selection.'; Press='Press Enter to continue';
+        Title='WINDOWS PRINTER SHARING FIX'; Subtitle='Diagnosis-first repair utility'; Main='MAIN MENU'; Diagnose='Diagnose this PC'; Safe='Safe Repair'; Compat='Compatibility Repair (Advanced)'; Legacy='Legacy Compatibility (High Risk)'; Restore='Restore managed changes'; Tools='Tools and Logs'; Guide='Guide'; Language='Language'; Exit='Exit'; Select='Select'; Back='Back'; Recommended='RECOMMENDED'; Invalid='Invalid selection.'; Press='Press Enter to continue';
     }
     ID = @{
-        Title='WINDOWS PRINTER SHARING FIX'; Subtitle='Utilitas diagnosis dan perbaikan printer sharing'; Main='MENU UTAMA'; Diagnose='Diagnosis PC ini'; Safe='Perbaikan Aman'; Compat='Perbaikan Kompatibilitas (Lanjutan)'; Legacy='Kompatibilitas Legacy (Risiko Tinggi)'; Restore='Kembalikan perubahan terakhir'; Tools='Alat dan Log'; Guide='Panduan'; Language='Bahasa'; Exit='Keluar'; Select='Pilih'; Back='Kembali'; Recommended='DISARANKAN'; Invalid='Pilihan tidak valid.'; Press='Tekan Enter untuk lanjut';
+        Title='WINDOWS PRINTER SHARING FIX'; Subtitle='Utilitas diagnosis dan perbaikan printer sharing'; Main='MENU UTAMA'; Diagnose='Diagnosis PC ini'; Safe='Perbaikan Aman'; Compat='Perbaikan Kompatibilitas (Lanjutan)'; Legacy='Kompatibilitas Legacy (Risiko Tinggi)'; Restore='Kembalikan perubahan tersimpan'; Tools='Alat dan Log'; Guide='Panduan'; Language='Bahasa'; Exit='Keluar'; Select='Pilih'; Back='Kembali'; Recommended='DISARANKAN'; Invalid='Pilihan tidak valid.'; Press='Tekan Enter untuk lanjut';
     }
 }
 
@@ -1244,11 +1244,13 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
     return [pscustomobject]@{Directory=$dirFull;State=$state}
 }
 
-function Invoke-RestoreLatest {
+function Invoke-RestoreLatest([string]$SnapshotDirectory='') {
     Write-Header (L 'RESTORE' 'KEMBALIKAN PERUBAHAN')
     Write-Warn (L 'Restore reverts only the states captured for the latest v4 action. Deleted print jobs and removed printer connections cannot be recreated automatically.' 'Restore hanya mengembalikan kondisi yang disimpan oleh tindakan v4 terakhir. Print job yang sudah dihapus dan koneksi printer yang sudah dilepas tidak dapat dibuat ulang otomatis.')
-    if(-not(Test-Path -LiteralPath $script:LatestStateFile)){Write-Warn (L 'No v4 restore snapshot exists yet.' 'Belum ada snapshot restore v4.');Pause-Tui;return}
-    $dir=([string](Get-Content -LiteralPath $script:LatestStateFile|Select-Object -First 1)).Trim()
+    if(-not $SnapshotDirectory){
+        if(-not(Test-Path -LiteralPath $script:LatestStateFile)){Write-Warn (L 'No v4 restore snapshot exists yet.' 'Belum ada snapshot restore v4.');Pause-Tui;return}
+        $dir=([string](Get-Content -LiteralPath $script:LatestStateFile|Select-Object -First 1)).Trim()
+    }else{$dir=$SnapshotDirectory}
     try{
         $validated=Get-ValidatedRestoreSnapshot $dir
         $dir=[string]$validated.Directory
@@ -1370,6 +1372,25 @@ function Invoke-RestoreLatest {
     Pause-Tui
 }
 
+function Invoke-RestoreHistory {
+    Write-Header (L 'RESTORE HISTORY' 'RIWAYAT RESTORE')
+    $candidates=@(Get-ChildItem -LiteralPath $script:BackupRoot -Directory -ErrorAction Stop|Sort-Object Name -Descending|Select-Object -First 20)
+    $valid=@()
+    foreach($candidate in $candidates){
+        try{
+            $snapshot=Get-ValidatedRestoreSnapshot $candidate.FullName
+            $valid+= [pscustomobject]@{Directory=[string]$snapshot.Directory;Reason=[string]$snapshot.State.Reason;Created=[string]$snapshot.State.Created}
+        }catch{Write-Log ("Restore history ignored invalid snapshot: {0}; {1}" -f $candidate.Name,$_.Exception.Message) 'WARN'}
+    }
+    if(-not $valid.Count){Write-Warn (L 'No valid managed restore snapshot was found.' 'Tidak ditemukan snapshot restore yang valid.');Pause-Tui;return}
+    Write-Warn (L 'Each snapshot represents ONE managed action, not all historical changes. Select the action to undo.' 'Setiap snapshot hanya mewakili SATU tindakan, bukan semua perubahan sejak awal. Pilih tindakan yang akan dibatalkan.')
+    for($i=0;$i -lt $valid.Count;$i++){Write-Host ('[{0}] {1} | {2}' -f ($i+1),$valid[$i].Created,$valid[$i].Reason)}
+    Write-Host "[B] $(T 'Back')"
+    $allowed=@(1..$valid.Count|ForEach-Object{[string]$_})+'B'
+    $choice=Read-Choice (T 'Select') $allowed
+    if($choice -eq 'B'){return}
+    Invoke-RestoreLatest -SnapshotDirectory $valid[[int]$choice-1].Directory
+}
 function Invoke-RestartSpooler {
     Stop-Service Spooler -Force -ErrorAction Stop
     $stopped=Get-Service -Name Spooler -ErrorAction Stop
@@ -2076,7 +2097,22 @@ function Write-MainMenuItem([string]$Number,[string]$Label,[ConsoleColor]$Color=
     Write-Host $text -ForegroundColor $Color
 }
 
+function Show-PendingPointAndPrintRecovery {
+    if(-not(Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf)){return}
+    try{
+        $path=([string](Get-Content -LiteralPath $script:LatestStateFile -ErrorAction Stop|Select-Object -First 1)).Trim()
+        $snapshot=Get-ValidatedRestoreSnapshot $path
+        if([string]$snapshot.State.Reason -ne 'Temporary Point and Print relaxation'){return}
+        $entry=@($snapshot.State.Registry|Where-Object{$_.Name -eq 'RestrictDriverInstallationToAdministrators'})|Select-Object -First 1
+        if(-not $entry){return}
+        $actual=Get-RegistryValueStateStrict ([string]$entry.Path) ([string]$entry.Name)
+        if(-not(Test-RegistryStateMatches $entry $actual)){
+            Write-Fail (L 'An interrupted Point and Print relaxation may still be active. Open Restore and select the emergency snapshot before further repairs.' 'Relaksasi Point and Print sebelumnya mungkin belum dipulihkan. Buka Restore dan pilih snapshot darurat sebelum perbaikan lain.')
+        }
+    }catch{Write-Log ("Point and Print emergency check failed: {0}" -f $_.Exception.Message) 'WARN'}
+}
 function Show-MainMenu {
+    Show-PendingPointAndPrintRecovery
     while($true){
         Write-Header (T 'Main')
         $os=Get-OsInfo
@@ -2099,7 +2135,7 @@ function Show-MainMenu {
         Write-MainMenuItem '9' (T 'Exit') DarkGray
         Write-Rule
         $c=Read-Choice (T 'Select') @('1','2','3','4','5','6','7','8','9')
-        switch($c){'1'{[void](Invoke-Diagnosis)};'2'{Show-SafeRepairMenu};'3'{Show-CompatibilityMenu};'4'{Show-LegacyMenu};'5'{Invoke-RestoreLatest};'6'{Show-ToolsMenu};'7'{Show-GuideMenu};'8'{Show-LanguageMenu};'9'{return}}
+        switch($c){'1'{[void](Invoke-Diagnosis)};'2'{Show-SafeRepairMenu};'3'{Show-CompatibilityMenu};'4'{Show-LegacyMenu};'5'{Invoke-RestoreHistory};'6'{Show-ToolsMenu};'7'{Show-GuideMenu};'8'{Show-LanguageMenu};'9'{return}}
     }
 }
 $headlessIntent = $DiagnoseOnly -or -not [string]::IsNullOrWhiteSpace($JsonOutput)
