@@ -57,6 +57,7 @@ $script:FirewallEnabled='True'
 $script:FirewallProfile='Private'
 $script:NetworkCategory='Private'
 $script:FeatureFails=$false
+$script:DisablePending=$false
 $script:ServiceStartFails=$false
 $script:FeatureState='Enabled'
 $script:ServiceState='Stopped'
@@ -103,7 +104,7 @@ function Disable-WindowsOptionalFeature {
     $null=@($Online,$FeatureName,$NoRestart)
     $script:FeatureDisableCalls++
     if($script:FeatureFails){Write-Error 'synthetic feature disable failure';return}
-    $script:FeatureState='Disabled'
+    $script:FeatureState=if($script:DisablePending){'DisablePending'}else{'Disabled'}
 }
 function Set-Service {
     [CmdletBinding()] param([string]$Name,[string]$StartupType)
@@ -143,7 +144,7 @@ function Reset-Harness {
     $script:RegistryCalls=0;$script:FirewallCalls=0;$script:NetworkCalls=0
     $script:FeatureEnableCalls=0;$script:FeatureDisableCalls=0
     $script:SetServiceCalls=0;$script:ServiceStartCalls=0;$script:ServiceStopCalls=0
-    $script:FirewallFails=$false;$script:NetworkFails=$false;$script:FeatureFails=$false;$script:ServiceStartFails=$false
+    $script:FirewallFails=$false;$script:NetworkFails=$false;$script:FeatureFails=$false;$script:DisablePending=$false;$script:ServiceStartFails=$false
     $script:FirewallNoOp=$false;$script:NetworkNoOp=$false
     $script:FirewallEnabled='True';$script:FirewallProfile='Private';$script:NetworkCategory='Private'
     $script:FeatureState='Enabled';$script:ServiceState='Stopped'
@@ -157,6 +158,12 @@ try {
     if($script:Ok.Count -ne 1 -or $script:Fail.Count -ne 0){throw 'Successful managed Restore did not report exactly one success.'}
     if($script:RegistryCalls -ne 1 -or $script:FirewallCalls -ne 1 -or $script:NetworkCalls -ne 1 -or $script:FeatureDisableCalls -ne 1 -or $script:SetServiceCalls -ne 0 -or $script:ServiceStartCalls -ne 1){throw 'Successful managed Restore did not execute every expected category or attempted unrelated service startup-mode mutation.'}
     if($script:FeatureState -ne 'Disabled' -or $script:ServiceState -ne 'Running'){throw 'Successful managed Restore did not reach expected final state.'}
+
+    # A requested SMB1 disable can remain pending reboot without being a completed restore.
+    Reset-Harness
+    $script:DisablePending=$true
+    Invoke-RestoreLatest
+    if($script:Ok.Count -ne 0 -or $script:Fail.Count -ne 0 -or $script:Warn.Count -lt 1){throw 'Pending reboot was incorrectly reported as completed or failed.'}
 
     # Firewall failure must not prevent later categories from being attempted.
     Reset-Harness
