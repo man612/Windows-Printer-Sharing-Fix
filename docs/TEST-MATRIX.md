@@ -27,6 +27,8 @@ Do not test SMB1, insecure guest authentication, legacy LM authentication, or RP
 
 Planned scenarios and completed validation are tracked separately. See [REAL-WORLD-RESULTS.md](REAL-WORLD-RESULTS.md) for the evidence ledger and current A1-A6 status.
 
+**⏸ Deferred (2026-11-04):** seluruh pengujian nyata A1–A6 ditunda sampai tersedia PC kedua atau dua VM Windows terisolasi. Pengujian otomatis (CI) tetap boleh berlanjut, tetapi tidak menggantikan bukti koneksi dan test page pada dua mesin. Jangan menandai kasus mana pun sebagai `Validated` sebelum bukti diterima.
+
 For each real/lab run, use the repository **Compatibility report** issue form. Record the exact Windows builds, driver/path type, WPP/network state, earliest relevant failure layer, highest repair tier used, functional outcome, and Restore result when applicable.
 
 For a sanitized machine snapshot, testers working from a repository/source checkout can run:

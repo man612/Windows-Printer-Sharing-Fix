@@ -1,6 +1,6 @@
 # A1 — Windows 11 host/client lab runbook
 
-This is a read-only readiness check. It is NOT a simulated or verified print. The A1 entry in REAL-WORLD-RESULTS.md must stay Pending until an actual two-system test proves that a print job reaches its intended output, with sanitized evidence.
+This is a read-only readiness check. It is NOT a simulated or verified print. A1 is currently **⏸ Deferred** (2026-11-04) because a second Windows PC is not available. The entry in REAL-WORLD-RESULTS.md must not be set to Validated until an actual two-system test proves that a print job reaches its intended output, with sanitized evidence.
 
 ## Prerequisites
 
