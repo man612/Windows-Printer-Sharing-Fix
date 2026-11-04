@@ -1282,6 +1282,7 @@ function Invoke-RestoreLatest([string]$SnapshotDirectory='') {
     if(-not(Read-YesNo ((L 'Restore state from {0}?' 'Kembalikan kondisi dari {0}?') -f $dir) $true)){return}
 
     $failures=@()
+    $pendingReboot=$false
 
     foreach($entry in @($state.Registry)){
         try{Restore-RegistryValue $entry}
@@ -1360,7 +1361,7 @@ function Invoke-RestoreLatest([string]$SnapshotDirectory='') {
             $verified=Get-WindowsFeatureState $feature.Name
             if($expected -match '^Enabled' -and $verified -notmatch '^Enabled'){throw "Feature did not return to Enabled state; current state is $verified"}
             if($expected -match '^Disabled' -and $verified -notmatch '^Disabled' -and $verified -ne 'DisablePending'){throw "Feature did not return to Disabled state or DisablePending; current state is $verified"}
-            if($verified -eq 'DisablePending'){Write-Warn (L 'SMB1 disable pending Windows restart; verify again after reboot.' 'SMB1 sedang dinonaktifkan dan menunggu restart; periksa lagi setelah reboot.');Write-Log 'SMB1 disable pending reboot' 'WARN'}
+            if($verified -eq 'DisablePending'){$pendingReboot=$true;Write-Warn (L 'SMB1 disable pending Windows restart; verify again after reboot.' 'SMB1 sedang dinonaktifkan dan menunggu restart; periksa lagi setelah reboot.');Write-Log 'SMB1 disable pending reboot' 'WARN'}
         }catch{
             $message=("Windows feature {0}: {1}" -f $feature.Name,$_.Exception.Message)
             $failures+=$message
@@ -1383,6 +1384,9 @@ function Invoke-RestoreLatest([string]$SnapshotDirectory='') {
     if($failures.Count){
         Write-Fail ((L 'Restore completed with {0} failure(s). Some managed state may still differ; review the log and keep this snapshot for retry.' 'Restore selesai dengan {0} kegagalan. Sebagian kondisi terkelola mungkin masih berbeda; periksa log dan pertahankan snapshot ini untuk mencoba lagi.') -f $failures.Count)
         Write-Log ("Restore partially completed from {0}; failures={1}" -f $dir,$failures.Count) 'ERROR'
+    }elseif($pendingReboot){
+        Write-Warn (L 'Managed Restore changes were applied, but SMB1 needs a restart before final verification.' 'Perubahan Restore diterapkan, tetapi SMB1 perlu restart sebelum verifikasi akhir.')
+        Write-Log "Restore pending reboot from $dir" 'WARN'
     }else{
         Write-Ok (L 'Managed state restored.' 'Kondisi yang dikelola aplikasi berhasil dikembalikan.')
         Write-Log "Restore completed from $dir"
