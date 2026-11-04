@@ -149,6 +149,7 @@ function Get-ChildItem {
     $null=@($LiteralPath,$Force,$File)
     @($script:QueueEntries | ForEach-Object {[pscustomobject]@{FullName=('C:\queue\'+$_);Extension=[IO.Path]::GetExtension($_)}})
 }
+
 function Remove-Item {
     [CmdletBinding()] param([string]$LiteralPath,[switch]$Force,[switch]$Recurse)
     $null=@($Force,$Recurse)

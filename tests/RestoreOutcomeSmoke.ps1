@@ -159,7 +159,7 @@ try {
     if($script:RegistryCalls -ne 1 -or $script:FirewallCalls -ne 1 -or $script:NetworkCalls -ne 1 -or $script:FeatureDisableCalls -ne 1 -or $script:SetServiceCalls -ne 0 -or $script:ServiceStartCalls -ne 1){throw 'Successful managed Restore did not execute every expected category or attempted unrelated service startup-mode mutation.'}
     if($script:FeatureState -ne 'Disabled' -or $script:ServiceState -ne 'Running'){throw 'Successful managed Restore did not reach expected final state.'}
 
-    # A requested SMB1 disable can remain pending reboot without being a completed restore.
+    # SMB1 DisablePending is not a verified completed restore.
     Reset-Harness
     $script:DisablePending=$true
     Invoke-RestoreLatest
