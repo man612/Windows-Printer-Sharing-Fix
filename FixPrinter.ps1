@@ -1298,6 +1298,14 @@ function Invoke-RestoreLatest([string]$SnapshotDirectory='') {
         Pause-Tui
         return
     }
+    # Historical snapshots may predate newer managed settings. Require stronger consent.
+    if($SnapshotDirectory -and (Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf)){
+        $latest=([string](Get-Content -LiteralPath $script:LatestStateFile -ErrorAction Stop|Select-Object -First 1)).Trim()
+        if($latest -and -not [string]::Equals([IO.Path]::GetFullPath($latest).TrimEnd([char]'\'),([IO.Path]::GetFullPath($dir)).TrimEnd([char]'\'),[StringComparison]::OrdinalIgnoreCase)){
+            Write-Warn (L 'This is an older action snapshot, not the latest one. Restoring it can overwrite changes made by later repairs or Windows administration.' 'Ini snapshot tindakan lama, bukan yang terbaru. Restore dapat menimpa perubahan dari perbaikan berikutnya atau administrator Windows.')
+            if((Read-Host (L 'Type RESTORE-HISTORY to accept this risk' 'Ketik RESTORE-HISTORY jika memahami risiko ini')).Trim().ToUpperInvariant() -ne 'RESTORE-HISTORY'){return}
+        }
+    }
     if(-not(Read-YesNo ((L 'Restore state from {0}?' 'Kembalikan kondisi dari {0}?') -f $dir) $true)){return}
 
     $failures=@()

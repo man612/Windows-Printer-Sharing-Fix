@@ -165,6 +165,10 @@ jobs:
         shell: powershell
         run: .\tests\RepairPostconditionSmoke.ps1
 
+      - name: Validate historical Restore overwrite confirmation
+        shell: powershell
+        run: .\tests\RestoreHistoryConsentSmoke.ps1
+
       - name: Validate Restore history and printer-policy guards
         shell: powershell
         run: .\tests\HistoryPolicySmoke.ps1
