@@ -284,7 +284,7 @@ function Get-PrinterInventory {
     }
     try{
         return @(Get-CimInstance Win32_Printer -ErrorAction Stop|ForEach-Object{
-            [pscustomobject]@{Name=$_.Name;DriverName=$_.DriverName;PortName=$_.PortName;Shared=[bool]$_.Shared;ShareName=$_.ShareName;Type=if($_.Network -or ([string]$_.Name).StartsWith('\\')){'Connection'}else{'Local'};ComputerName=$null}
+            [pscustomobject]@{Name=$_.Name;DriverName=$_.DriverName;PortName=$_.PortName;Shared=[bool]$_.Shared;ShareName=$_.ShareName;Type=if(([string]$_.Name).StartsWith('\\') -or ([string]$_.PortName).StartsWith('\\')){'Connection'}else{'Local'};ComputerName=$null}
         })
     }catch{Write-Log ("CIM printer inventory failed: {0}" -f $_.Exception.Message) 'WARN';return @()}
 }
@@ -743,7 +743,9 @@ function Get-NextInvestigation($D,[object]$TargetPath=$null) {
     $rpcPortReachableProp=$TargetPath.PSObject.Properties['RpcConfiguredPortReachable']
     $portSource=$TargetPath.PSObject.Properties['RpcConfiguredPortSource']
     if(-not $namedPipes -and $rpcPortProp -and $null -ne $rpcPortProp.Value -and $rpcPortReachableProp -and $rpcPortReachableProp.Value -eq $false -and $portSource -and [string]$portSource.Value -eq 'ConfirmedRemote'){return New-NextInvestigation 'RpcReachability' 'TargetConfiguredRpcPortFailed' $true $signals}
-    if(-not [bool]$TargetPath.ShareNamespaceAccessible){return New-NextInvestigation 'ShareNamespaceOrCredentials' 'TargetNamespaceFailed' $true $signals}
+    $shareNamespace=$TargetPath.PSObject.Properties['ShareNamespaceAccessible']
+    if(-not $shareNamespace -or $null -eq $shareNamespace.Value){return New-NextInvestigation 'ShareNamespaceUnverified' 'TargetNamespaceProbeUnavailable' $true $signals}
+    if(-not [bool]$shareNamespace.Value){return New-NextInvestigation 'ShareNamespaceOrCredentials' 'TargetNamespaceFailed' $true $signals}
     $installed=[bool]$TargetPath.PrinterInstalled
     $wppProp=$D.PSObject.Properties['WPP']
     if(-not $installed -and $wppProp -and $wppProp.Value -and $wppProp.Value.Enabled){return New-NextInvestigation 'WppCompatibility' 'WppEnabledPrinterNotInstalled' $true $signals}
@@ -766,6 +768,7 @@ function Get-NextInvestigationLayerLabel([string]$Layer) {
         'SmbFirewallOrRouting'{return (L 'SMB / firewall / routing' 'SMB / firewall / routing')}
         'RpcReachability'{return (L 'print RPC / firewall' 'RPC printer / firewall')}
         'ShareNamespaceOrCredentials'{return (L 'share namespace / credentials / sharing' 'namespace share / kredensial / sharing')}
+        'ShareNamespaceUnverified'{return (L 'share namespace check unavailable' 'pemeriksaan namespace share belum tersedia')}
         'WppCompatibility'{return (L 'WPP / driver compatibility' 'WPP / kompatibilitas driver')}
         'DriverOrPackage'{return (L 'driver / package' 'driver / paket')}
         'Policy'{return (L 'printer policy' 'kebijakan printer')}
@@ -790,6 +793,7 @@ function Get-NextInvestigationReasonText([string]$Reason) {
         'TargetRpc135Failed'{return (L 'DNS and SMB succeeded but RPC Endpoint Mapper on TCP 135 did not. This does not test the later dynamic RPC ports.' 'DNS dan SMB berhasil tetapi RPC Endpoint Mapper pada TCP 135 tidak. Ini belum menguji dynamic RPC ports setelahnya.')}
         'TargetConfiguredRpcPortFailed'{return (L 'RPC Endpoint Mapper responded, but the explicitly configured print RPC TCP port did not. Check the configured port and firewall path before changing printer security policy.' 'RPC Endpoint Mapper merespons, tetapi port TCP RPC printer yang dikonfigurasi secara eksplisit tidak. Periksa port tersebut dan jalur firewall sebelum mengubah kebijakan keamanan printer.')}
         'TargetNamespaceFailed'{return (L 'SMB and RPC endpoint checks succeeded, but the host share namespace was not accessible. Check sharing, credentials, and policy next.' 'Pemeriksaan SMB dan RPC endpoint berhasil, tetapi namespace share host tidak dapat diakses. Periksa sharing, kredensial, dan kebijakan berikutnya.')}
+        'TargetNamespaceProbeUnavailable'{return (L 'The SMB namespace check timed out or could not run. Its result is unknown; verify the share and credentials before attributing a failure to Windows settings.' 'Pemeriksaan namespace SMB timeout atau tidak dapat dijalankan. Hasilnya belum diketahui; periksa share dan kredensial sebelum menyimpulkan penyebab.')}
         'WppEnabledPrinterNotInstalled'{return (L 'Transport prerequisites look healthy, but WPP is enabled and the target printer is not installed. Verify Windows Ready Print/WPP compatibility before legacy-driver workarounds.' 'Prasyarat transport terlihat sehat, tetapi WPP aktif dan printer target belum terpasang. Periksa kompatibilitas Windows Ready Print/WPP sebelum memakai workaround driver lama.')}
         'RecentDriverOrPackageEvents'{return (L 'Transport prerequisites look healthy and recent PrintService driver/package events exist. Treat them as supporting evidence, not proof of cause.' 'Prasyarat transport terlihat sehat dan ada event PrintService driver/paket terbaru. Anggap ini sebagai bukti pendukung, bukan bukti penyebab.')}
         'RecentPolicyEvents'{return (L 'Transport prerequisites look healthy and recent PrintService policy events exist. Inspect effective policy and its source evidence next.' 'Prasyarat transport terlihat sehat dan ada event kebijakan PrintService terbaru. Periksa kebijakan efektif dan bukti sumbernya berikutnya.')}
