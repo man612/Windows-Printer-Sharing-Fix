@@ -123,6 +123,7 @@ try {
     if(-not $inventoryAst){throw 'Get-SafePrinterInventory function is missing.'}
     . ([scriptblock]::Create($inventoryAst.Extent.Text))
     $IncludeDriverNames=$false
+    if($IncludeDriverNames){throw 'Synthetic collector test must keep driver-name opt-in disabled.'}
     function Get-Printer {
         [CmdletBinding()]param()
         @(
