@@ -101,10 +101,6 @@ try {
     }
 
 
-    # Do not count direct TCP/IP network printers as UNC printer-sharing connections.
-    $collectorText=Get-Content -LiteralPath $collector -Raw
-    if($collectorText -match [regex]::Escape("$"+"_.Network")){throw 'Evidence collector must not equate the Win32_Printer Network flag with UNC printer sharing.'}
-
     $optIn = Join-Path $temp 'opt-in'
     & $collector -MatrixId A1 -Side Client -IncludeDriverNames -IncludeSecurityPosture -OutputDirectory $optIn | Out-Null
     $optJson = Get-ChildItem -LiteralPath $optIn -Filter '*.json' | Select-Object -First 1
@@ -118,6 +114,27 @@ try {
     $afterOptIn = Get-ManagedFingerprint
     if ($before -ne $afterOptIn) { throw 'Opt-in evidence collection changed managed Windows state.' }
 
+    # Verify collector printer-sharing classification on synthetic Win32_Printer fixtures.
+    # A direct TCP/IP printer may carry Network=True without being a UNC shared printer.
+    $parserTokens=$null;$parserErrors=$null
+    $collectorAst=[System.Management.Automation.Language.Parser]::ParseFile($collector,[ref]$parserTokens,[ref]$parserErrors)
+    if($parserErrors.Count){throw 'Lab evidence collector does not parse.'}
+    $inventoryAst=@($collectorAst.EndBlock.Statements|Where-Object{$_ -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -eq 'Get-SafePrinterInventory'})|Select-Object -First 1
+    if(-not $inventoryAst){throw 'Get-SafePrinterInventory function is missing.'}
+    . ([scriptblock]::Create($inventoryAst.Extent.Text))
+    $IncludeDriverNames=$false
+    function Get-Printer {
+        [CmdletBinding()]param()
+        @(
+            [pscustomobject]@{Name='Direct IP printer';Type='Local';PortName='IP_192.0.2.5';Network=$true;DriverName='Synthetic';Shared=$false}
+            [pscustomobject]@{Name='\\PRINT-HOST\Shared';Type='Connection';PortName='Ne00:';Network=$true;DriverName='Synthetic';Shared=$false}
+        )
+    }
+    $synthetic=@(Get-SafePrinterInventory)
+    if($synthetic.Count -ne 2){throw 'Synthetic evidence inventory did not return two printers.'}
+    if($synthetic[0].Connection){throw 'Direct TCP/IP network printer was misclassified as a UNC share.'}
+    if(-not $synthetic[1].Connection){throw 'UNC shared printer was not classified as a connection.'}
+    if($synthetic[0].DriverName -or $synthetic[1].DriverName){throw 'Synthetic evidence exposed driver names without opt-in.'}
     Write-Host ('Evidence smoke passed: read-only collection produced sanitized JSON/Markdown for {0} build {1}.' -f $data.OS.Name,$data.OS.FullBuild) -ForegroundColor Green
 }
 finally {
