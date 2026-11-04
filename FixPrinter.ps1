@@ -279,7 +279,7 @@ function Get-PrinterInventory {
         if (Get-Command Get-Printer -ErrorAction SilentlyContinue) {
             return @(Get-Printer | Select-Object Name,DriverName,PortName,Shared,ShareName,Type,ComputerName)
         }
-        return @(Get-CimInstance Win32_Printer | ForEach-Object {[pscustomobject]@{Name=$_.Name;DriverName=$_.DriverName;PortName=$_.PortName;Shared=[bool]$_.Shared;ShareName=$_.ShareName;Type=$null;ComputerName=$null}})
+        return @(Get-CimInstance Win32_Printer | ForEach-Object {[pscustomobject]@{Name=$_.Name;DriverName=$_.DriverName;PortName=$_.PortName;Shared=[bool]$_.Shared;ShareName=$_.ShareName;Type=if($_.Network -or ([string]$_.Name).StartsWith('\\')){'Connection'}else{'Local'};ComputerName=$null}})
     } catch { Write-Log $_.Exception.Message 'WARN'; return @() }
 }
 
@@ -1064,7 +1064,7 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
 
         if($actualScopes -contains 'Firewall'){
             $sourceRules=if($PSBoundParameters.ContainsKey('FirewallRules')){@($FirewallRules)}else{@(Get-FirewallSharingRules)}
-            $changedRules=@($sourceRules|Where-Object{[string]$_.Profile -match 'Private|Domain|Any'})
+            $changedRules=@($sourceRules|Where-Object{Test-FirewallRuleNeedsSafeRepair $_})
             $fw=@($changedRules|ForEach-Object{[pscustomobject]@{Name=[string]$_.Name;Enabled=[string]$_.Enabled;Profile=[string]$_.Profile}})
             if($Reason -eq 'Enable sharing firewall rules' -and -not $fw.Count){
                 throw 'Firewall repair snapshot requires at least one managed Domain/Private/Any rule.'
@@ -1336,7 +1336,8 @@ function Invoke-RestoreLatest {
             }
             $verified=Get-WindowsFeatureState $feature.Name
             if($expected -match '^Enabled' -and $verified -notmatch '^Enabled'){throw "Feature did not return to Enabled state; current state is $verified"}
-            if($expected -match '^Disabled' -and $verified -notmatch '^Disabled'){throw "Feature did not return to Disabled state; current state is $verified"}
+            if($expected -match '^Disabled' -and $verified -notmatch '^Disabled' -and $verified -ne 'DisablePending'){throw "Feature did not return to Disabled state or DisablePending; current state is $verified"}
+            if($verified -eq 'DisablePending'){Write-Warn (L 'SMB1 disable pending Windows restart; verify again after reboot.' 'SMB1 sedang dinonaktifkan dan menunggu restart; periksa lagi setelah reboot.');Write-Log 'SMB1 disable pending reboot' 'WARN'}
         }catch{
             $message=("Windows feature {0}: {1}" -f $feature.Name,$_.Exception.Message)
             $failures+=$message
@@ -1376,22 +1377,31 @@ function Invoke-RestartSpooler {
     Write-Ok (L 'Print Spooler restarted.' 'Print Spooler berhasil direstart.')
 }
 
+function Get-EffectiveSpoolDirectory {
+    $fallback=Join-Path $env:SystemRoot 'System32\spool\PRINTERS'
+    $state=Get-RegistryValueStateStrict 'HKLM:\SYSTEM\CurrentControlSet\Control\Print\Printers' 'DefaultSpoolDirectory'
+    $configured=if($state.Present){[string]$state.Value}else{''}
+    $path=if([string]::IsNullOrWhiteSpace($configured)){$fallback}else{[Environment]::ExpandEnvironmentVariables($configured)}
+    if(-not [IO.Path]::IsPathRooted($path)){throw 'Spool directory is not an absolute path.'}
+    $full=[IO.Path]::GetFullPath($path)
+    if(-not(Test-Path -LiteralPath $full -PathType Container)){throw "Spool directory not found: $full"}
+    $directory=Get-Item -LiteralPath $full -Force -ErrorAction Stop
+    if(($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Spool directory is a reparse point; automatic cleanup refused.'}
+    return $full
+}
 function Invoke-ClearPrintQueue {
     Write-Warn (L 'This permanently removes pending print jobs and cannot be restored.' 'Ini menghapus print job yang masih menunggu secara permanen dan tidak dapat dikembalikan.')
     if(-not(Read-YesNo (L 'Continue?' 'Lanjutkan?') $true)){return}
-    $queuePath="$env:SystemRoot\System32\spool\PRINTERS"
+    $queuePath=Get-EffectiveSpoolDirectory
     $failure=$null
     try{
         Stop-Service Spooler -Force -ErrorAction Stop
         $spooler=Get-Service -Name Spooler -ErrorAction Stop
         if($spooler.Status -ne 'Stopped'){throw 'Print Spooler did not reach Stopped state.'}
-
-        if(Test-Path -LiteralPath $queuePath -PathType Container){
-            $queueFiles=@(Get-ChildItem -LiteralPath $queuePath -Force -ErrorAction Stop)
-            foreach($item in $queueFiles){Remove-Item -LiteralPath $item.FullName -Force -Recurse -ErrorAction Stop}
-            $remaining=@(Get-ChildItem -LiteralPath $queuePath -Force -ErrorAction Stop)
-            if($remaining.Count){throw ("{0} queue file(s) remain after cleanup." -f $remaining.Count)}
-        }
+        $queueFiles=@(Get-ChildItem -LiteralPath $queuePath -File -Force -ErrorAction Stop|Where-Object{$_.Extension -in @('.SPL','.SHD')})
+        foreach($item in $queueFiles){Remove-Item -LiteralPath $item.FullName -Force -ErrorAction Stop}
+        $remaining=@(Get-ChildItem -LiteralPath $queuePath -File -Force -ErrorAction Stop|Where-Object{$_.Extension -in @('.SPL','.SHD')})
+        if($remaining.Count){throw ("{0} queue file(s) remain after cleanup." -f $remaining.Count)}
     }catch{
         $failure=$_.Exception.Message
         Write-Log ("Queue cleanup failed before Spooler restart: {0}" -f $failure) 'ERROR'
@@ -1406,20 +1416,16 @@ function Invoke-ClearPrintQueue {
             Write-Log ("Queue cleanup Spooler recovery failed: {0}" -f $restartError) 'ERROR'
         }
     }
-    if($failure){
-        Write-Fail ((L 'Pending queue cleanup was not fully completed: {0}' 'Pembersihan antrean tertunda tidak selesai sepenuhnya: {0}') -f $failure)
-        return
-    }
+    if($failure){Write-Fail ((L 'Pending queue cleanup was not fully completed: {0}' 'Pembersihan antrean tertunda tidak selesai sepenuhnya: {0}') -f $failure);return}
     Write-Ok (L 'Pending queue files cleared and Print Spooler is running.' 'File antrean tertunda berhasil dibersihkan dan Print Spooler sedang berjalan.')
     Write-Log 'Queue cleared; irreversible.' 'WARN'
 }
-
 function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null) {
     if(-not(Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue)){Write-Warn (L 'Modern firewall mutation cmdlet is unavailable.' 'Cmdlet perubahan firewall modern tidak tersedia.');return}
     if(-not(Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue)){Write-Warn (L 'Modern firewall read-back cmdlet is unavailable; repair was not started.' 'Cmdlet pembacaan ulang firewall modern tidak tersedia; perbaikan tidak dijalankan.');return}
     $rules=@(if($PSBoundParameters.ContainsKey('FirewallRules')){@($FirewallRules)}else{@(Get-FirewallSharingRules)})
     if(-not $rules.Count){Write-Warn (L 'File and Printer Sharing firewall group could not be identified.' 'Grup firewall File and Printer Sharing tidak dapat diidentifikasi.');return}
-    $eligible=@($rules|Where-Object{[string]$_.Profile -match 'Private|Domain|Any'})
+    $eligible=@($rules|Where-Object{Test-FirewallRuleNeedsSafeRepair $_})
     if(-not $eligible.Count){Write-Warn (L 'No File and Printer Sharing firewall rules are eligible for the Domain/Private repair.' 'Tidak ada aturan firewall File and Printer Sharing yang dapat diperbaiki untuk Domain/Private.');return}
     $succeeded=0
     $failed=@()
@@ -1446,7 +1452,7 @@ function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null) {
     Write-Ok ((L 'Verified {0} sharing firewall rule(s) enabled for Domain/Private only.' '{0} aturan firewall sharing terverifikasi aktif hanya untuk Domain/Private.') -f $succeeded)
 }
 function Select-NetworkProfile {
-    $p=@(Get-NetworkProfilesSafe|Where-Object{$_.IPv4Connectivity -ne 'Disconnected'})
+    $p=@(Get-NetworkProfilesSafe|Where-Object{$_.IPv4Connectivity -ne 'Disconnected' -or $_.IPv6Connectivity -ne 'Disconnected'})
     if(-not $p.Count){Write-Warn (L 'No active network profile found.' 'Tidak ditemukan profil jaringan aktif.');return $null}
     for($i=0;$i -lt $p.Count;$i++){Write-Host ('[{0}] {1} / {2} / {3}' -f ($i+1),$p[$i].InterfaceAlias,$p[$i].Name,(Localize-SystemValue ([string]$p[$i].NetworkCategory)))}
     $allowed=@(1..$p.Count|ForEach-Object{[string]$_})+'B'
@@ -1495,6 +1501,9 @@ function Test-FirewallRuleNeedsSafeRepair([object]$Rule) {
     if([string]$Rule.Profile -notmatch 'Private|Domain|Any'){return $false}
     $profiles=@(([string]$Rule.Profile -split ',')|ForEach-Object{$_.Trim()}|Where-Object{$_}|Sort-Object -Unique)
     $isEnabled=[string]::Equals('True',[string]$Rule.Enabled,[StringComparison]::OrdinalIgnoreCase)
+    $direction=$Rule.PSObject.Properties['Direction'];$action=$Rule.PSObject.Properties['Action']
+    if($direction -and [string]$direction.Value -ne 'Inbound'){return $false}
+    if($action -and [string]$action.Value -ne 'Allow'){return $false}
     return (-not $isEnabled -or ($profiles -join ',') -ne 'Domain,Private')
 }
 
@@ -2002,6 +2011,7 @@ function Export-DiagnosticText {
     $lines+='';$lines+=(L 'Printers:' 'Printer:')
     foreach($p in $d.Printers){$lines+="- $($p.Name) | driver=$($p.DriverName) | share=$($p.ShareName) | model=$($p.DriverModel) | provider=$($p.DriverProviderClass) | technology=$($p.DriverTechnology)"}
     $lines|Set-Content -LiteralPath $path -Encoding UTF8
+    Write-Warn (L 'Text reports contain printer/share names. Redact before publishing.' 'Laporan teks berisi nama printer/share. Sensor sebelum dipublikasikan.')
     Write-Ok ((L 'Diagnostic report exported: {0}' 'Laporan diagnosis diekspor: {0}') -f $path)
 }
 
@@ -2106,7 +2116,7 @@ try {
         Write-Output $outputPath
         exit 0
     }
-    if(-not(Ensure-Administrator)){if(-not(Test-IsAdministrator)){exit 0}}
+    if(-not(Ensure-Administrator)){if(-not(Test-IsAdministrator)){if($script:NoElevationRequested){exit 5}else{exit 0}}}
     Show-MainMenu
 } catch {
     if($headlessIntent){
