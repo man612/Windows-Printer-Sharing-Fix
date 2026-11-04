@@ -157,6 +157,22 @@ Also test:
 4. Confirm destructive/high-risk prompts remain understandable in both modes.
 5. Run in a narrow terminal and verify important warnings remain readable.
 
+
+## Windows driver servicing changes relevant in 2026
+
+Microsoft's current [third-party driver servicing roadmap](https://learn.microsoft.com/en-us/windows-hardware/drivers/print/end-of-servicing-plan-for-third-party-printer-drivers-on-windows) states that, since January 15, 2026, new third-party printer drivers for Windows 11 and Windows Server 2025 are generally no longer published via Windows Update, and that as of July 1, 2026, Windows prefers the inbox IPP class driver in driver ranking. Existing third-party drivers can still be installed from manufacturer packages. **Do not diagnose every missing legacy printer as a network fault.**
+
+Microsoft's [Windows Protected Print Mode documentation](https://learn.microsoft.com/en-us/windows/modern-print/windows-protected-print-mode/windows-protected-print-mode) confirms that enabling WPP uninstalls printers using unsupported third-party drivers, while compatible Mopria devices can be reinstalled using Windows Ready Print. Treat WPP state and driver family as separate observations from SMB/RPC connectivity; never bypass an organizational WPP policy automatically.
+
+Additional lab checks for this release:
+- Verify an IPv6-only active Public profile is not treated as disconnected and is reported in the TUI.
+- On a Named Pipes client, block TCP 135 while permitting SMB 445; the tool must not claim TCP 135 is necessarily the root cause.
+- Deliberately time out share enumeration: unknown must never be reported as proven denied access.
+- Keep a local direct-TCP/IP printer installed alongside a UNC printer connection; targeted reconnect must offer only the UNC connection.
+- Interrupt the temporary Point and Print connection attempt in an isolated VM after its security value changes; the recovery marker must persist across restart, even if another backup becomes latest. Confirm restoration and marker cleanup before any further compatibility action.
+
+These are **planned lab checks**, not passing A1-A6 evidence. Record exact OS build/UBR and sanitized printer/driver details when performing them.
+
 ## Full hardware-validation gate
 
 The project CI can validate code safety and packaging without physical printer hardware. Before claiming broad real-world hardware validation, complete at least:

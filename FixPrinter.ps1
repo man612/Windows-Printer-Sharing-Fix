@@ -698,7 +698,10 @@ function Get-NextInvestigationSignals($D) {
     $wppProp=$D.PSObject.Properties['WPP']
     if($wppProp -and $wppProp.Value -and $wppProp.Value.Enabled){$signals.Add('WppEnabled')}
     $profilesProp=$D.PSObject.Properties['Profiles']
-    if($profilesProp -and @($profilesProp.Value|Where-Object{$_.NetworkCategory -eq 'Public' -and $_.IPv4Connectivity -ne 'Disconnected'}).Count){$signals.Add('PublicNetworkProfile')}
+    if($profilesProp -and @($profilesProp.Value|Where-Object{
+        $ipv4=$_.PSObject.Properties['IPv4Connectivity'];$ipv6=$_.PSObject.Properties['IPv6Connectivity']
+        $_.NetworkCategory -eq 'Public' -and (($ipv4 -and [string]$ipv4.Value -ne 'Disconnected') -or ($ipv6 -and [string]$ipv6.Value -ne 'Disconnected'))
+    }).Count){$signals.Add('PublicNetworkProfile')}
     $eventsProp=$D.PSObject.Properties['PrintErrors']
     if($eventsProp){
         foreach($category in @($eventsProp.Value|ForEach-Object{[string]$_.Category}|Where-Object{$_}|Select-Object -Unique)){$signals.Add(('PrintService:{0}' -f $category))}
@@ -923,7 +926,7 @@ function Show-DiagnosticReport($D) {
     if($policySourcesProp -and $policySourcesProp.Value){$configuredPolicySources=@($policySourcesProp.Value.PSObject.Properties|Where-Object{$_.Value.Configured});if($configuredPolicySources.Count){Write-Rule;Write-Host (L 'Printer policy source evidence:' 'Bukti sumber kebijakan printer:');foreach($entry in $configuredPolicySources){Write-Host ('  {0}: {1}' -f (Get-PrinterPolicyDisplayName $entry.Name),(Get-PolicySourceLabel ([string]$entry.Value.Source)))}}}
     if($D.SharedPrinters.Count){Write-Rule;Write-Host (L 'Shared printers:' 'Printer yang dishare:');foreach($p in $D.SharedPrinters){Write-Host ('  - {0} | share={1} | driver={2} | {3}/{4}' -f $p.Name,$p.ShareName,$p.DriverName,$p.DriverModel,$p.DriverProviderClass)}}
     if($D.Connections.Count){Write-Rule;Write-Host (L 'Network printer connections:' 'Koneksi printer jaringan:');foreach($p in $D.Connections){Write-Host ('  - {0} | driver={1} | {2}/{3}' -f $p.Name,$p.DriverName,$p.DriverModel,$p.DriverProviderClass)}}
-    if($D.Profiles.Count){Write-Rule;Write-Host (L 'Network profiles:' 'Profil jaringan:');foreach($n in $D.Profiles){Write-Host ('  [{0}] {1} / {2} / IPv4={3}' -f $n.InterfaceIndex,$n.InterfaceAlias,(Localize-SystemValue ([string]$n.NetworkCategory)),(Localize-SystemValue ([string]$n.IPv4Connectivity)))}}
+    if($D.Profiles.Count){Write-Rule;Write-Host (L 'Network profiles:' 'Profil jaringan:');foreach($n in $D.Profiles){Write-Host ('  [{0}] {1} / {2} / IPv4={3} / IPv6={4}' -f $n.InterfaceIndex,$n.InterfaceAlias,(Localize-SystemValue ([string]$n.NetworkCategory)),(Localize-SystemValue ([string]$n.IPv4Connectivity)),(Localize-SystemValue ([string]$n.IPv6Connectivity)))}}
     if($D.PrintErrors.Count){Write-Rule;Write-Host (L 'Recent PrintService events:' 'Event PrintService terbaru:');foreach($e in $D.PrintErrors|Select-Object -First 5){$m=([string]$e.Message -replace '\s+',' ');if($m.Length -gt 120){$m=$m.Substring(0,120)+'...'};$layer=Get-PrintServiceCategoryLabel ([string]$e.Category);$code='';if($null -ne $e.Win32Code){$code=' | Win32={0}/{1}' -f $e.Win32Code,(Get-PrintServiceCodeClassLabel ([string]$e.CodeClass))};Write-Host ('  {0:g} ID {1} [{2}{3}]: {4}' -f $e.TimeCreated,$e.Id,$layer,$code,$m)}}
     Write-Rule; Write-Info ('Log: {0}' -f $script:CurrentLog)
     if(Read-YesNo (L 'Test a specific shared printer path now?' 'Tes path printer sharing tertentu sekarang?') $true){Invoke-SharedPrinterPathDiagnosis}

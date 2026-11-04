@@ -34,4 +34,8 @@ if($next.Layer -ne 'ShareNamespaceOrCredentials'){throw 'Confirmed namespace fai
 $target.ShareNamespaceAccessible=$true
 $next=Get-NextInvestigation $diag $target
 if($next.Layer -ne 'PrinterConnectionSetup'){throw 'Successful namespace check did not allow connection diagnosis.'}
+$diag.Profiles=@([pscustomobject]@{NetworkCategory='Public';IPv4Connectivity='Disconnected';IPv6Connectivity='Internet'})
+if('PublicNetworkProfile' -notin @(Get-NextInvestigationSignals $diag)){throw 'IPv6-only Public network was not detected as a relevant signal.'}
+$diag.Profiles=@([pscustomobject]@{NetworkCategory='Public';IPv4Connectivity='Disconnected';IPv6Connectivity='Disconnected'})
+if('PublicNetworkProfile' -in @(Get-NextInvestigationSignals $diag)){throw 'Disconnected Public network incorrectly flagged as active.'}
 Write-Host 'Network printer classification and namespace tri-state smoke passed.' -ForegroundColor Green
