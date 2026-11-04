@@ -80,7 +80,7 @@ function Get-SafePrinterInventory {
                 Alias = ('Printer-{0}' -f $index)
                 DriverName = if ($IncludeDriverNames) {[string]$_.DriverName} else {$null}
                 Shared = [bool]$_.Shared
-                Connection = (($name -like '\\*') -or ($type -eq 'Connection'))
+                Connection = (($name -like '\\*') -or ($type -eq 'Connection') -or ([string]$_.PortName -like '\\*'))
                 Type = if ($type) {$type} else {'Unknown'}
             }
         })

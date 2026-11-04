@@ -101,6 +101,10 @@ try {
     }
 
 
+    # Do not count direct TCP/IP network printers as UNC printer-sharing connections.
+    $collectorText=Get-Content -LiteralPath $collector -Raw
+    if($collectorText -match [regex]::Escape("$"+"_.Network")){throw 'Evidence collector must not equate the Win32_Printer Network flag with UNC printer sharing.'}
+
     $optIn = Join-Path $temp 'opt-in'
     & $collector -MatrixId A1 -Side Client -IncludeDriverNames -IncludeSecurityPosture -OutputDirectory $optIn | Out-Null
     $optJson = Get-ChildItem -LiteralPath $optIn -Filter '*.json' | Select-Object -First 1
