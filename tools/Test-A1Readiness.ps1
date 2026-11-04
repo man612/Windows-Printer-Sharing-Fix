@@ -25,7 +25,7 @@ function Get-A1OperatingSystem {
 }
 function Get-A1PrinterInventory {
     if(Get-Command Get-Printer -ErrorAction SilentlyContinue){
-        try{return [pscustomobject]@{Available=$true;Printers=@(Get-Printer -ErrorAction Stop)}}catch{}
+        try{return [pscustomobject]@{Available=$true;Printers=@(Get-Printer -ErrorAction Stop)}}catch{Write-Verbose 'PrintManagement inventory unavailable; trying CIM fallback.'}
     }
     try{return [pscustomobject]@{Available=$true;Printers=@(Get-CimInstance Win32_Printer -ErrorAction Stop)}}catch{
         return [pscustomobject]@{Available=$false;Printers=@()}
@@ -84,7 +84,7 @@ function Test-A1TcpPort([Net.IPAddress[]]$Addresses,[int]$Port,[int]$TimeoutMs=8
                 $client.EndConnect($request)
                 if($client.Connected){return $true}
             }
-        }catch{}
+        }catch{Write-Verbose 'TCP preflight attempt did not complete successfully.'}
         finally{
             if($request -and $request.AsyncWaitHandle){$request.AsyncWaitHandle.Close()}
             $client.Close()
