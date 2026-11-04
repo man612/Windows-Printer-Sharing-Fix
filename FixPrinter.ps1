@@ -16,6 +16,7 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $script:NoElevationRequested = [bool]$NoElevation
+$script:ElevationLaunched = $false
 
 $script:Version = '4.2.1'
 $script:ScriptPath = $PSCommandPath
@@ -145,6 +146,7 @@ function Ensure-Administrator {
     try {
         $argumentLine = '-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $script:ScriptPath
         Start-Process -FilePath 'powershell.exe' -Verb RunAs -WorkingDirectory $script:Root -ArgumentList $argumentLine
+        $script:ElevationLaunched = $true
     } catch {
         Write-Host ((L 'Could not obtain Administrator access: {0}' 'Tidak dapat memperoleh akses Administrator: {0}') -f $_.Exception.Message) -ForegroundColor Red
     }
@@ -275,12 +277,16 @@ function Restore-RegistryValue($Entry) {
 }
 
 function Get-PrinterInventory {
-    try {
-        if (Get-Command Get-Printer -ErrorAction SilentlyContinue) {
-            return @(Get-Printer | Select-Object Name,DriverName,PortName,Shared,ShareName,Type,ComputerName)
-        }
-        return @(Get-CimInstance Win32_Printer | ForEach-Object {[pscustomobject]@{Name=$_.Name;DriverName=$_.DriverName;PortName=$_.PortName;Shared=[bool]$_.Shared;ShareName=$_.ShareName;Type=if($_.Network -or ([string]$_.Name).StartsWith('\\')){'Connection'}else{'Local'};ComputerName=$null}})
-    } catch { Write-Log $_.Exception.Message 'WARN'; return @() }
+    if(Get-Command Get-Printer -ErrorAction SilentlyContinue){
+        try{
+            return @(Get-Printer -ErrorAction Stop | Select-Object Name,DriverName,PortName,Shared,ShareName,Type,ComputerName)
+        }catch{Write-Log ("Get-Printer inventory failed; trying CIM fallback: {0}" -f $_.Exception.Message) 'WARN'}
+    }
+    try{
+        return @(Get-CimInstance Win32_Printer -ErrorAction Stop|ForEach-Object{
+            [pscustomobject]@{Name=$_.Name;DriverName=$_.DriverName;PortName=$_.PortName;Shared=[bool]$_.Shared;ShareName=$_.ShareName;Type=if($_.Network -or ([string]$_.Name).StartsWith('\\')){'Connection'}else{'Local'};ComputerName=$null}
+        })
+    }catch{Write-Log ("CIM printer inventory failed: {0}" -f $_.Exception.Message) 'WARN';return @()}
 }
 
 function Get-PrinterDriverMetadataSafe {
@@ -2193,7 +2199,7 @@ try {
         Write-Output $outputPath
         exit 0
     }
-    if(-not(Ensure-Administrator)){if(-not(Test-IsAdministrator)){if($script:NoElevationRequested){exit 5}else{exit 0}}}
+    if(-not(Ensure-Administrator)){if(-not(Test-IsAdministrator)){if($script:NoElevationRequested -or -not $script:ElevationLaunched){exit 5}else{exit 0}}}
     Show-MainMenu
 } catch {
     if($headlessIntent){
