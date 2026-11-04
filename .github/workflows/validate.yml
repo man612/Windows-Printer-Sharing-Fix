@@ -161,6 +161,10 @@ jobs:
         shell: powershell
         run: .\tests\RepairPostconditionSmoke.ps1
 
+      - name: Validate Restore history and printer-policy guards
+        shell: powershell
+        run: .\tests\HistoryPolicySmoke.ps1
+
       - name: Validate managed Restore outcome reporting
         shell: powershell
         run: .\tests\RestoreOutcomeSmoke.ps1
