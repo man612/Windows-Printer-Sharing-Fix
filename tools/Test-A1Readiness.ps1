@@ -76,7 +76,7 @@ function Test-A1TcpPort([Net.IPAddress[]]$Addresses,[int]$Port,[int]$TimeoutMs=8
     foreach($address in @($Addresses|Select-Object -First 8)){
         $remaining=4000-[int]$clock.ElapsedMilliseconds
         if($remaining -le 0){break}
-        $client=New-Object Net.Sockets.TcpClient($address.AddressFamily)
+        $client=New-Object System.Net.Sockets.TcpClient($address.AddressFamily)
         $request=$null
         try{
             $request=$client.BeginConnect($address,$Port,$null,$null)

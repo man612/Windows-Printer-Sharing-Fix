@@ -37,6 +37,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Collect-LabEvide
 
 Run it once on each relevant side. The collector creates Markdown and JSON locally, omits common machine/network identifiers, and also omits installed driver names and security-posture values by default. Add the target driver manually to the issue form; use the collector's opt-in switches only when extra detail is necessary. Review every file before posting it publicly. By default, files are written under `%TEMP%\WindowsPrinterSharingFix-Evidence`.
 
+## A1 read-only host/client preflight
+
+The [A1 lab runbook](A1-LAB-RUNBOOK.md) provides a safe preflight for each side with sanitized JSON. This does not count as accepted A1 evidence until a real lab client-to-host print job and its observed outcome have also been documented.
+
 ## Network scenarios
 
 For at least one modern host/client pair, validate:

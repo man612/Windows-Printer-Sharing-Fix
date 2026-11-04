@@ -12,6 +12,7 @@
 - Share namespace checks are bounded, and unknown results are distinguished from confirmed failures.
 - Narrower firewall mutation, IPv6 handling, CIM printer fallback, GPO checks, and text-export privacy warning.
 - Final review fixed unknown-versus-failed namespace classification, prevented direct-IP printer removal as a shared connection, and made interrupted Point and Print recovery durable.
+- Added separate, sanitized A1 host/client readiness preflights; successful TCP/queue checks remain explicitly unverified until a real print succeeds.
 
 ### Changed
 
