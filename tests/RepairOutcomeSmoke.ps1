@@ -110,6 +110,7 @@ Start-NetworkDiscoveryServices
 if($script:Ok.Count -ne 0 -or $script:Fail.Count -ne 1){throw 'Network Discovery failure produced a false success or no failure.'}
 
 # Queue harness.
+function Get-EffectiveSpoolDirectory { 'C:\queue' }
 $script:QueueEntries=@('job1.spl','job2.shd')
 $script:SpoolerState='Running'
 $script:StopFails=$false
@@ -144,9 +145,9 @@ function Test-Path {
     $true
 }
 function Get-ChildItem {
-    [CmdletBinding()] param([string]$LiteralPath,[switch]$Force)
-    $null=@($LiteralPath,$Force)
-    @($script:QueueEntries | ForEach-Object {[pscustomobject]@{FullName=('C:\queue\'+$_)}})
+    [CmdletBinding()] param([string]$LiteralPath,[switch]$Force,[switch]$File)
+    $null=@($LiteralPath,$Force,$File)
+    @($script:QueueEntries | ForEach-Object {[pscustomobject]@{FullName=('C:\queue\'+$_);Extension=[IO.Path]::GetExtension($_)}})
 }
 function Remove-Item {
     [CmdletBinding()] param([string]$LiteralPath,[switch]$Force,[switch]$Recurse)
