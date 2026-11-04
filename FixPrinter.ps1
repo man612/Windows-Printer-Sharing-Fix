@@ -920,10 +920,10 @@ function Test-SafePrinterUncPath([string]$Path) {
 function Test-ShareNamespaceBounded([string]$ComputerName,[int]$TimeoutSeconds=5) {
     $job=$null
     try {
+        $sharePath=("\\{0}\" -f $ComputerName)
         $job=Start-Job -ScriptBlock {
-            param([string]$HostName)
-            [bool](Test-Path -LiteralPath ("\\{0}\" -f $HostName) -ErrorAction Stop)
-        } -ArgumentList $ComputerName -ErrorAction Stop
+            [bool](Test-Path -LiteralPath $using:sharePath -ErrorAction Stop)
+        } -ErrorAction Stop
         $completed=Wait-Job -Job $job -Timeout $TimeoutSeconds -ErrorAction Stop
         if(-not $completed -or $job.State -ne 'Completed'){return $null}
         return [bool](Receive-Job -Job $job -ErrorAction Stop|Select-Object -First 1)
