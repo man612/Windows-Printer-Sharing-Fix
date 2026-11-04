@@ -81,6 +81,10 @@ jobs:
         shell: powershell
         run: .\tests\PolicySourceSmoke.ps1
 
+      - name: Validate printer transport and spool edge cases
+        shell: powershell
+        run: .\tests\TransportSpoolEdgeSmoke.ps1
+
       - name: Validate modern SMB/RPC diagnostics
         shell: powershell
         run: .\tests\ModernSmbRpcSmoke.ps1
