@@ -1745,7 +1745,7 @@ function Connect-SharedPrinterTemporarilyRelaxed {
         return
     }
     $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint'
-    Write-Warn (L 'This temporarily reduces Point and Print driver-installation protection. It will be restored immediately after the connection attempt.' 'Tindakan ini menurunkan proteksi pemasangan driver Point and Print hanya sementara. Nilai sebelumnya akan langsung dikembalikan setelah percobaan koneksi.')
+    Write-Warn (L 'HIGH RISK: temporarily setting RestrictDriverInstallationToAdministrators=0 can permit non-admin installation of unsafe printer drivers. Microsoft considers this configuration vulnerable. Only test on an isolated trusted PC; automatic rollback and emergency recovery are not a substitute for the security protection.' 'RISIKO TINGGI: pengaturan sementara RestrictDriverInstallationToAdministrators=0 dapat mengizinkan pengguna non-admin memasang driver printer berbahaya. Microsoft menganggap konfigurasi ini rentan. Uji hanya di PC tepercaya yang terisolasi; rollback dan pemulihan darurat bukan pengganti perlindungan keamanan tersebut.')
     if((Read-Host (L 'Type RISK to continue' 'Ketik RISK untuk lanjut')).Trim().ToUpperInvariant() -ne 'RISK'){return}
     $original=Get-RegistryValueStateStrict $path 'RestrictDriverInstallationToAdministrators'
 

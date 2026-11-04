@@ -60,6 +60,10 @@ Expected behavior: the target-path diagnostic should identify the earliest faili
 5. Restart Spooler and confirm service returns to Running.
 6. Restore after non-destructive Safe Repair and compare service state to snapshot.
 
+## Point and Print security boundary
+
+Microsoft's [KB5005652](https://support.microsoft.com/en-gb/servicing/os/windows/2021/08/kb5005652-manage-new-point-and-print-default-driver-installation-behavior-cve-2021-34481) warns that setting RestrictDriverInstallationToAdministrators to 0 makes Windows vulnerable; no combination of partial mitigations is equivalent to leaving it enabled. The advanced temporary-relaxation flow is **not** a recommended everyday repair. Prefer administrative driver installation and trusted package deployment. If a disposable lab must exercise this path, verify the original registry baseline, avoid untrusted print servers, confirm automatic rollback, and test the persistent emergency marker. Do not use this procedure on production networks.
+
 ## Point and Print scenario
 
 1. Use a test printer share that triggers driver installation/admin approval.
