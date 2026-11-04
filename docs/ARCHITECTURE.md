@@ -162,3 +162,13 @@ The stable PowerShell implementation is guarded by layered tests rather than a s
 - deterministic package and release-workflow tests protect ZIP reproducibility, checksums, provenance, and draft-before-publish ordering.
 
 The remaining major validation gap is real disposable host/client coverage across Windows/printer combinations. That work is tracked separately in the public roadmap and real-world results documents.
+
+
+## v4.2.1 hardening notes
+
+- Restoring managed changes now lets the user select a validated action-scoped snapshot.
+- RPC target diagnosis distinguishes local Named Pipes selection from TCP reachability and does not infer a remote port from local policy.
+- PrintService events require specific printer-path correlation to drive target-layer prioritization.
+- Share enumeration has a bounded timeout with an explicit unknown outcome.
+- Queue cleanup reads the configured local spool directory and removes only SPL/SHD job files.
+- Group Policy-controlled printer settings are not overwritten by compatibility actions.

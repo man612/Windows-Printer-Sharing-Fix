@@ -30,7 +30,7 @@ The output follows [`diagnosis.schema.json`](diagnosis.schema.json).
 - **Safe Repair**: first-line repair; must not lower printer/network security protections.
 - **Compatibility Repair**: targeted workaround after diagnosis provides evidence.
 - **Legacy Compatibility**: last resort for proven old-device requirements.
-- **Restore**: returns the latest managed settings to their captured previous state when technically possible.
+- **Restore**: lists valid per-action snapshots. Choose the managed action to undo; deleted print jobs and removed connections cannot be restored automatically.
 
 ## Before sharing a diagnostic report
 

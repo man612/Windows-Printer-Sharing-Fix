@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 4.2.1 - Unreleased
+
+### Fixed and hardened
+
+- RPC troubleshooting respects Named Pipes and distinguishes local configuration from verified remote port evidence.
+- PrintService events require target-path correlation; UNC names receive stricter validation.
+- Custom spool directories are honored and queue cleanup deletes only SPL/SHD job files.
+- SMB1 restore reports pending reboot distinctly from verified success.
+- Restore provides per-action snapshot selection and interrupted Point and Print recovery warnings.
+- Share namespace checks are bounded, and unknown results are distinguished from confirmed failures.
+- Narrower firewall mutation, IPv6 handling, CIM printer fallback, GPO checks, and text-export privacy warning.
 
 ### Changed
 

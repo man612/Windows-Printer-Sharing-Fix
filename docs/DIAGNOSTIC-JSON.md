@@ -105,3 +105,8 @@ The hostname and printer/share path are deliberately omitted. Starting a new dia
 ## Read-only guarantee
 
 CI fingerprints the registry values, network profiles, File and Printer Sharing firewall state, SMB1 client state, and Spooler state before and after diagnosis/export. The JSON export itself only serializes the existing diagnosis object and writes a local file.
+
+
+### Transport fields added in v4.2.1
+
+Optional target fields RpcTransport and RpcConfiguredPortSource distinguish local transport selection from confirmed remote port evidence. ShareNamespaceAccessible may be null if the bounded check timed out or could not be completed, rather than a confirmed false.
