@@ -1525,6 +1525,57 @@ function Invoke-ClearPrintQueue {
     Write-Log ("Queue cleared; files=$($preview.Count); initial Spooler=$baseline; irreversible.") 'WARN'
 }
 
+function Assert-FirewallLocalPolicyEffective {
+    [CmdletBinding()]
+    param([object[]]$Rules,[switch]$RequireEnabled,[switch]$SkipBaselineComparison)
+    if(-not $Rules.Count){return}
+    if(-not(Get-Command Get-NetFirewallProfile -ErrorAction SilentlyContinue)){
+        throw 'Cannot verify effective firewall profile policy; no local firewall repair was started.'
+    }
+    if(-not(Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue)){
+        throw 'Cannot verify effective firewall rule policy; no local firewall repair was started.'
+    }
+    # PersistentStore is a local write target, but ActiveStore is what Windows applies after GPO/MDM merging.
+    $profiles=@(Get-NetFirewallProfile -PolicyStore ActiveStore -ErrorAction Stop)
+    foreach($profileName in @('Domain','Private')){
+        $matching=@($profiles|Where-Object{[string]$_.Name -eq $profileName})
+        if($matching.Count -ne 1){
+            throw ("Cannot identify exactly one effective {0} firewall profile; local repair was blocked." -f $profileName)
+        }
+        if([string]$matching[0].AllowLocalFirewallRules -ne 'True'){
+            throw ("Effective {0} firewall policy does not allow local rule merging (or is unknown). Contact the policy administrator." -f $profileName)
+        }
+        if([string]$matching[0].Enabled -ne 'True'){
+            throw ("Effective {0} firewall profile is disabled or unverifiable. Changing local rules cannot be reported as effective repair." -f $profileName)
+        }
+    }
+    foreach($rule in @($Rules)){
+        $name=[string]$rule.Name
+        if([string]::IsNullOrWhiteSpace($name)){throw 'Firewall rule has no stable name.'}
+        $matching=@(Get-NetFirewallRule -Name $name -PolicyStore ActiveStore -TracePolicyStore -ErrorAction Stop)
+        if($matching.Count -ne 1){
+            throw ("Firewall rule {0} is absent or ambiguous in ActiveStore; local repair is blocked." -f $name)
+        }
+        $active=$matching[0]
+        $source=$active.PSObject.Properties['PolicyStoreSourceType']
+        if($null -eq $source -or [string]$source.Value -ne 'Local'){
+            throw ("Firewall rule {0} is not proven local in effective policy (GPO/MDM override possible); contact the administrator." -f $name)
+        }
+        if([string]$active.Direction -ne 'Inbound' -or [string]$active.Action -ne 'Allow'){
+            throw ("Effective firewall rule {0} is not an inbound Allow rule." -f $name)
+        }
+        $expectedEnabled=if($RequireEnabled){'True'}else{[string]$rule.Enabled}
+        $expectedProfile=if($RequireEnabled){'Domain,Private'}else{[string]$rule.Profile}
+        if(-not $SkipBaselineComparison){
+            $actualProfile=@(([string]$active.Profile -split ',')|ForEach-Object{$_.Trim()}|Where-Object{$_}|Sort-Object -Unique)
+            $baselineProfile=@(($expectedProfile -split ',')|ForEach-Object{$_.Trim()}|Where-Object{$_}|Sort-Object -Unique)
+            if(-not [string]::Equals($expectedEnabled,[string]$active.Enabled,[StringComparison]::OrdinalIgnoreCase) -or ($actualProfile -join ',') -ne ($baselineProfile -join ',')){
+                throw ("Effective firewall rule {0} does not match the expected state; preview/repair is not authoritative." -f $name)
+            }
+        }
+    }
+}
+
 function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null) {
     if(-not(Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue)){Write-Warn (L 'Modern firewall mutation cmdlet is unavailable.' 'Cmdlet perubahan firewall modern tidak tersedia.');return}
     if(-not(Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue)){Write-Warn (L 'Modern firewall read-back cmdlet is unavailable; repair was not started.' 'Cmdlet pembacaan ulang firewall modern tidak tersedia; perbaikan tidak dijalankan.');return}
@@ -1548,6 +1599,14 @@ function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null) {
         }catch{
             $failed+=([string]$rule.Name)
             Write-Log ("Firewall repair failed for rule {0}: {1}" -f $rule.Name,$_.Exception.Message) 'ERROR'
+        }
+    }
+    if(-not $failed.Count){
+        try{Assert-FirewallLocalPolicyEffective -Rules $eligible -RequireEnabled}
+        catch{
+            $failed+=('EffectiveFirewallPolicy')
+            Write-Log ("Local firewall rule write succeeded but ActiveStore policy verification failed: {0}" -f $_.Exception.Message) 'ERROR'
+            Write-Warn (L 'A local firewall change was made, but effective policy could not be verified. The result is NOT confirmed; review Group Policy and Restore if needed.' 'Aturan firewall lokal telah diubah, tetapi kebijakan efektif belum dapat diverifikasi. Hasilnya BELUM terkonfirmasi; periksa Group Policy dan Restore jika perlu.')
         }
     }
     if($failed.Count){
@@ -1733,6 +1792,7 @@ function Show-SafeRepairMenu {
                 })
                 if(-not(Confirm-SafeRepairPreview (L 'File and Printer Sharing firewall' 'Firewall File and Printer Sharing') $steps (L 'Only selected inbound Private/Domain rules change; trusted-network exposure may increase.' 'Hanya aturan masuk Private/Domain terpilih yang diubah; akses perangkat di jaringan tepercaya dapat bertambah.') (L 'The selected rules previous Enabled/Profile values are stored for Restore.' 'Nilai Enabled/Profile aturan yang dipilih disimpan untuk Restore.'))){break}
                 Assert-SafeRepairPlanUnchanged -CheckFirewall -ExpectedFirewallRules $firewallBaseline
+                Assert-FirewallLocalPolicyEffective -Rules $repairRules
                 $snap=New-RestoreSnapshot 'Enable sharing firewall rules' @('Firewall') -FirewallRules $repairRules
                 if($snap){Enable-PrivateFirewallSharing -FirewallRules $repairRules}
             }
@@ -1797,6 +1857,7 @@ function Show-SafeRepairMenu {
                 })
                 if(-not(Confirm-SafeRepairPreview (L 'Combined non-destructive Safe Repair' 'Perbaikan Aman gabungan') $steps (L 'Printing may pause; discovery and trusted-network firewall exposure may change. No queue deletion or security downgrade is planned.' 'Pencetakan dapat tertunda; layanan penemuan dan akses firewall jaringan tepercaya dapat berubah. Tidak ada penghapusan antrean atau penurunan keamanan.') (L 'Affected service/firewall states are snapshotted, but interrupted print jobs cannot be recreated.' 'Status layanan/firewall yang berubah disimpan, tetapi pekerjaan cetak yang terganggu tidak dapat dibuat ulang.'))){break}
                 Assert-SafeRepairPlanUnchanged -ExpectedServices $combinedServiceBaseline -CheckFirewall -ExpectedFirewallRules $combinedFirewallBaseline
+                if($repairRules.Count){Assert-FirewallLocalPolicyEffective -Rules $repairRules}
                 $snap=New-RestoreSnapshot 'Combined non-destructive Safe Repair' @('Services','Firewall') -FirewallRules $repairRules -ServiceNames $serviceNames
                 if($snap){
                     try{Invoke-RestartSpooler}
