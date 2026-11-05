@@ -26,7 +26,7 @@ function Write-Header([string]$Text){}
 function Write-Rule{}
 function Write-Info([string]$Text){}
 function Write-Warn([string]$Text){}
-function Write-Fail([string]$Text){throw $Text}
+function Write-Fail([string]$Text){if($script:ExpectDrift){$script:LastDriftError=$Text;return};throw $Text}
 function Write-Ok([string]$Text){}
 function Write-Log([string]$Message,[string]$Level='INFO'){}
 function Pause-Tui{}
@@ -74,6 +74,8 @@ function Invoke-RestartSpooler{}
 function Invoke-ClearPrintQueue{}
 
 $script:PreviewDrift=''
+$script:ExpectDrift=$false
+$script:LastDriftError=''
 function Reset-Harness{
     $script:SnapshotCalls=0
     $script:SnapshotFirewallNames=@()
@@ -81,6 +83,8 @@ function Reset-Harness{
     $script:ChoiceQueue=@()
     $script:SelectedProfile=$null
     $script:PreviewDrift=''
+    $script:ExpectDrift=$false
+    $script:LastDriftError=''
     $script:FirewallFixture=@()
     $script:ServiceStates=@{}
     $script:SnapshotServiceNames=@()
@@ -159,24 +163,27 @@ $script:PreviewConsent=$true
 Reset-Harness
 $script:PreviewConsent=$true
 $script:PreviewDrift='Firewall'
+$script:ExpectDrift=$true
 $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False';Direction='Inbound';Action='Allow'})
 $script:ChoiceQueue=@('3','B')
 Show-SafeRepairMenu
-if($script:SnapshotCalls -or $script:RepairFirewallNames.Count){throw 'Firewall drift still caused mutation or snapshot.'}
+if($script:SnapshotCalls -or $script:RepairFirewallNames.Count -or $script:LastDriftError -notlike '*plan changed*'){throw 'Firewall drift was not rejected before mutation or snapshot.'}
 
 Reset-Harness
 $script:PreviewDrift='Discovery'
+$script:ExpectDrift=$true
 $script:ServiceStates=@{fdPHost='Stopped';FDResPub='Running'}
 $script:ChoiceQueue=@('5','B')
 Show-SafeRepairMenu
-if($script:SnapshotCalls){throw 'Network Discovery drift still caused a snapshot.'}
+if($script:SnapshotCalls -or $script:LastDriftError -notlike '*plan changed*'){throw 'Network Discovery drift was not rejected before snapshot.'}
 
 Reset-Harness
 $script:PreviewDrift='Network'
+$script:ExpectDrift=$true
 $script:SelectedProfile=[pscustomobject]@{InterfaceIndex=7;InterfaceAlias='Ethernet';Name='TestLAN';NetworkCategory='Public';IPv4Connectivity='Internet';IPv6Connectivity='Disconnected'}
 $script:ChoiceQueue=@('4','1','B')
 Show-SafeRepairMenu
-if($script:SnapshotCalls){throw 'Network profile drift still caused a snapshot.'}
+if($script:SnapshotCalls -or $script:LastDriftError -notlike '*plan changed*'){throw 'Network profile drift was not rejected before snapshot.'}
 $script:PreviewDrift=''
 
 Write-Host 'Safe-repair no-op smoke passed: no-op firewall/network/discovery actions preserve Restore history, and Network Discovery snapshots only services that need mutation.' -ForegroundColor Green
