@@ -1489,7 +1489,7 @@ function Invoke-ClearPrintQueue {
     }
     Write-Warn (L 'This permanently removes pending jobs from ALL printer queues on this PC. Try cancelling the affected printer jobs in Windows Settings first.' 'Ini menghapus job tertunda pada SEMUA antrean printer di PC ini secara permanen. Coba batalkan job printer terkait lewat Settings Windows terlebih dahulu.')
     Write-Info ((L 'Spool folder: {0}; SPL/SHD files: {1}; initial Spooler: {2}' 'Folder spool: {0}; file SPL/SHD: {1}; Spooler awal: {2}') -f $queuePath,$preview.Count,$baseline)
-    if(-not(Read-YesNo (L 'Permanently delete these queued files?' 'Hapus file antrean tersebut secara permanen?') $false)){return}
+    if(-not(Read-YesNo (L 'Permanently delete these queued files?' 'Hapus file antrean tersebut secara permanen?') $true)){return}
     $failure=$null
     try{
         if($baseline -eq 'Running'){

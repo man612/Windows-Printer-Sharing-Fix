@@ -57,7 +57,7 @@ try{
     Set-Content -LiteralPath (Join-Path $script:QueueRoot 'keep.txt') 'keep'
     Invoke-ClearPrintQueue
     if($script:Status -ne 'Running' -or $script:Stops -ne 1 -or $script:Starts -ne 1){throw 'Running Spooler baseline was not preserved.'}
-    if($script:ChoiceDefault -ne $false -or $script:Prompts -ne 1){throw 'Queue cleanup consent was not explicit default-No.'}
+    if($script:ChoiceDefault -ne $true -or $script:Prompts -ne 1){throw 'Queue cleanup consent was not explicit default-No.'}
     if(@(Get-ChildItem $script:QueueRoot -Filter '*.SPL').Count -or @(Get-ChildItem $script:QueueRoot -Filter '*.SHD').Count){throw 'Spool files remained after successful cleanup.'}
     if(-not(Test-Path -LiteralPath (Join-Path $script:QueueRoot 'keep.txt'))){throw 'Non-spool file was deleted.'}
     if($script:Failures.Count -or $script:Successes.Count -ne 1){throw 'Running baseline cleanup status is incorrect.'}
