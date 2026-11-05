@@ -79,6 +79,26 @@ try {
         else{throw}
     }
 
+    $pointer=Join-Path $script:BackupRoot 'latest_backup.txt'
+    ('x' * 5000)|Set-Content -LiteralPath $pointer -Encoding ASCII
+    $oversizeRejected=$false
+    try{Assert-ManagedBackupPointer $pointer}catch{$oversizeRejected=$true}
+    if(-not $oversizeRejected){throw 'Oversized Restore pointer was accepted.'}
+    Remove-Item -LiteralPath $pointer -Force
+    $outsidePointer=Join-Path $temp 'external-pointer.txt'
+    'outside unchanged'|Set-Content -LiteralPath $outsidePointer
+    try{
+        New-Item -ItemType SymbolicLink -Path $pointer -Target $outsidePointer -ErrorAction Stop|Out-Null
+        $linkedPointerRejected=$false
+        try{Assert-ManagedBackupPointer $pointer}catch{$linkedPointerRejected=$true}
+        if(-not $linkedPointerRejected){throw 'Linked restore pointer was accepted.'}
+        if((Get-Content -LiteralPath $outsidePointer -Raw).Trim() -ne 'outside unchanged'){throw 'Linked restore pointer overwrote the external target.'}
+    }catch{
+        if(-not(Test-Path -LiteralPath $pointer)){Write-Verbose 'Symlink creation unavailable on this Windows runner.'}
+        else{throw}
+    }
+    if(Test-Path -LiteralPath $pointer){Remove-Item -LiteralPath $pointer -Force}
+
     $outside=Join-Path $temp '20260918-120001-abcdef'
     Write-Snapshot $outside $valid
     Assert-Rejected $outside 'outside backup root'

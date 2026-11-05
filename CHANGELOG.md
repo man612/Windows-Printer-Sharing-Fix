@@ -4,6 +4,8 @@
 
 ### Fixed and hardened
 
+- Verify backup pointers are ordinary, bounded files rather than reparse links before elevated snapshot and emergency marker writes.
+
 - Audit every packaged Markdown/HTML relative link against the extracted release ZIP to prevent missing documentation, offline images, and example references.
 
 - Reject reparse-point backup roots and linked or oversized managed-state JSON files before parsing/restoring; cover large snapshots and linked-file fixtures in security smoke.

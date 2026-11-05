@@ -101,6 +101,8 @@ function Initialize-Workspace {
         }
     }
 
+    Assert-ManagedBackupPointer $script:LatestStateFile
+    Assert-ManagedBackupPointer (Get-PendingPointAndPrintMarkerPath)
     if (-not (Test-Path -LiteralPath $script:LanguageFile) -and (Test-Path -LiteralPath $script:LegacyLanguageFile)) {
         $legacyLanguage = Get-Content -LiteralPath $script:LegacyLanguageFile -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($null -ne $legacyLanguage -and ([string]$legacyLanguage).Trim().ToUpperInvariant() -in @('EN','ID')) {
@@ -1044,6 +1046,7 @@ function Get-RestoreActionContract([string]$Reason) {
 function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Services','Network','Firewall','SMB1'),[object[]]$FirewallRules=$null,[object[]]$NetworkProfiles=$null,[string[]]$RegistryNames=$null,[string[]]$ServiceNames=$null) {
     $dir=$null
     try{
+        Assert-ManagedBackupPointer $script:LatestStateFile
         $contract=Get-RestoreActionContract $Reason
         $actualScopes=@($Scopes|ForEach-Object{[string]$_})
         $expectedScopes=@($contract.Scopes|ForEach-Object{[string]$_})
@@ -1131,6 +1134,24 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
         Write-Fail ((L 'Snapshot failed: {0}' 'Pembuatan snapshot gagal: {0}') -f $_.Exception.Message)
         Write-Log $_.Exception.Message 'ERROR'
         return $null
+    }
+}
+
+function Assert-ManagedBackupPointer([string]$Path) {
+    # Read/write only regular local pointer files, never reparse points (link/junction targets).
+    if([string]::IsNullOrWhiteSpace($Path)){throw 'Managed backup pointer path is empty.'}
+    $root=Get-Item -LiteralPath $script:BackupRoot -Force -ErrorAction Stop
+    if(-not $root.PSIsContainer -or (($root.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
+        throw 'Managed backup root must be a normal directory, not a reparse point.'
+    }
+    $pointer=Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if($null -ne $pointer){
+        if($pointer.PSIsContainer -or (($pointer.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
+            throw 'Managed backup pointer cannot be a directory, symlink or other reparse point.'
+        }
+        if($pointer.Length -gt 4096){throw 'Managed backup pointer exceeds the 4 KiB safety limit.'}
+    }elseif(Test-Path -LiteralPath $Path){
+        throw 'Managed backup pointer exists but its metadata cannot be inspected.'
     }
 }
 
@@ -1297,6 +1318,7 @@ function Invoke-RestoreLatest([string]$SnapshotDirectory='') {
     Write-Warn (L 'Restore reverts only the states captured for the latest v4 action. Deleted print jobs and removed printer connections cannot be recreated automatically.' 'Restore hanya mengembalikan kondisi yang disimpan oleh tindakan v4 terakhir. Print job yang sudah dihapus dan koneksi printer yang sudah dilepas tidak dapat dibuat ulang otomatis.')
     if(-not $SnapshotDirectory){
         if(-not(Test-Path -LiteralPath $script:LatestStateFile)){Write-Warn (L 'No v4 restore snapshot exists yet.' 'Belum ada snapshot restore v4.');Pause-Tui;return}
+        Assert-ManagedBackupPointer $script:LatestStateFile
         $dir=([string](Get-Content -LiteralPath $script:LatestStateFile|Select-Object -First 1)).Trim()
     }else{$dir=$SnapshotDirectory}
     try{
@@ -1312,6 +1334,7 @@ function Invoke-RestoreLatest([string]$SnapshotDirectory='') {
     if(Test-PointAndPrintRecoveryRequired){
         $emergencyMarker=Get-PendingPointAndPrintMarkerPath
         $source=if(Test-Path -LiteralPath $emergencyMarker -PathType Leaf){$emergencyMarker}else{$script:LatestStateFile}
+        Assert-ManagedBackupPointer $source
         try{
             $emergencyPath=([string](Get-Content -LiteralPath $source -ErrorAction Stop|Select-Object -First 1)).Trim()
             $sameEmergency=[string]::Equals([IO.Path]::GetFullPath($emergencyPath).TrimEnd([char]'\'),([IO.Path]::GetFullPath($dir)).TrimEnd([char]'\'),[StringComparison]::OrdinalIgnoreCase)
@@ -1967,6 +1990,8 @@ function Connect-SharedPrinterTemporarilyRelaxed {
     if((Read-Host (L 'Type RISK to continue' 'Ketik RISK untuk lanjut')).Trim().ToUpperInvariant() -ne 'RISK'){return}
     $original=Get-RegistryValueStateStrict $path 'RestrictDriverInstallationToAdministrators'
 
+    try{Assert-ManagedBackupPointer $script:LatestStateFile;Assert-ManagedBackupPointer (Get-PendingPointAndPrintMarkerPath)}
+    catch{Write-Fail ((L 'Unsafe backup pointer: {0}' 'Pointer backup tidak aman: {0}') -f $_.Exception.Message);return}
     $hadPreviousLatest=Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf
     $previousLatest=$null
     if($hadPreviousLatest){
@@ -1982,7 +2007,7 @@ function Connect-SharedPrinterTemporarilyRelaxed {
     $snap=New-RestoreSnapshot 'Temporary Point and Print relaxation' @('Registry');if(-not $snap){return}
     # The durable marker survives a crash even if another action changes latest_backup.txt.
     $emergencyMarker=Get-PendingPointAndPrintMarkerPath
-    try{$snap|Set-Content -LiteralPath $emergencyMarker -Encoding UTF8 -ErrorAction Stop}
+    try{Assert-ManagedBackupPointer $emergencyMarker;$snap|Set-Content -LiteralPath $emergencyMarker -Encoding UTF8 -ErrorAction Stop}
     catch{
         Write-Fail ((L 'Could not write Point and Print recovery marker; no security setting was changed: {0}' 'Tidak dapat menyimpan penanda pemulihan Point and Print; pengaturan keamanan belum diubah: {0}') -f $_.Exception.Message)
         return
@@ -2015,6 +2040,7 @@ function Connect-SharedPrinterTemporarilyRelaxed {
                 if(Test-Path -LiteralPath $emergencyMarker -PathType Leaf){Remove-Item -LiteralPath $emergencyMarker -Force -ErrorAction Stop}
                 if($hadPreviousLatest){
                     if(-not $previousLatest){throw 'Previous Restore pointer was empty.'}
+                    Assert-ManagedBackupPointer $script:LatestStateFile
                     $previousLatest|Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8 -ErrorAction Stop
                 }else{
                     Remove-Item -LiteralPath $script:LatestStateFile -Force -ErrorAction SilentlyContinue
@@ -2395,6 +2421,7 @@ function Show-PendingPointAndPrintRecovery {
     if(-not $hasMarker -and -not(Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf)){return}
     try{
         $source=if($hasMarker){$marker}else{$script:LatestStateFile}
+        Assert-ManagedBackupPointer $source
         $path=([string](Get-Content -LiteralPath $source -ErrorAction Stop|Select-Object -First 1)).Trim()
         $snapshot=Get-ValidatedRestoreSnapshot $path
         if([string]$snapshot.State.Reason -ne 'Temporary Point and Print relaxation'){
@@ -2429,6 +2456,7 @@ function Test-PointAndPrintRecoveryRequired {
     if(-not $hasMarker -and -not(Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf)){return $false}
     try{
         $source=if($hasMarker){$marker}else{$script:LatestStateFile}
+        Assert-ManagedBackupPointer $source
         $snapshotPath=([string](Get-Content -LiteralPath $source -ErrorAction Stop|Select-Object -First 1)).Trim()
         $snapshot=Get-ValidatedRestoreSnapshot $snapshotPath
         if([string]$snapshot.State.Reason -ne 'Temporary Point and Print relaxation'){return [bool]$hasMarker}
