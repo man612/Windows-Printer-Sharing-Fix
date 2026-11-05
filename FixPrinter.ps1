@@ -1142,11 +1142,22 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
     if(-not [string]::Equals($parent,$backupFull,[StringComparison]::OrdinalIgnoreCase)){throw 'Restore snapshot is outside the managed backup root.'}
     $leaf=[IO.Path]::GetFileName($dirFull)
     if($leaf -notmatch '^\d{8}-\d{6}-[0-9a-fA-F]{6}$'){throw 'Restore snapshot directory name is invalid.'}
+    $rootItem=Get-Item -LiteralPath $backupFull -Force -ErrorAction Stop
+    if(-not $rootItem.PSIsContainer -or (($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
+        throw 'Managed backup root must be a normal local directory, not a reparse point.'
+    }
     $dirItem=Get-Item -LiteralPath $dirFull -Force -ErrorAction Stop
     if(-not $dirItem.PSIsContainer -or (($dirItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){throw 'Restore snapshot directory is not a normal managed directory.'}
 
     $file=Join-Path $dirFull 'managed-state.json'
     if(-not(Test-Path -LiteralPath $file -PathType Leaf)){throw 'Restore snapshot state file is missing.'}
+    $stateFileItem=Get-Item -LiteralPath $file -Force -ErrorAction Stop
+    if(($stateFileItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){
+        throw 'Restore snapshot state file cannot be a symbolic link or other reparse point.'
+    }
+    if($stateFileItem.Length -gt 1048576){
+        throw 'Restore snapshot state file exceeds the 1 MiB safety limit.'
+    }
     $state=Get-Content -LiteralPath $file -Raw -ErrorAction Stop|ConvertFrom-Json
     $required=@('Version','Reason','Scopes','Registry','Services','NetworkProfiles','FirewallRules','WindowsFeatures')
     foreach($property in $required){if($property -notin @($state.PSObject.Properties.Name)){throw "Restore snapshot is missing required field: $property"}}
