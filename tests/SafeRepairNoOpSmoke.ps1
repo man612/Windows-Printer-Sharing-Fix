@@ -181,7 +181,7 @@ Reset-Harness
 $script:PreviewDrift='Network'
 $script:ExpectDrift=$true
 $script:SelectedProfile=[pscustomobject]@{InterfaceIndex=7;InterfaceAlias='Ethernet';Name='TestLAN';NetworkCategory='Public';IPv4Connectivity='Internet';IPv6Connectivity='Disconnected'}
-$script:ChoiceQueue=@('4','1','B')
+$script:ChoiceQueue=@('4','B') # Select-NetworkProfile is stubbed; no second selection prompt.
 Show-SafeRepairMenu
 if($script:SnapshotCalls -or $script:LastDriftError -notlike '*plan changed*'){throw 'Network profile drift was not rejected before snapshot.'}
 $script:PreviewDrift=''
