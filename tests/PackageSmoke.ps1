@@ -29,6 +29,15 @@ try {
         }
     }
 
+    $rootQuickstart=Get-Content -LiteralPath (Join-Path $root 'QUICKSTART.md') -Raw
+    $docsQuickstart=Get-Content -LiteralPath (Join-Path $root 'docs\QUICKSTART.md') -Raw
+    if($rootQuickstart -notmatch '\]\(docs/SAFE-REPAIR-PREVIEW\.md\)'){
+        throw 'Root QUICKSTART links were not rebased to docs/ during release packaging.'
+    }
+    if($docsQuickstart -notmatch '\]\(SAFE-REPAIR-PREVIEW\.md\)'){
+        throw 'Source docs/QUICKSTART relative links were unexpectedly rewritten.'
+    }
+
     # Every local Markdown/HTML link in the extracted user documentation must resolve offline.
     $packageRoot=([IO.Path]::GetFullPath($root)).TrimEnd([char]'\',[char]'/')
     $packagePrefix=$packageRoot+[IO.Path]::DirectorySeparatorChar
@@ -59,7 +68,7 @@ try {
     if (Test-Path -LiteralPath (Join-Path $root '.git')) { throw 'Release package must not contain .git metadata.' }
     if (Test-Path -LiteralPath (Join-Path $root 'tests')) { throw 'Release package should not include the repository test suite.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\REAL-WORLD-RESULTS.md'))) { throw 'Packaged real-world results ledger is missing.' }
-    foreach ($requiredDoc in @('SAFE-REPAIR-PREVIEW.md','A1-LAB-RUNBOOK.md')) {
+    foreach ($requiredDoc in @('SAFE-REPAIR-PREVIEW.md','A1-LAB-RUNBOOK.md','QUICKSTART.md')) {
         if (-not (Test-Path -LiteralPath (Join-Path $root ('docs\' + $requiredDoc)) -PathType Leaf)) {
             throw "Packaged linked runbook missing: $requiredDoc"
         }

@@ -4,6 +4,8 @@
 
 ### Fixed and hardened
 
+- Keep the original docs/QUICKSTART and generate a deterministic root quickstart with correctly rebased docs links in ZIP releases.
+
 - Verify backup pointers are ordinary, bounded files rather than reparse links before elevated snapshot and emergency marker writes.
 
 - Audit every packaged Markdown/HTML relative link against the extracted release ZIP to prevent missing documentation, offline images, and example references.
