@@ -200,3 +200,43 @@ jobs:
       - name: Validate release package
         shell: powershell
         run: .\tests\PackageSmoke.ps1
+
+  portable-smoke:
+    name: Cross-Windows smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-11-arm]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Record Windows and PowerShell platform
+        shell: powershell
+        run: |
+          Write-Host "Windows: $([Environment]::OSVersion.VersionString)"
+          Write-Host "Architecture: $([Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITECTURE'))"
+          Write-Host "Windows PowerShell: $($PSVersionTable.PSVersion.ToString())"
+
+      - name: Validate source syntax and safety contracts
+        shell: powershell
+        run: .\tests\Validate.ps1
+
+      - name: Validate repository and documentation
+        shell: powershell
+        run: |
+          .\tests\RepositoryHygieneSmoke.ps1
+          .\tests\DocumentationSmoke.ps1
+
+      - name: Validate synthetic queue/recovery safety
+        shell: powershell
+        run: .\tests\QueueRecoveryGuardSmoke.ps1
+
+      - name: Validate synthetic printer inventory and tri-state diagnosis
+        shell: powershell
+        run: .\tests\PrinterClassificationSmoke.ps1
+
+      - name: Validate Windows 11 A1 read-only preflight
+        shell: powershell
+        run: .\tests\A1ReadinessSmoke.ps1

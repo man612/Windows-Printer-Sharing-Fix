@@ -2,6 +2,8 @@
 
 Static CI protects syntax and architecture rules, but printer sharing must also be validated on real/disposable Windows machines because behavior depends on the exact OS servicing build (base build + UBR when available), driver type, policy, network profile, host/client roles, and printer hardware.
 
+GitHub CI also runs **synthetic/read-only** smoke checks on `windows-2022` (Windows Server 2022 x64) and `windows-11-arm` (Windows 11 ARM64), in addition to the full Windows Server 2025 suite. These check code portability; none replaces a client-to-host shared-printer test or proves Windows 11 x64 printer-driver compatibility.
+
 ## Minimum lab topology
 
 Use at least two Windows VMs on an isolated virtual network:

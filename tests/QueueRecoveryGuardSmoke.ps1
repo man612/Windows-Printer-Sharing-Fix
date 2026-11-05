@@ -30,6 +30,7 @@ function Get-Service {
 function Stop-Service {
     [CmdletBinding()]param([string]$Name,[switch]$Force)
     if($Name -ne 'Spooler'){throw 'Unexpected Stop-Service target.'}
+    if(-not $Force){throw 'Mock Stop-Service expected -Force.'}
     $script:Stops++
     $script:Status='Stopped'
     if($script:StopThrows){throw 'Synthetic service-stop failure after status transition.'}
