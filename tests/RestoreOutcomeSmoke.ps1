@@ -45,6 +45,7 @@ function Assert-FirewallLocalPolicyEffective([object[]]$Rules,[switch]$RequireEn
 # Coordinator harness.
 $temp=Join-Path $env:TEMP ('wpsf-restore-outcome-'+[Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temp -Force | Out-Null
+$script:BackupRoot=$temp
 $script:LatestStateFile=Join-Path $temp 'latest_backup.txt'
 'dummy' | Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8
 $script:CurrentState=$null
