@@ -4,6 +4,8 @@
 
 ### Fixed and hardened
 
+- Reject stale Safe Repair approvals before snapshot/mutation: revalidate service states, firewall rule eligibility/properties, and selected network identity/category; add regression tests for changed targets and combined repairs.
+
 - Added interactive read-only Safe Repair plan previews with impact, scoped Restore limitations and default-No consent; queue cleanup retains its separate destructive-operation confirmation.
 
 - Hardened queue purge with all-machine file preview, default-No confirmation, original Spooler status preservation, and changed-file-count refusal.

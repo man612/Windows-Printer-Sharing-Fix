@@ -165,6 +165,10 @@ jobs:
         shell: powershell
         run: .\tests\LegacyNoOpSmoke.ps1
 
+      - name: Validate Safe Repair state drift protection
+        shell: powershell
+        run: .\tests\SafeRepairStateDriftSmoke.ps1
+
       - name: Validate read-only Safe Repair plan previews
         shell: powershell
         run: .\tests\SafeRepairPreviewSmoke.ps1
@@ -244,6 +248,10 @@ jobs:
       - name: Validate synthetic printer inventory and tri-state diagnosis
         shell: powershell
         run: .\tests\PrinterClassificationSmoke.ps1
+
+      - name: Validate Safe Repair state drift portability
+        shell: powershell
+        run: .\tests\SafeRepairStateDriftSmoke.ps1
 
       - name: Validate Windows 11 A1 read-only preflight
         shell: powershell

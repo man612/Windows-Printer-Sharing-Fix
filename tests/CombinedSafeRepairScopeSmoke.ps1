@@ -44,6 +44,7 @@ $script:PreviewConsent=$true
 function Confirm-SafeRepairPreview([string]$Action,[string[]]$Steps,[string]$Impact,[string]$RestoreNote){
     $null=@($Action,$Steps,$Impact,$RestoreNote)
     $script:PreviewCalls++
+    if($script:PreviewDrift -eq 'Discovery'){$script:ServiceStates['fdPHost']='Running'}
     return [bool]$script:PreviewConsent
 }
 function Read-Choice([string]$Prompt,[string[]]$Allowed){
@@ -92,6 +93,7 @@ function Assert-Names([object[]]$Items,[string[]]$Expected,[string]$Label){
     $wanted=@($Expected|Sort-Object)
     if(($actual -join '|') -ne ($wanted -join '|')){throw "$Label mismatch. Actual=$($actual -join ',') Expected=$($wanted -join ',')"}
 }
+$script:PreviewDrift=''
 function Reset-Harness {
     Remove-Item -LiteralPath $script:BackupRoot -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Path $script:BackupRoot -Force|Out-Null
@@ -103,6 +105,7 @@ function Reset-Harness {
     $script:FailRestart=$false
     $script:FailFirewall=$false
     $script:FailDiscovery=$false
+    $script:PreviewDrift=''
 }
 
 try {
@@ -157,6 +160,17 @@ try {
     }
     if(Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf){throw 'Declined combined Safe Repair created a Restore snapshot.'}
     $script:PreviewConsent=$true
+
+    # An external service change after consent must block the entire combined mutation.
+    Reset-Harness
+    $script:PreviewConsent=$true
+    $script:PreviewDrift='Discovery'
+    $script:ServiceStates=@{Spooler='Running';fdPHost='Stopped';FDResPub='Running'}
+    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False'})
+    Show-SafeRepairMenu
+    if(Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf){throw 'Stale combined preview created a Restore snapshot.'}
+    if($script:RestartCalls -or $script:DiscoveryCalls -or $script:FirewallRepairNames.Count){throw 'Stale combined preview still performed a repair.'}
+    $script:PreviewDrift=''
 
     Write-Host 'Combined Safe Repair scope smoke passed: snapshot services/firewall exactly match the planned mutation set.' -ForegroundColor Green
 } finally {

@@ -14,6 +14,8 @@ Queue cleanup has its own separate preview and confirmation: the folder and SPL/
 
 This is an **interactive preview**, not a PowerShell command-line -WhatIf API. Do not run FixPrinter.ps1 -WhatIf expecting it to do anything: the entry script does not declare support for that switch. Implementing native WhatIf would require SupportsShouldProcess and correctly enforced ShouldProcess checks in each mutating operation.
 
+After the user approves, Safe Repair **re-reads** the selected service states, the eligible firewall rule set (names, enabled values, profiles, directions and actions), and/or the selected network interface (identity, profile and connectivity). If any previewed property differs, the action fails closed **before creating a new Restore snapshot** and asks the user to preview again. This also applies to combined Safe Repair. A manually edited or policy-managed firewall rule should be handled by the correct administrator rather than forcibly overwritten.
+
 A preview is not a transaction or an atomic snapshot. Windows policies, services and firewall state can change between preview and execution. Restore covers only the states captured by a specific managed action; it cannot undo interruptions or recreate deleted print jobs. A pending Point and Print security emergency blocks repairs even if the user wants to approve a preview.
 
 Host/client printing validation A1-A6 remains deferred until a second Windows PC or isolated two-VM lab exists.
