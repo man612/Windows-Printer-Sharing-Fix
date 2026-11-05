@@ -169,6 +169,10 @@ jobs:
         shell: powershell
         run: .\tests\SafeRepairStateDriftSmoke.ps1
 
+      - name: Validate effective firewall policy guard
+        shell: powershell
+        run: .\tests\FirewallEffectivePolicySmoke.ps1
+
       - name: Validate read-only Safe Repair plan previews
         shell: powershell
         run: .\tests\SafeRepairPreviewSmoke.ps1
@@ -248,6 +252,10 @@ jobs:
       - name: Validate synthetic printer inventory and tri-state diagnosis
         shell: powershell
         run: .\tests\PrinterClassificationSmoke.ps1
+
+      - name: Validate effective firewall policy portability
+        shell: powershell
+        run: .\tests\FirewallEffectivePolicySmoke.ps1
 
       - name: Validate Safe Repair state drift portability
         shell: powershell

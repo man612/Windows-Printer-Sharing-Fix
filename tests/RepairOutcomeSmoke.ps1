@@ -23,6 +23,7 @@ function Write-Info([string]$Text){}
 function Write-Log([string]$Message,[string]$Level='INFO'){$script:Logs += ($Level+':'+$Message)}
 function Reset-Messages {$script:Ok=@();$script:Warn=@();$script:Fail=@();$script:Logs=@()}
 
+function Assert-FirewallLocalPolicyEffective([object[]]$Rules,[switch]$RequireEnabled,[switch]$SkipBaselineComparison){$null=@($Rules,$RequireEnabled,$SkipBaselineComparison)}
 # Firewall harness.
 $script:FirewallFailName=$null
 $script:FirewallNoOp=$false

@@ -56,6 +56,7 @@ function New-RestoreSnapshot{
     if($PSBoundParameters.ContainsKey('ServiceNames')){$script:SnapshotServiceNames=@($ServiceNames)}
     return 'synthetic-snapshot'
 }
+function Assert-FirewallLocalPolicyEffective([object[]]$Rules,[switch]$RequireEnabled,[switch]$SkipBaselineComparison){$null=@($Rules,$RequireEnabled,$SkipBaselineComparison)}
 function Get-FirewallSharingRules{@($script:FirewallFixture)}
 function Set-NetFirewallRule{param($Name,$Enabled,[Alias('Profile')]$FirewallProfile,$ErrorAction);$null=@($Name,$Enabled,$FirewallProfile,$ErrorAction)}
 function Get-NetFirewallRule{param($Name,$ErrorAction);$null=@($Name,$ErrorAction);[pscustomobject]@{Name=$Name;Enabled='True';Profile='Domain, Private'}}

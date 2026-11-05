@@ -67,6 +67,7 @@ function Get-CimInstance{
     if(-not $script:ServiceStates.ContainsKey($name)){throw "Unknown service: $name"}
     [pscustomobject]@{Name=$name;State=$script:ServiceStates[$name]}
 }
+function Assert-FirewallLocalPolicyEffective([object[]]$Rules,[switch]$RequireEnabled,[switch]$SkipBaselineComparison){$null=@($Rules,$RequireEnabled,$SkipBaselineComparison)}
 function Get-FirewallSharingRules{@($script:FirewallFixture)}
 function Set-NetFirewallRule{[CmdletBinding()]param([string]$Name,$Enabled,[Alias('Profile')]$FirewallProfile);$null=@($Name,$Enabled,$FirewallProfile)}
 function Get-NetFirewallRule{[CmdletBinding()]param([string]$Name);$null=$Name;[pscustomobject]@{Name='synthetic';Enabled='True';Profile='Domain, Private'}}
