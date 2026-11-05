@@ -88,14 +88,14 @@ function Reset-Harness{
 
 # Firewall no-op: only Public rule -> no snapshot.
 Reset-Harness
-$script:FirewallFixture=@([pscustomobject]@{Name='FPS-Public';Profile='Public';Enabled='False'})
+$script:FirewallFixture=@([pscustomobject]@{Name='FPS-Public';Profile='Public';Enabled='False';Direction='Inbound';Action='Allow'})
 $script:ChoiceQueue=@('3','B')
 Show-SafeRepairMenu
 if($script:SnapshotCalls -ne 0){throw 'No-op firewall Safe Repair created a Restore snapshot.'}
 
 # Firewall already desired -> no snapshot.
 Reset-Harness
-$script:FirewallFixture=@([pscustomobject]@{Name='FPS-Ready';Profile='Domain, Private';Enabled='True'})
+$script:FirewallFixture=@([pscustomobject]@{Name='FPS-Ready';Profile='Domain, Private';Enabled='True';Direction='Inbound';Action='Allow'})
 $script:ChoiceQueue=@('3','B')
 Show-SafeRepairMenu
 if($script:SnapshotCalls -ne 0){throw 'Already-correct firewall Safe Repair created a Restore snapshot.'}
@@ -103,9 +103,9 @@ if($script:SnapshotCalls -ne 0){throw 'Already-correct firewall Safe Repair crea
 # Firewall mixed state -> snapshot/repair only the rule needing change.
 Reset-Harness
 $script:FirewallFixture=@(
-  [pscustomobject]@{Name='FPS-Ready';Profile='Domain, Private';Enabled='True'},
-  [pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False'},
-  [pscustomobject]@{Name='FPS-Public';Profile='Public';Enabled='False'}
+  [pscustomobject]@{Name='FPS-Ready';Profile='Domain, Private';Enabled='True';Direction='Inbound';Action='Allow'},
+  [pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False';Direction='Inbound';Action='Allow'},
+  [pscustomobject]@{Name='FPS-Public';Profile='Public';Enabled='False';Direction='Inbound';Action='Allow'}
 )
 $script:ChoiceQueue=@('3','B')
 Show-SafeRepairMenu
@@ -147,7 +147,7 @@ if(($sortedServiceNames -join ',') -ne 'fdPHost,FDResPub'){throw 'Network Discov
 Reset-Harness
 $script:PreviewConsent=$false
 $script:PreviewCalls=0
-$script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False'})
+$script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False';Direction='Inbound';Action='Allow'})
 $script:ChoiceQueue=@('3','B')
 Show-SafeRepairMenu
 if($script:PreviewCalls -ne 1 -or $script:SnapshotCalls -ne 0 -or $script:RepairFirewallNames.Count){
@@ -159,7 +159,7 @@ $script:PreviewConsent=$true
 Reset-Harness
 $script:PreviewConsent=$true
 $script:PreviewDrift='Firewall'
-$script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False'})
+$script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False';Direction='Inbound';Action='Allow'})
 $script:ChoiceQueue=@('3','B')
 Show-SafeRepairMenu
 if($script:SnapshotCalls -or $script:RepairFirewallNames.Count){throw 'Firewall drift still caused mutation or snapshot.'}

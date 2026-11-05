@@ -113,9 +113,9 @@ try {
     Reset-Harness
     $script:ServiceStates=@{Spooler='Running';fdPHost='Stopped';FDResPub='Running'}
     $script:FirewallFixture=@(
-      [pscustomobject]@{Name='FPS-Ready';Profile='Domain, Private';Enabled='True'},
-      [pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False'},
-      [pscustomobject]@{Name='FPS-Public';Profile='Public';Enabled='False'}
+      [pscustomobject]@{Name='FPS-Ready';Profile='Domain, Private';Enabled='True';Direction='Inbound';Action='Allow'},
+      [pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False';Direction='Inbound';Action='Allow'},
+      [pscustomobject]@{Name='FPS-Public';Profile='Public';Enabled='False';Direction='Inbound';Action='Allow'}
     )
     Show-SafeRepairMenu
     $mixed=Read-LatestState
@@ -128,7 +128,7 @@ try {
     # Already-correct discovery/firewall state: combined snapshot contains Spooler only, with no firewall state.
     Reset-Harness
     $script:ServiceStates=@{Spooler='Running';fdPHost='Running';FDResPub='Running'}
-    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Ready';Profile='Domain, Private';Enabled='True'})
+    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Ready';Profile='Domain, Private';Enabled='True';Direction='Inbound';Action='Allow'})
     Show-SafeRepairMenu
     $noop=Read-LatestState
     Assert-Names @($noop.State.Services) @('Spooler') 'Combined already-correct service snapshot'
@@ -140,7 +140,7 @@ try {
     # Independent combined substeps must all be attempted even when earlier ones throw.
     Reset-Harness
     $script:ServiceStates=@{Spooler='Running';fdPHost='Stopped';FDResPub='Running'}
-    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False'})
+    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False';Direction='Inbound';Action='Allow'})
     $script:FailRestart=$true
     $script:FailFirewall=$true
     $script:FailDiscovery=$true
@@ -153,7 +153,7 @@ try {
     $script:PreviewConsent=$false
     $script:PreviewCalls=0
     $script:ServiceStates=@{Spooler='Running';fdPHost='Stopped';FDResPub='Running'}
-    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False'})
+    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False';Direction='Inbound';Action='Allow'})
     Show-SafeRepairMenu
     if($script:PreviewCalls -ne 1 -or $script:RestartCalls -ne 0 -or $script:DiscoveryCalls -ne 0 -or $script:FirewallRepairNames.Count){
         throw 'Combined Safe Repair ignored a declined preview.'
@@ -166,7 +166,7 @@ try {
     $script:PreviewConsent=$true
     $script:PreviewDrift='Discovery'
     $script:ServiceStates=@{Spooler='Running';fdPHost='Stopped';FDResPub='Running'}
-    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False'})
+    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False';Direction='Inbound';Action='Allow'})
     Show-SafeRepairMenu
     if(Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf){throw 'Stale combined preview created a Restore snapshot.'}
     if($script:RestartCalls -or $script:DiscoveryCalls -or $script:FirewallRepairNames.Count){throw 'Stale combined preview still performed a repair.'}
