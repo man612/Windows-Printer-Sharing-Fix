@@ -1625,6 +1625,19 @@ function Get-NetworkDiscoveryRepairPlan {
     }
 }
 
+function Confirm-SafeRepairPreview([string]$Action,[string[]]$Steps,[string]$Impact,[string]$RestoreNote) {
+    if(-not $Steps.Count){throw 'A Safe Repair preview needs at least one planned step.'}
+    Write-Rule
+    Write-Info (L 'READ-ONLY PREVIEW: no change or Restore snapshot was made.' 'PRATINJAU HANYA BACA: belum ada perubahan atau snapshot Restore.')
+    Write-Host ('  {0}' -f $Action)
+    foreach($step in @($Steps|Select-Object -First 12)){Write-Host ('  - {0}' -f $step)}
+    if($Steps.Count -gt 12){Write-Info ((L '... plus {0} more planned steps.' '... ditambah {0} langkah lainnya.') -f ($Steps.Count-12))}
+    Write-Warn ((L 'Impact: {0}' 'Dampak: {0}') -f $Impact)
+    Write-Info ((L 'Recovery: {0}' 'Pemulihan: {0}') -f $RestoreNote)
+    Write-Info (L 'This is a snapshot of current observations, not a guarantee; Windows state may change before execution.' 'Ini pengamatan kondisi saat ini, bukan jaminan; kondisi Windows bisa berubah sebelum tindakan.')
+    return [bool](Read-YesNo (L 'Apply this previewed Safe Repair?' 'Jalankan Perbaikan Aman sesuai pratinjau?') $true)
+}
+
 function Show-SafeRepairMenu {
     while($true){
         Write-Header (L 'SAFE REPAIR' 'PERBAIKAN AMAN')
@@ -1642,6 +1655,9 @@ function Show-SafeRepairMenu {
         $snap=$null
         try{switch($c){
             '1'{
+                $initial=[string](Get-Service -Name Spooler -ErrorAction Stop).Status
+                $steps=@(((L 'Spooler: currently {0} -> Running after restart' 'Spooler: saat ini {0} -> Berjalan setelah mulai ulang') -f $initial))
+                if(-not(Confirm-SafeRepairPreview (L 'Restart Print Spooler' 'Mulai ulang Print Spooler') $steps (L 'All local printer queues may pause briefly; no queued files are intentionally deleted.' 'Semua antrean printer lokal bisa terhenti sebentar; file antrean tidak sengaja dihapus.') (L 'Service state is captured for Restore; interrupted jobs cannot be recreated.' 'Status layanan disimpan untuk Restore; pekerjaan yang terganggu tidak dapat dibuat ulang.'))){break}
                 $snap=New-RestoreSnapshot 'Restart Print Spooler' @('Services')
                 if($snap){Invoke-RestartSpooler}
             }
@@ -1657,6 +1673,10 @@ function Show-SafeRepairMenu {
                     Write-Info (L 'File and Printer Sharing firewall rules already need no Domain/Private repair; Restore history was left unchanged.' 'Aturan firewall File and Printer Sharing tidak memerlukan perbaikan Domain/Private; riwayat Restore tidak diubah.')
                     break
                 }
+                $steps=@($repairRules|ForEach-Object{
+                    ((L 'Firewall {0}: Enabled={1}, Profile={2} -> Enabled=True, Profile=Domain,Private' 'Firewall {0}: Aktif={1}, Profil={2} -> Aktif=True, Profil=Domain,Private') -f $_.Name,$_.Enabled,$_.Profile)
+                })
+                if(-not(Confirm-SafeRepairPreview (L 'File and Printer Sharing firewall' 'Firewall File and Printer Sharing') $steps (L 'Only selected inbound Private/Domain rules change; trusted-network exposure may increase.' 'Hanya aturan masuk Private/Domain terpilih yang diubah; akses perangkat di jaringan tepercaya dapat bertambah.') (L 'The selected rules previous Enabled/Profile values are stored for Restore.' 'Nilai Enabled/Profile aturan yang dipilih disimpan untuk Restore.'))){break}
                 $snap=New-RestoreSnapshot 'Enable sharing firewall rules' @('Firewall') -FirewallRules $repairRules
                 if($snap){Enable-PrivateFirewallSharing -FirewallRules $repairRules}
             }
@@ -1675,6 +1695,8 @@ function Show-SafeRepairMenu {
                     Write-Warn (L 'Network-profile read/write cmdlets are unavailable; no repair snapshot was created.' 'Cmdlet baca/tulis profil jaringan tidak tersedia; snapshot perbaikan tidak dibuat.')
                     break
                 }
+                $steps=@(((L 'Interface {0} (index {1}): {2} -> Private' 'Antarmuka {0} (indeks {1}): {2} -> Privat') -f $selectedProfile.InterfaceAlias,$selectedProfile.InterfaceIndex,$selectedProfile.NetworkCategory))
+                if(-not(Confirm-SafeRepairPreview (L 'Change selected network profile' 'Ubah profil jaringan terpilih') $steps (L 'Discovery and sharing exposure on the selected interface may change. Confirm the network is trusted.' 'Penemuan perangkat dan akses sharing pada antarmuka ini dapat berubah. Pastikan jaringannya tepercaya.') (L 'The selected interface and original network category are captured for Restore.' 'Antarmuka dan kategori jaringan awal disimpan untuk Restore.'))){break}
                 $snap=New-RestoreSnapshot 'Change selected network profile' @('Network') -NetworkProfiles @($selectedProfile)
                 if($snap){Set-OneNetworkPrivate -SelectedProfile $selectedProfile}
             }
@@ -1685,6 +1707,10 @@ function Show-SafeRepairMenu {
                     break
                 }
                 $serviceNames=@($plan.Services|Where-Object{$_.Status -ne 'Running'}|ForEach-Object{[string]$_.Name})
+                $steps=@($plan.Services|Where-Object{$_.Status -ne 'Running'}|ForEach-Object{
+                    ((L 'Service {0}: {1} -> Running' 'Layanan {0}: {1} -> Berjalan') -f $_.Name,$_.Status)
+                })
+                if(-not(Confirm-SafeRepairPreview (L 'Start Network Discovery services' 'Jalankan layanan Network Discovery') $steps (L 'The PC may become discoverable on trusted networks; startup type is not changed.' 'PC dapat terlihat di jaringan tepercaya; tipe startup tidak diubah.') (L 'Only the affected service states are captured for Restore.' 'Hanya keadaan layanan yang terdampak disimpan untuk Restore.'))){break}
                 $snap=New-RestoreSnapshot 'Start Network Discovery services' @('Services') -ServiceNames $serviceNames
                 if($snap){Start-NetworkDiscoveryServices}
             }
@@ -1698,6 +1724,14 @@ function Show-SafeRepairMenu {
                 }else{
                     Write-Warn (L 'Firewall read/write cmdlets are unavailable; the combined repair will continue with service repairs only.' 'Cmdlet baca/tulis firewall tidak tersedia; perbaikan gabungan akan tetap menjalankan perbaikan layanan saja.')
                 }
+                $steps=@((L 'Restart Print Spooler (pending job files are not deleted)' 'Mulai ulang Print Spooler (file antrean tidak dihapus)'))
+                $steps+=@($discoveryPlan.Services|Where-Object{$_.Status -ne 'Running'}|ForEach-Object{
+                    ((L 'Service {0}: {1} -> Running' 'Layanan {0}: {1} -> Berjalan') -f $_.Name,$_.Status)
+                })
+                $steps+=@($repairRules|ForEach-Object{
+                    ((L 'Firewall {0}: Enabled={1}, Profile={2} -> Enabled=True, Profile=Domain,Private' 'Firewall {0}: Aktif={1}, Profil={2} -> Aktif=True, Profil=Domain,Private') -f $_.Name,$_.Enabled,$_.Profile)
+                })
+                if(-not(Confirm-SafeRepairPreview (L 'Combined non-destructive Safe Repair' 'Perbaikan Aman gabungan') $steps (L 'Printing may pause; discovery and trusted-network firewall exposure may change. No queue deletion or security downgrade is planned.' 'Pencetakan dapat tertunda; layanan penemuan dan akses firewall jaringan tepercaya dapat berubah. Tidak ada penghapusan antrean atau penurunan keamanan.') (L 'Affected service/firewall states are snapshotted, but interrupted print jobs cannot be recreated.' 'Status layanan/firewall yang berubah disimpan, tetapi pekerjaan cetak yang terganggu tidak dapat dibuat ulang.'))){break}
                 $snap=New-RestoreSnapshot 'Combined non-destructive Safe Repair' @('Services','Firewall') -FirewallRules $repairRules -ServiceNames $serviceNames
                 if($snap){
                     try{Invoke-RestartSpooler}
