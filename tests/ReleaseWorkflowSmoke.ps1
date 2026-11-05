@@ -55,10 +55,10 @@ if($release -notmatch 'merge_base_commit\.sha'){throw 'Release workflow must req
 if($release -notmatch 'gh run list.+--workflow validate\.yml.+--commit \$sha.+--event push'){throw 'Release workflow must wait for the exact main push validation run.'}
 if($release -notmatch "conclusion -ne 'success'"){throw 'Release workflow must refuse publication when the main validation run did not succeed.'}
 
-if($release -match '\\$\\{\\{\\s*github\\.ref_name\\s*\\}\\}'){
+if($release -match '\$\{\{\s*github\.ref_name\s*\}\}'){
     throw 'Do not interpolate untrusted tag names directly into PowerShell run blocks; use GITHUB_REF_NAME environment variable.'
 }
-if($release -notmatch '\\$env:GITHUB_REF_NAME'){
+if($release -notmatch '\$env:GITHUB_REF_NAME'){
     throw 'Release workflow must read the ref name from the runner environment.'
 }
 
