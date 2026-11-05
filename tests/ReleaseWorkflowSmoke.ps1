@@ -55,6 +55,13 @@ if($release -notmatch 'merge_base_commit\.sha'){throw 'Release workflow must req
 if($release -notmatch 'gh run list.+--workflow validate\.yml.+--commit \$sha.+--event push'){throw 'Release workflow must wait for the exact main push validation run.'}
 if($release -notmatch "conclusion -ne 'success'"){throw 'Release workflow must refuse publication when the main validation run did not succeed.'}
 
+if($release -match '\\$\\{\\{\\s*github\\.ref_name\\s*\\}\\}'){
+    throw 'Do not interpolate untrusted tag names directly into PowerShell run blocks; use GITHUB_REF_NAME environment variable.'
+}
+if($release -notmatch '\\$env:GITHUB_REF_NAME'){
+    throw 'Release workflow must read the ref name from the runner environment.'
+}
+
 if($release -match 'gh release view'){throw 'Release workflow must not use a missing-release lookup that can exit nonzero under PowerShell Stop semantics.'}
 if($release -notmatch 'gh release list.+--json tagName,isDraft'){throw 'Release workflow must use the known-supported release-list fields for preflight and draft reuse.'}
 if($release -notmatch 'gh release create.+--verify-tag.+--draft'){throw 'Draft release creation must verify the remote tag and stay draft initially.'}

@@ -4,6 +4,8 @@
 
 ### Fixed and hardened
 
+- Removed direct GitHub ref-name template interpolation from release PowerShell blocks; use environment variables to prevent script injection through tag text.
+
 - Include linked Safe Repair/A1 runbooks, their referenced read-only tools, the README image, and the contribution guide in the release ZIP; enforce extracted-archive checks so offline links and commands work.
 
 - Prevent partially applying a Restore when policy now overrides its managed firewall rules; validate effective local policy before any Restore mutation and verify ActiveStore after firewall restoration.
