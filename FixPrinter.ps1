@@ -1647,6 +1647,9 @@ function Assert-SafeRepairPlanUnchanged {
         [object]$ExpectedNetworkProfile=$null
     )
     # Fail closed before snapshot or mutation. This is an optimistic check, not an atomic Windows transaction.
+    if((Get-Command Test-PointAndPrintRecoveryRequired -CommandType Function -ErrorAction SilentlyContinue) -and (Test-PointAndPrintRecoveryRequired)){
+        throw 'Point and Print security recovery became required after the preview. No Safe Repair was started; restore the emergency snapshot first.'
+    }
     foreach($expected in @($ExpectedServices)){
         $name=[string]$expected.Name
         if([string]::IsNullOrWhiteSpace($name)){throw 'Safe Repair preview contains a service without an identifier.'}
