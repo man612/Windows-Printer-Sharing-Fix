@@ -4,6 +4,8 @@
 
 ### Fixed and hardened
 
+- Prevent partially applying a Restore when policy now overrides its managed firewall rules; validate effective local policy before any Restore mutation and verify ActiveStore after firewall restoration.
+
 - Added fail-closed effective firewall checks: verify ActiveStore local provenance, Domain/Private firewall/local merge policy before Safe Repair snapshots, and active policy postconditions after local changes; no GPO edits.
 
 - Reject stale Safe Repair approvals before snapshot/mutation: revalidate service states, firewall rule eligibility/properties, and selected network identity/category; add regression tests for changed targets and combined repairs.

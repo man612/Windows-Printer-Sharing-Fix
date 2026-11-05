@@ -1321,6 +1321,19 @@ function Invoke-RestoreLatest([string]$SnapshotDirectory='') {
     }
     if(-not(Read-YesNo ((L 'Restore state from {0}?' 'Kembalikan kondisi dari {0}?') -f $dir) $true)){return}
 
+    # Restore does not have authority to overwrite effective GPO/MDM firewall policy.
+    # Validate the entire firewall restoration scope BEFORE touching any registry, service, or network setting.
+    $firewallRestoreScope=@($state.FirewallRules)
+    if($firewallRestoreScope.Count){
+        try{Assert-FirewallLocalPolicyEffective -Rules $firewallRestoreScope -SkipBaselineComparison}
+        catch{
+            Write-Fail ((L 'Restore blocked before changes: firewall policy is not proven locally effective. {0}' 'Restore diblokir sebelum perubahan: kebijakan firewall belum terbukti efektif secara lokal. {0}') -f $_.Exception.Message)
+            Write-Log ("Restore blocked by effective firewall policy: {0}" -f $_.Exception.Message) 'ERROR'
+            Pause-Tui
+            return
+        }
+    }
+
     $failures=@()
     $pendingReboot=$false
 
@@ -1351,6 +1364,7 @@ function Invoke-RestoreLatest([string]$SnapshotDirectory='') {
                     if(-not [string]::Equals([string]$entry.Enabled,[string]$verifiedRule.Enabled,[StringComparison]::OrdinalIgnoreCase) -or ($expectedProfiles -join ',') -ne ($actualProfiles -join ',')){
                         throw "Firewall rule postcondition mismatch: Enabled=$($verifiedRule.Enabled) Profile=$($verifiedRule.Profile)"
                     }
+                    Assert-FirewallLocalPolicyEffective -Rules @($entry)
                 }
                 catch{
                     $message=("Firewall rule {0}: {1}" -f $entry.Name,$_.Exception.Message)
