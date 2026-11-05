@@ -1797,7 +1797,7 @@ function Show-SafeRepairMenu {
                 $firewallRules=@(Get-FirewallSharingRules)
                 $repairRules=@($firewallRules|Where-Object{Test-FirewallRuleNeedsSafeRepair $_})
                 if(-not $repairRules.Count){
-                    Write-Info (L 'File and Printer Sharing firewall rules already need no Domain/Private repair; Restore history was left unchanged.' 'Aturan firewall File and Printer Sharing tidak memerlukan perbaikan Domain/Private; riwayat Restore tidak diubah.')
+                    Write-Info (L 'No eligible LOCAL sharing firewall rules were found; no Restore snapshot was created. This does not prove effective ActiveStore/GPO access. Run diagnosis if printing still fails.' 'Tidak ditemukan aturan firewall sharing LOKAL yang perlu diubah; snapshot Restore tidak dibuat. Ini bukan bukti akses ActiveStore/GPO sudah terbuka. Jalankan diagnosis jika pencetakan masih gagal.')
                     break
                 }
                 $firewallBaseline=@($repairRules|Select-Object Name,Enabled,Profile,Direction,Action)
@@ -1862,6 +1862,9 @@ function Show-SafeRepairMenu {
                 $combinedServiceBaseline=@([pscustomobject]@{Name='Spooler';Status=[string]$spoolerBefore.Status})
                 $combinedServiceBaseline+=@($discoveryPlan.Services|Select-Object Name,Status)
                 $combinedFirewallBaseline=@($repairRules|Select-Object Name,Enabled,Profile,Direction,Action)
+                if(-not $repairRules.Count){
+                    Write-Warn (L 'Combined Safe Repair found no eligible local firewall changes. Effective firewall policy and GPO restrictions remain unverified.' 'Perbaikan Aman gabungan tidak menemukan aturan firewall lokal yang perlu diubah. Kebijakan firewall efektif dan pembatasan GPO belum terverifikasi.')
+                }
                 $steps=@((L 'Restart Print Spooler (pending job files are not deleted)' 'Mulai ulang Print Spooler (file antrean tidak dihapus)'))
                 $steps+=@($discoveryPlan.Services|Where-Object{$_.Status -ne 'Running'}|ForEach-Object{
                     ((L 'Service {0}: {1} -> Running' 'Layanan {0}: {1} -> Berjalan') -f $_.Name,$_.Status)
