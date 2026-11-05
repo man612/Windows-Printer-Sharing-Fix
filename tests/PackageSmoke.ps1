@@ -26,6 +26,11 @@ try {
     if (Test-Path -LiteralPath (Join-Path $root '.git')) { throw 'Release package must not contain .git metadata.' }
     if (Test-Path -LiteralPath (Join-Path $root 'tests')) { throw 'Release package should not include the repository test suite.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\REAL-WORLD-RESULTS.md'))) { throw 'Packaged real-world results ledger is missing.' }
+    foreach ($requiredDoc in @('SAFE-REPAIR-PREVIEW.md','A1-LAB-RUNBOOK.md')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $root ('docs\' + $requiredDoc)) -PathType Leaf)) {
+            throw "Packaged linked runbook missing: $requiredDoc"
+        }
+    }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\DIAGNOSTIC-JSON.md'))) { throw 'Packaged diagnostic JSON schema documentation is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\diagnosis.schema.json'))) { throw 'Packaged formal diagnosis JSON Schema is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\PRINTSERVICE-EVENTS.md'))) { throw 'Packaged PrintService event classification documentation is missing.' }

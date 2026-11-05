@@ -4,6 +4,8 @@
 
 ### Fixed and hardened
 
+- Include linked Safe Repair preview and A1 lab runbooks in release ZIP; enforce extracted-archive checks so public README links stay valid.
+
 - Prevent partially applying a Restore when policy now overrides its managed firewall rules; validate effective local policy before any Restore mutation and verify ActiveStore after firewall restoration.
 
 - Added fail-closed effective firewall checks: verify ActiveStore local provenance, Domain/Private firewall/local merge policy before Safe Repair snapshots, and active policy postconditions after local changes; no GPO edits.

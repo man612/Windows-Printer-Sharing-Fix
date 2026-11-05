@@ -48,7 +48,7 @@ foreach ($name in $rootFiles) {
 $docs = @(
     'ARCHITECTURE.md','DIAGNOSTIC-JSON.md','diagnosis.schema.json','PRINTSERVICE-EVENTS.md','POLICY-SOURCES.md',
     'DRIVER-CLASSIFICATION.md','WPP-READINESS.md','CORRELATION.md','MODERN-SMB-RPC.md','RELEASE-INTEGRITY.md','TEST-PAGE-VERIFICATION.md',
-    'TEST-MATRIX.md','REAL-WORLD-RESULTS.md','README.id.md'
+    'TEST-MATRIX.md','REAL-WORLD-RESULTS.md','A1-LAB-RUNBOOK.md','SAFE-REPAIR-PREVIEW.md','README.id.md'
 )
 foreach ($name in $docs) {
     Add-ReleaseSource ('docs/' + $name) (Join-Path $repo ('docs\' + $name))
