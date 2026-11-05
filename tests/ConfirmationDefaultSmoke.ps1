@@ -22,10 +22,11 @@ $script:Response='n'
 if(Read-YesNo 'Continue?' $false){throw 'Explicit No rejected.'}
 $source=Get-Content -LiteralPath $main -Raw
 $patterns=@(
-  "Read-YesNo (L 'Permanently delete these queued files?' 'Hapus file antrean tersebut secara permanen?') "+'$true',
-  "Read-YesNo ((L 'Remove only {0}?' 'Lepas hanya {0}?') -f "+'$target) $true',
-  "Read-YesNo (L 'Send one Windows test page now?' 'Kirim satu test page Windows sekarang?') "+'$true'
+  'Read-YesNo (L ''Permanently delete these queued files?'' ''Hapus file antrean tersebut secara permanen?'') $true'
+  'Read-YesNo ((L ''Remove only {0}?'' ''Lepas hanya {0}?'') -f $target) $true'
+  'Read-YesNo (L ''Send one Windows test page now?'' ''Kirim satu test page Windows sekarang?'') $true'
 )
+if($patterns.Count -ne 3){throw 'Expected three independent high-risk confirmation patterns.'}
 foreach($pattern in $patterns){
   if(-not $source.Contains($pattern)){throw "Risky action default-No guard changed: $pattern"}
 }
