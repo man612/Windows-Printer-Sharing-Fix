@@ -51,6 +51,8 @@ cd Windows-Printer-Sharing-Fix
 
 No installer is required. Windows PowerShell 5.1 is the compatibility baseline.
 
+Safe Repair displays an [interactive read-only change preview](docs/SAFE-REPAIR-PREVIEW.md) with proposed actions, impact, Restore limitations, and default-No consent before modifying Windows.
+
 ## What makes v4 different
 
 | Principle | Stable v4 behavior |

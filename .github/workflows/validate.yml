@@ -165,6 +165,10 @@ jobs:
         shell: powershell
         run: .\tests\LegacyNoOpSmoke.ps1
 
+      - name: Validate read-only Safe Repair plan previews
+        shell: powershell
+        run: .\tests\SafeRepairPreviewSmoke.ps1
+
       - name: Validate destructive-action confirmation defaults
         shell: powershell
         run: .\tests\ConfirmationDefaultSmoke.ps1

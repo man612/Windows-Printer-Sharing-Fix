@@ -39,6 +39,13 @@ function Write-Ok([string]$Text){}
 function Write-Log([string]$Message,[string]$Level='INFO'){}
 function Pause-Tui{}
 function Write-Host{param([Parameter(ValueFromRemainingArguments=$true)]$Object);$null=$Object}
+$script:PreviewCalls=0
+$script:PreviewConsent=$true
+function Confirm-SafeRepairPreview([string]$Action,[string[]]$Steps,[string]$Impact,[string]$RestoreNote){
+    $null=@($Action,$Steps,$Impact,$RestoreNote)
+    $script:PreviewCalls++
+    return [bool]$script:PreviewConsent
+}
 function Read-Choice([string]$Prompt,[string[]]$Allowed){
     $null=@($Prompt,$Allowed)
     if(-not $script:ChoiceQueue.Count){throw 'Choice queue exhausted.'}
@@ -137,6 +144,19 @@ try {
     Show-SafeRepairMenu
     if($script:RestartCalls -ne 1 -or $script:FirewallRepairNames.Count -ne 1 -or $script:DiscoveryCalls -ne 1){throw 'Combined substep failure stopped a later planned repair.'}
     if($script:FailMessages.Count -ne 3){throw "Combined substep failures were not reported independently. Count=$($script:FailMessages.Count)"}
+
+    # An explicit No at preview must not create a Restore snapshot or touch a managed service/firewall.
+    Reset-Harness
+    $script:PreviewConsent=$false
+    $script:PreviewCalls=0
+    $script:ServiceStates=@{Spooler='Running';fdPHost='Stopped';FDResPub='Running'}
+    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False'})
+    Show-SafeRepairMenu
+    if($script:PreviewCalls -ne 1 -or $script:RestartCalls -ne 0 -or $script:DiscoveryCalls -ne 0 -or $script:FirewallRepairNames.Count){
+        throw 'Combined Safe Repair ignored a declined preview.'
+    }
+    if(Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf){throw 'Declined combined Safe Repair created a Restore snapshot.'}
+    $script:PreviewConsent=$true
 
     Write-Host 'Combined Safe Repair scope smoke passed: snapshot services/firewall exactly match the planned mutation set.' -ForegroundColor Green
 } finally {

@@ -31,6 +31,13 @@ function Write-Ok([string]$Text){}
 function Write-Log([string]$Message,[string]$Level='INFO'){}
 function Pause-Tui{}
 function Write-Host{param([Parameter(ValueFromRemainingArguments=$true)]$Object);$null=$Object}
+$script:PreviewCalls=0
+$script:PreviewConsent=$true
+function Confirm-SafeRepairPreview([string]$Action,[string[]]$Steps,[string]$Impact,[string]$RestoreNote){
+    $null=@($Action,$Steps,$Impact,$RestoreNote)
+    $script:PreviewCalls++
+    return [bool]$script:PreviewConsent
+}
 function Read-Choice([string]$Prompt,[string[]]$Allowed){
     $null=@($Prompt,$Allowed)
     if(-not $script:ChoiceQueue.Count){throw 'Choice queue exhausted.'}
@@ -130,5 +137,17 @@ $script:ChoiceQueue=@('5','B')
 Show-SafeRepairMenu
 $sortedServiceNames=@($script:SnapshotServiceNames|Sort-Object)
 if(($sortedServiceNames -join ',') -ne 'fdPHost,FDResPub'){throw 'Network Discovery snapshot omitted a stopped service.'}
+
+# Refusing a real firewall change must skip BOTH snapshot creation and mutation.
+Reset-Harness
+$script:PreviewConsent=$false
+$script:PreviewCalls=0
+$script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False'})
+$script:ChoiceQueue=@('3','B')
+Show-SafeRepairMenu
+if($script:PreviewCalls -ne 1 -or $script:SnapshotCalls -ne 0 -or $script:RepairFirewallNames.Count){
+    throw 'Declining a Safe Repair preview still created a snapshot or modified a firewall rule.'
+}
+$script:PreviewConsent=$true
 
 Write-Host 'Safe-repair no-op smoke passed: no-op firewall/network/discovery actions preserve Restore history, and Network Discovery snapshots only services that need mutation.' -ForegroundColor Green

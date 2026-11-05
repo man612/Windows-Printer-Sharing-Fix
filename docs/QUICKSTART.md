@@ -1,5 +1,7 @@
 # Quick Start
 
+Safe Repair now shows a read-only plan and asks for explicit approval before changes. See [Safe Repair preview](SAFE-REPAIR-PREVIEW.md).
+
 ## Recommended path
 
 1. Open the latest GitHub Release.

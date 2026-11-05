@@ -4,6 +4,8 @@
 
 ### Fixed and hardened
 
+- Added interactive read-only Safe Repair plan previews with impact, scoped Restore limitations and default-No consent; queue cleanup retains its separate destructive-operation confirmation.
+
 - Hardened queue purge with all-machine file preview, default-No confirmation, original Spooler status preservation, and changed-file-count refusal.
 - Blocked repair actions and unrelated Restore while pending Point and Print security recovery is unverified.
 - Added synthetic queue/recovery tests and cross-Windows CI smoke (Windows Server 2022 x64 and Windows 11 ARM64); real host/client testing remains deferred.
