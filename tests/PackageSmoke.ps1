@@ -29,6 +29,33 @@ try {
         }
     }
 
+    # Every local Markdown/HTML link in the extracted user documentation must resolve offline.
+    $packageRoot=([IO.Path]::GetFullPath($root)).TrimEnd([char]'\',[char]'/')
+    $packagePrefix=$packageRoot+[IO.Path]::DirectorySeparatorChar
+    $checkedLinks=0
+    foreach($markdown in @(Get-ChildItem -LiteralPath $root -File -Filter '*.md' -Recurse)){
+        $markdownText=Get-Content -LiteralPath $markdown.FullName -Raw
+        foreach($pattern in @('\]\(([^)]+)\)','(?:href|src)="([^"]+)"')){
+            foreach($match in [regex]::Matches($markdownText,$pattern)){
+                $targetText=([string]$match.Groups[1].Value).Trim()
+                if($targetText.StartsWith('<')){$targetText=$targetText.Trim('<','>')}
+                $targetText=($targetText -split '\s+')[0]
+                if($targetText -match '^(?:[a-z][a-z0-9+.-]*:|#|//|\\)' -or -not $targetText){continue}
+                $relative=([Uri]::UnescapeDataString(($targetText -split '[#?]')[0])).Replace('/',[IO.Path]::DirectorySeparatorChar)
+                if(-not $relative){continue}
+                $target=([IO.Path]::GetFullPath((Join-Path $markdown.DirectoryName $relative)))
+                if(-not $target.StartsWith($packagePrefix,[StringComparison]::OrdinalIgnoreCase) -and -not [string]::Equals($target,$packageRoot,[StringComparison]::OrdinalIgnoreCase)){
+                    throw "Packaged document link escapes extracted ZIP root: $($markdown.Name) => $targetText"
+                }
+                if(-not(Test-Path -LiteralPath $target)){
+                    throw "Broken offline link in packaged document: $($markdown.Name) => $targetText"
+                }
+                $checkedLinks++
+            }
+        }
+    }
+    if($checkedLinks -lt 10){throw 'Release documentation link scanner did not exercise enough local links.'}
+
     if (Test-Path -LiteralPath (Join-Path $root '.git')) { throw 'Release package must not contain .git metadata.' }
     if (Test-Path -LiteralPath (Join-Path $root 'tests')) { throw 'Release package should not include the repository test suite.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\REAL-WORLD-RESULTS.md'))) { throw 'Packaged real-world results ledger is missing.' }
