@@ -54,7 +54,7 @@ $diag=[pscustomobject]@{
 }
 $target=[pscustomobject]@{
     DnsResolved=$true;Smb445Reachable=$true;Rpc135Reachable=$true
-    RpcConfiguredPort=55000;RpcConfiguredPortReachable=$false
+    RpcConfiguredPort=55000;RpcConfiguredPortSource='ConfirmedRemote';RpcConfiguredPortReachable=$false
     ShareNamespaceAccessible=$false;PrinterInstalled=$false
     SmbSecuritySignals=@('SigningOrEncryptionCompatibility')
 }

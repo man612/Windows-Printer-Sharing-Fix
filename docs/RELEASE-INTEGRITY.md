@@ -8,6 +8,8 @@ Stable release artifacts are built so users can verify the bytes they downloaded
 
 The builder:
 
+The user ZIP includes linked Safe Repair and A1 lab runbooks, the read-only A1/evidence scripts that those runbooks invoke, the README's local hero image, and the linked contribution guide. Because the source quickstart lives in `docs/`, the deterministic build also includes that original path and generates the root `QUICKSTART.md` with its relative links rebased to `docs/`; the checked-in source is not duplicated. Packaging smoke tests verify these dependencies are present in the extracted archive.
+
 - enumerates the explicit release file set;
 - normalizes ZIP paths to `/` separators;
 - sorts every entry with ordinal string ordering;

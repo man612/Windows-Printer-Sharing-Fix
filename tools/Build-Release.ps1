@@ -39,7 +39,7 @@ function Add-ReleaseSource([string]$RelativePath,[string]$SourcePath) {
     $script:releaseSources[$relative] = $SourcePath
 }
 
-$rootFiles = @('FixPrinter.bat','FixPrinter.ps1','README.md','QUICKSTART.md','LICENSE','SECURITY.md','CHANGELOG.md','ROADMAP.md')
+$rootFiles = @('FixPrinter.bat','FixPrinter.ps1','README.md','QUICKSTART.md','LICENSE','SECURITY.md','CHANGELOG.md','ROADMAP.md','CONTRIBUTING.md')
 foreach ($name in $rootFiles) {
     $sourcePath = if ($name -eq 'QUICKSTART.md') { Join-Path $repo 'docs\QUICKSTART.md' } else { Join-Path $repo $name }
     Add-ReleaseSource $name $sourcePath
@@ -48,11 +48,18 @@ foreach ($name in $rootFiles) {
 $docs = @(
     'ARCHITECTURE.md','DIAGNOSTIC-JSON.md','diagnosis.schema.json','PRINTSERVICE-EVENTS.md','POLICY-SOURCES.md',
     'DRIVER-CLASSIFICATION.md','WPP-READINESS.md','CORRELATION.md','MODERN-SMB-RPC.md','RELEASE-INTEGRITY.md','TEST-PAGE-VERIFICATION.md',
-    'TEST-MATRIX.md','REAL-WORLD-RESULTS.md','README.id.md'
+    'TEST-MATRIX.md','REAL-WORLD-RESULTS.md','A1-LAB-RUNBOOK.md','SAFE-REPAIR-PREVIEW.md','QUICKSTART.md','README.id.md'
 )
 foreach ($name in $docs) {
     Add-ReleaseSource ('docs/' + $name) (Join-Path $repo ('docs\' + $name))
 }
+
+# Distribute the read-only lab tools that the packaged A1/TEST-MATRIX runbooks invoke.
+foreach ($script in @('Test-A1Readiness.ps1','Collect-LabEvidence.ps1')) {
+    Add-ReleaseSource ('tools/' + $script) (Join-Path $repo ('tools\' + $script))
+}
+# Keep the locally referenced README image available in the downloaded ZIP.
+Add-ReleaseSource 'docs/assets/hero-v2.png' (Join-Path $repo 'docs\assets\hero-v2.png')
 
 $examplesSource = Join-Path $repo 'docs\examples'
 foreach ($file in @(Get-ChildItem -LiteralPath $examplesSource -File -Recurse)) {
@@ -63,6 +70,18 @@ foreach ($file in @(Get-ChildItem -LiteralPath $examplesSource -File -Recurse)) 
 $virtualEntries = @{
     'VERSION.txt' = [Text.Encoding]::ASCII.GetBytes(("Windows Printer Sharing Fix v{0}`r`n" -f $cleanVersion))
 }
+
+# QUICKSTART.md lives in docs/ in source but also appears at the ZIP root for convenience.
+# Generate a deterministic root copy with corrected relative Markdown links; preserve the original docs copy.
+$quickstartText=[IO.File]::ReadAllText((Join-Path $repo 'docs\QUICKSTART.md'),[Text.Encoding]::UTF8)
+$quickstartText=[regex]::Replace($quickstartText,'(?<=\]\()([^\s)]+)(?=\))',{
+    param($match)
+    $target=[string]$match.Value
+    if($target -match '^(?:[a-z][a-z0-9+.-]*:|#|/|\\)'){return $target}
+    return ('docs/' + $target)
+})
+[void]$releaseSources.Remove('QUICKSTART.md')
+$virtualEntries['QUICKSTART.md']=[Text.Encoding]::UTF8.GetBytes($quickstartText)
 
 [string[]]$relativePaths = @($releaseSources.Keys + $virtualEntries.Keys | ForEach-Object { [string]$_ })
 [Array]::Sort($relativePaths,[StringComparer]::Ordinal)

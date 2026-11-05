@@ -23,6 +23,7 @@ function Write-Info([string]$Text){}
 function Write-Log([string]$Message,[string]$Level='INFO'){$script:Logs += ($Level+':'+$Message)}
 function Reset-Messages {$script:Ok=@();$script:Warn=@();$script:Fail=@();$script:Logs=@()}
 
+function Assert-FirewallLocalPolicyEffective([object[]]$Rules,[switch]$RequireEnabled,[switch]$SkipBaselineComparison){$null=@($Rules,$RequireEnabled,$SkipBaselineComparison)}
 # Firewall harness.
 $script:FirewallFailName=$null
 $script:FirewallNoOp=$false
@@ -110,6 +111,7 @@ Start-NetworkDiscoveryServices
 if($script:Ok.Count -ne 0 -or $script:Fail.Count -ne 1){throw 'Network Discovery failure produced a false success or no failure.'}
 
 # Queue harness.
+function Get-EffectiveSpoolDirectory { 'C:\queue' }
 $script:QueueEntries=@('job1.spl','job2.shd')
 $script:SpoolerState='Running'
 $script:StopFails=$false
@@ -144,10 +146,11 @@ function Test-Path {
     $true
 }
 function Get-ChildItem {
-    [CmdletBinding()] param([string]$LiteralPath,[switch]$Force)
-    $null=@($LiteralPath,$Force)
-    @($script:QueueEntries | ForEach-Object {[pscustomobject]@{FullName=('C:\queue\'+$_)}})
+    [CmdletBinding()] param([string]$LiteralPath,[switch]$Force,[switch]$File)
+    $null=@($LiteralPath,$Force,$File)
+    @($script:QueueEntries | ForEach-Object {[pscustomobject]@{FullName=('C:\queue\'+$_);Extension=[IO.Path]::GetExtension($_)}})
 }
+
 function Remove-Item {
     [CmdletBinding()] param([string]$LiteralPath,[switch]$Force,[switch]$Recurse)
     $null=@($Force,$Recurse)
@@ -173,13 +176,13 @@ if($script:Ok.Count -ne 1 -or $script:Fail.Count -ne 0){throw 'Successful queue 
 if($script:QueueEntries.Count -ne 0 -or $script:SpoolerState -ne 'Running'){throw 'Successful queue cleanup did not clear files and restore Spooler.'}
 if($script:StopCalls -ne 1 -or $script:StartCalls -ne 1){throw 'Successful queue cleanup service call count is wrong.'}
 
-# Stop failure: deletion must not run, recovery start still attempted, no OK.
+# Stop failure: deletion must not run, and an already-Running Spooler must not be restarted.
 Reset-QueueHarness
 $script:StopFails=$true
 Invoke-ClearPrintQueue
 if($script:Ok.Count -ne 0 -or $script:Fail.Count -ne 1){throw 'Spooler stop failure produced a false success or no failure.'}
 if($script:QueueEntries.Count -ne 2){throw 'Queue files were touched after Spooler stop failed.'}
-if($script:StartCalls -ne 1){throw 'Spooler recovery was not attempted after stop failure.'}
+if($script:StartCalls -ne 0 -or $script:SpoolerState -ne 'Running'){throw 'Spooler that remained Running was restarted unnecessarily after stop failure.'}
 
 # Delete failure: restart still attempted, no OK.
 Reset-QueueHarness

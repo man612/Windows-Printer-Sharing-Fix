@@ -35,9 +35,17 @@ try{Restore-RegistryValue ([pscustomobject]@{Path='HKLM:\X';Name='Y';Present=$fa
 if(-not $registryThrew){throw 'Restore-RegistryValue swallowed a registry removal failure.'}
 
 
+$script:BlockFirewallRestore=$false
+$script:FirewallEffectiveChecks=0
+function Assert-FirewallLocalPolicyEffective([object[]]$Rules,[switch]$RequireEnabled,[switch]$SkipBaselineComparison){
+    $null=@($Rules,$RequireEnabled,$SkipBaselineComparison)
+    $script:FirewallEffectiveChecks++
+    if($script:BlockFirewallRestore){throw 'Synthetic GPO override or denied local rule merge.'}
+}
 # Coordinator harness.
 $temp=Join-Path $env:TEMP ('wpsf-restore-outcome-'+[Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temp -Force | Out-Null
+$script:BackupRoot=$temp
 $script:LatestStateFile=Join-Path $temp 'latest_backup.txt'
 'dummy' | Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8
 $script:CurrentState=$null
@@ -57,6 +65,7 @@ $script:FirewallEnabled='True'
 $script:FirewallProfile='Private'
 $script:NetworkCategory='Private'
 $script:FeatureFails=$false
+$script:DisablePending=$false
 $script:ServiceStartFails=$false
 $script:FeatureState='Enabled'
 $script:ServiceState='Stopped'
@@ -103,7 +112,7 @@ function Disable-WindowsOptionalFeature {
     $null=@($Online,$FeatureName,$NoRestart)
     $script:FeatureDisableCalls++
     if($script:FeatureFails){Write-Error 'synthetic feature disable failure';return}
-    $script:FeatureState='Disabled'
+    $script:FeatureState=if($script:DisablePending){'DisablePending'}else{'Disabled'}
 }
 function Set-Service {
     [CmdletBinding()] param([string]$Name,[string]$StartupType)
@@ -141,9 +150,10 @@ function New-RestoreState {
 function Reset-Harness {
     Reset-Messages
     $script:RegistryCalls=0;$script:FirewallCalls=0;$script:NetworkCalls=0
+    $script:BlockFirewallRestore=$false;$script:FirewallEffectiveChecks=0
     $script:FeatureEnableCalls=0;$script:FeatureDisableCalls=0
     $script:SetServiceCalls=0;$script:ServiceStartCalls=0;$script:ServiceStopCalls=0
-    $script:FirewallFails=$false;$script:NetworkFails=$false;$script:FeatureFails=$false;$script:ServiceStartFails=$false
+    $script:FirewallFails=$false;$script:NetworkFails=$false;$script:FeatureFails=$false;$script:DisablePending=$false;$script:ServiceStartFails=$false
     $script:FirewallNoOp=$false;$script:NetworkNoOp=$false
     $script:FirewallEnabled='True';$script:FirewallProfile='Private';$script:NetworkCategory='Private'
     $script:FeatureState='Enabled';$script:ServiceState='Stopped'
@@ -157,6 +167,12 @@ try {
     if($script:Ok.Count -ne 1 -or $script:Fail.Count -ne 0){throw 'Successful managed Restore did not report exactly one success.'}
     if($script:RegistryCalls -ne 1 -or $script:FirewallCalls -ne 1 -or $script:NetworkCalls -ne 1 -or $script:FeatureDisableCalls -ne 1 -or $script:SetServiceCalls -ne 0 -or $script:ServiceStartCalls -ne 1){throw 'Successful managed Restore did not execute every expected category or attempted unrelated service startup-mode mutation.'}
     if($script:FeatureState -ne 'Disabled' -or $script:ServiceState -ne 'Running'){throw 'Successful managed Restore did not reach expected final state.'}
+
+    # SMB1 DisablePending is not a verified completed restore.
+    Reset-Harness
+    $script:DisablePending=$true
+    Invoke-RestoreLatest
+    if($script:Ok.Count -ne 0 -or $script:Fail.Count -ne 0 -or $script:Warn.Count -lt 1){throw 'Pending reboot was incorrectly reported as completed or failed.'}
 
     # Firewall failure must not prevent later categories from being attempted.
     Reset-Harness
@@ -190,6 +206,16 @@ try {
     $script:FeatureFails=$true
     Invoke-RestoreLatest
     if($script:Ok.Count -ne 0 -or $script:Fail.Count -ne 1){throw 'Feature restore failure produced false success or no failure.'}
+
+    # A newly policy-managed firewall scope must block the entire Restore BEFORE unrelated changes.
+    Reset-Harness
+    $script:BlockFirewallRestore=$true
+    Invoke-RestoreLatest
+    if($script:Fail.Count -ne 1 -or $script:Ok.Count -ne 0){throw 'Policy-managed firewall Restore did not clearly fail closed.'}
+    if($script:RegistryCalls -or $script:FirewallCalls -or $script:NetworkCalls -or $script:FeatureEnableCalls -or $script:FeatureDisableCalls -or $script:ServiceStartCalls -or $script:ServiceStopCalls){
+        throw 'Restore modified managed state before validating active firewall policy.'
+    }
+    if($script:FirewallEffectiveChecks -ne 1){throw 'Firewall restore must run effective-policy preflight before any mutation.'}
 
     Write-Host 'Restore-outcome smoke passed: managed Restore reports success only after every requested category succeeds, while partial failures still attempt remaining state.' -ForegroundColor Green
 }

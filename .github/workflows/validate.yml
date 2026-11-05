@@ -57,6 +57,10 @@ jobs:
         shell: powershell
         run: .\tests\EvidenceSmoke.ps1
 
+      - name: Validate A1 read-only host/client preflight
+        shell: powershell
+        run: .\tests\A1ReadinessSmoke.ps1
+
       - name: Validate exact Windows build revision reporting
         shell: powershell
         run: .\tests\ExactBuildSmoke.ps1
@@ -80,6 +84,14 @@ jobs:
       - name: Validate printer policy source evidence
         shell: powershell
         run: .\tests\PolicySourceSmoke.ps1
+
+      - name: Validate network-printer classification and unknown namespace
+        shell: powershell
+        run: .\tests\PrinterClassificationSmoke.ps1
+
+      - name: Validate printer transport and spool edge cases
+        shell: powershell
+        run: .\tests\TransportSpoolEdgeSmoke.ps1
 
       - name: Validate modern SMB/RPC diagnostics
         shell: powershell
@@ -153,9 +165,37 @@ jobs:
         shell: powershell
         run: .\tests\LegacyNoOpSmoke.ps1
 
+      - name: Validate Safe Repair state drift protection
+        shell: powershell
+        run: .\tests\SafeRepairStateDriftSmoke.ps1
+
+      - name: Validate effective firewall policy guard
+        shell: powershell
+        run: .\tests\FirewallEffectivePolicySmoke.ps1
+
+      - name: Validate read-only Safe Repair plan previews
+        shell: powershell
+        run: .\tests\SafeRepairPreviewSmoke.ps1
+
+      - name: Validate destructive-action confirmation defaults
+        shell: powershell
+        run: .\tests\ConfirmationDefaultSmoke.ps1
+
+      - name: Validate spool baseline and emergency recovery blocking
+        shell: powershell
+        run: .\tests\QueueRecoveryGuardSmoke.ps1
+
       - name: Validate repair postconditions
         shell: powershell
         run: .\tests\RepairPostconditionSmoke.ps1
+
+      - name: Validate historical Restore overwrite confirmation
+        shell: powershell
+        run: .\tests\RestoreHistoryConsentSmoke.ps1
+
+      - name: Validate Restore history and printer-policy guards
+        shell: powershell
+        run: .\tests\HistoryPolicySmoke.ps1
 
       - name: Validate managed Restore outcome reporting
         shell: powershell
@@ -176,3 +216,51 @@ jobs:
       - name: Validate release package
         shell: powershell
         run: .\tests\PackageSmoke.ps1
+
+  portable-smoke:
+    name: Cross-Windows smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-11-arm]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Record Windows and PowerShell platform
+        shell: powershell
+        run: |
+          Write-Host "Windows: $([Environment]::OSVersion.VersionString)"
+          Write-Host "Architecture: $([Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITECTURE'))"
+          Write-Host "Windows PowerShell: $($PSVersionTable.PSVersion.ToString())"
+
+      - name: Validate source syntax and safety contracts
+        shell: powershell
+        run: .\tests\Validate.ps1
+
+      - name: Validate repository and documentation
+        shell: powershell
+        run: |
+          .\tests\RepositoryHygieneSmoke.ps1
+          .\tests\DocumentationSmoke.ps1
+
+      - name: Validate synthetic queue/recovery safety
+        shell: powershell
+        run: .\tests\QueueRecoveryGuardSmoke.ps1
+
+      - name: Validate synthetic printer inventory and tri-state diagnosis
+        shell: powershell
+        run: .\tests\PrinterClassificationSmoke.ps1
+
+      - name: Validate effective firewall policy portability
+        shell: powershell
+        run: .\tests\FirewallEffectivePolicySmoke.ps1
+
+      - name: Validate Safe Repair state drift portability
+        shell: powershell
+        run: .\tests\SafeRepairStateDriftSmoke.ps1
+
+      - name: Validate Windows 11 A1 read-only preflight
+        shell: powershell
+        run: .\tests\A1ReadinessSmoke.ps1

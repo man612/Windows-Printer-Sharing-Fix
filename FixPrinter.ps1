@@ -16,8 +16,9 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $script:NoElevationRequested = [bool]$NoElevation
+$script:ElevationLaunched = $false
 
-$script:Version = '4.2.0'
+$script:Version = '4.2.1'
 $script:ScriptPath = $PSCommandPath
 $script:Root = Split-Path -Parent $script:ScriptPath
 $script:LegacyBackupRoot = Join-Path $script:Root 'backups'
@@ -42,10 +43,10 @@ $script:LastFunctionalVerification = $null
 
 $script:Text = @{
     EN = @{
-        Title='WINDOWS PRINTER SHARING FIX'; Subtitle='Diagnosis-first repair utility'; Main='MAIN MENU'; Diagnose='Diagnose this PC'; Safe='Safe Repair'; Compat='Compatibility Repair (Advanced)'; Legacy='Legacy Compatibility (High Risk)'; Restore='Restore latest managed changes'; Tools='Tools and Logs'; Guide='Guide'; Language='Language'; Exit='Exit'; Select='Select'; Back='Back'; Recommended='RECOMMENDED'; Invalid='Invalid selection.'; Press='Press Enter to continue';
+        Title='WINDOWS PRINTER SHARING FIX'; Subtitle='Diagnosis-first repair utility'; Main='MAIN MENU'; Diagnose='Diagnose this PC'; Safe='Safe Repair'; Compat='Compatibility Repair (Advanced)'; Legacy='Legacy Compatibility (High Risk)'; Restore='Restore managed changes'; Tools='Tools and Logs'; Guide='Guide'; Language='Language'; Exit='Exit'; Select='Select'; Back='Back'; Recommended='RECOMMENDED'; Invalid='Invalid selection.'; Press='Press Enter to continue';
     }
     ID = @{
-        Title='WINDOWS PRINTER SHARING FIX'; Subtitle='Utilitas diagnosis dan perbaikan printer sharing'; Main='MENU UTAMA'; Diagnose='Diagnosis PC ini'; Safe='Perbaikan Aman'; Compat='Perbaikan Kompatibilitas (Lanjutan)'; Legacy='Kompatibilitas Legacy (Risiko Tinggi)'; Restore='Kembalikan perubahan terakhir'; Tools='Alat dan Log'; Guide='Panduan'; Language='Bahasa'; Exit='Keluar'; Select='Pilih'; Back='Kembali'; Recommended='DISARANKAN'; Invalid='Pilihan tidak valid.'; Press='Tekan Enter untuk lanjut';
+        Title='WINDOWS PRINTER SHARING FIX'; Subtitle='Utilitas diagnosis dan perbaikan printer sharing'; Main='MENU UTAMA'; Diagnose='Diagnosis PC ini'; Safe='Perbaikan Aman'; Compat='Perbaikan Kompatibilitas (Lanjutan)'; Legacy='Kompatibilitas Legacy (Risiko Tinggi)'; Restore='Kembalikan perubahan tersimpan'; Tools='Alat dan Log'; Guide='Panduan'; Language='Bahasa'; Exit='Keluar'; Select='Pilih'; Back='Kembali'; Recommended='DISARANKAN'; Invalid='Pilihan tidak valid.'; Press='Tekan Enter untuk lanjut';
     }
 }
 
@@ -100,6 +101,8 @@ function Initialize-Workspace {
         }
     }
 
+    Assert-ManagedBackupPointer $script:LatestStateFile
+    Assert-ManagedBackupPointer (Get-PendingPointAndPrintMarkerPath)
     if (-not (Test-Path -LiteralPath $script:LanguageFile) -and (Test-Path -LiteralPath $script:LegacyLanguageFile)) {
         $legacyLanguage = Get-Content -LiteralPath $script:LegacyLanguageFile -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($null -ne $legacyLanguage -and ([string]$legacyLanguage).Trim().ToUpperInvariant() -in @('EN','ID')) {
@@ -145,6 +148,7 @@ function Ensure-Administrator {
     try {
         $argumentLine = '-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $script:ScriptPath
         Start-Process -FilePath 'powershell.exe' -Verb RunAs -WorkingDirectory $script:Root -ArgumentList $argumentLine
+        $script:ElevationLaunched = $true
     } catch {
         Write-Host ((L 'Could not obtain Administrator access: {0}' 'Tidak dapat memperoleh akses Administrator: {0}') -f $_.Exception.Message) -ForegroundColor Red
     }
@@ -275,12 +279,16 @@ function Restore-RegistryValue($Entry) {
 }
 
 function Get-PrinterInventory {
-    try {
-        if (Get-Command Get-Printer -ErrorAction SilentlyContinue) {
-            return @(Get-Printer | Select-Object Name,DriverName,PortName,Shared,ShareName,Type,ComputerName)
-        }
-        return @(Get-CimInstance Win32_Printer | ForEach-Object {[pscustomobject]@{Name=$_.Name;DriverName=$_.DriverName;PortName=$_.PortName;Shared=[bool]$_.Shared;ShareName=$_.ShareName;Type=$null;ComputerName=$null}})
-    } catch { Write-Log $_.Exception.Message 'WARN'; return @() }
+    if(Get-Command Get-Printer -ErrorAction SilentlyContinue){
+        try{
+            return @(Get-Printer -ErrorAction Stop | Select-Object Name,DriverName,PortName,Shared,ShareName,Type,ComputerName)
+        }catch{Write-Log ("Get-Printer inventory failed; trying CIM fallback: {0}" -f $_.Exception.Message) 'WARN'}
+    }
+    try{
+        return @(Get-CimInstance Win32_Printer -ErrorAction Stop|ForEach-Object{
+            [pscustomobject]@{Name=$_.Name;DriverName=$_.DriverName;PortName=$_.PortName;Shared=[bool]$_.Shared;ShareName=$_.ShareName;Type=if(([string]$_.Name).StartsWith('\\') -or ([string]$_.PortName).StartsWith('\\')){'Connection'}else{'Local'};ComputerName=$null}
+        })
+    }catch{Write-Log ("CIM printer inventory failed: {0}" -f $_.Exception.Message) 'WARN';return @()}
 }
 
 function Get-PrinterDriverMetadataSafe {
@@ -664,33 +672,38 @@ function Resolve-HostAddresses([string]$ComputerName,[int]$TimeoutMs=2500) {
 function Test-TcpPort([string]$ComputerName,[int]$Port,[int]$TimeoutMs=2500,[System.Net.IPAddress[]]$Addresses=$null) {
     $targets=@(if($PSBoundParameters.ContainsKey('Addresses')){@($Addresses)}else{@(Resolve-HostAddresses $ComputerName $TimeoutMs)})
     if(-not $targets.Count){return $false}
+    # Allow more than one address without an unbounded 8 x timeout worst case.
     $clock=[System.Diagnostics.Stopwatch]::StartNew()
-    foreach($address in $targets){
-        $remaining=$TimeoutMs-[int]$clock.ElapsedMilliseconds
+    $budgetMs=[Math]::Min(6000,[Math]::Max($TimeoutMs,$TimeoutMs*2))
+    foreach($address in @($targets|Select-Object -First 8)){
+        $remaining=$budgetMs-[int]$clock.ElapsedMilliseconds
         if($remaining -le 0){return $false}
+        $attemptMs=[Math]::Min($TimeoutMs,$remaining)
         $client=New-Object System.Net.Sockets.TcpClient($address.AddressFamily)
         $async=$null
-        try {
+        try{
             $async=$client.BeginConnect($address,$Port,$null,$null)
-            if($async.AsyncWaitHandle.WaitOne($remaining,$false)){
+            if($async.AsyncWaitHandle.WaitOne($attemptMs,$false)){
                 $client.EndConnect($async)
                 if($client.Connected){return $true}
             }
-        } catch { Write-Verbose ('TCP probe failed for port {0}: {1}' -f $Port,$_.Exception.Message) }
-        finally {
+        }catch{Write-Verbose ('TCP probe failed for port {0}: {1}' -f $Port,$_.Exception.Message)}
+        finally{
             if($async -and $async.AsyncWaitHandle){$async.AsyncWaitHandle.Close()}
             $client.Close()
         }
     }
     return $false
 }
-
 function Get-NextInvestigationSignals($D) {
     $signals=New-Object System.Collections.Generic.List[string]
     $wppProp=$D.PSObject.Properties['WPP']
     if($wppProp -and $wppProp.Value -and $wppProp.Value.Enabled){$signals.Add('WppEnabled')}
     $profilesProp=$D.PSObject.Properties['Profiles']
-    if($profilesProp -and @($profilesProp.Value|Where-Object{$_.NetworkCategory -eq 'Public' -and $_.IPv4Connectivity -ne 'Disconnected'}).Count){$signals.Add('PublicNetworkProfile')}
+    if($profilesProp -and @($profilesProp.Value|Where-Object{
+        $ipv4=$_.PSObject.Properties['IPv4Connectivity'];$ipv6=$_.PSObject.Properties['IPv6Connectivity']
+        $_.NetworkCategory -eq 'Public' -and (($ipv4 -and [string]$ipv4.Value -ne 'Disconnected') -or ($ipv6 -and [string]$ipv6.Value -ne 'Disconnected'))
+    }).Count){$signals.Add('PublicNetworkProfile')}
     $eventsProp=$D.PSObject.Properties['PrintErrors']
     if($eventsProp){
         foreach($category in @($eventsProp.Value|ForEach-Object{[string]$_.Category}|Where-Object{$_}|Select-Object -Unique)){$signals.Add(('PrintService:{0}' -f $category))}
@@ -705,12 +718,12 @@ function Get-NextInvestigationSignals($D) {
     return @($signals)
 }
 
-function Test-NextInvestigationEventCategory($D,[string]$Category) {
-    $eventsProp=$D.PSObject.Properties['PrintErrors']
-    if(-not $eventsProp){return $false}
-    return (@($eventsProp.Value|Where-Object{[string]$_.Category -eq $Category}).Count -gt 0)
+function Test-NextInvestigationEventCategory($D,[string]$Category,[object]$TargetPath=$null) {
+    # Recent events are machine-wide until correlated with the exact printer path.
+    if($null -eq $TargetPath){return $false}
+    $matched=$TargetPath.PSObject.Properties['MatchedPrintEventCategories']
+    return ($null -ne $matched -and $Category -in @($matched.Value))
 }
-
 function New-NextInvestigation([string]$Layer,[string]$Reason,[bool]$RemoteTransportTested,[string[]]$Signals=@()) {
     return [pscustomobject]@{Layer=$Layer;Reason=$Reason;RemoteTransportTested=$RemoteTransportTested;Signals=@($Signals);RootCauseClaimed=$false}
 }
@@ -727,22 +740,28 @@ function Get-NextInvestigation($D,[object]$TargetPath=$null) {
     if($null -eq $TargetPath){return New-NextInvestigation 'RemoteTransportUntested' 'TargetPathNotTested' $false $signals}
     if(-not [bool]$TargetPath.DnsResolved){return New-NextInvestigation 'NameResolutionOrBasicNetwork' 'TargetDnsFailed' $true $signals}
     if(-not [bool]$TargetPath.Smb445Reachable){return New-NextInvestigation 'SmbFirewallOrRouting' 'TargetSmb445Failed' $true $signals}
-    if(-not [bool]$TargetPath.Rpc135Reachable){return New-NextInvestigation 'RpcReachability' 'TargetRpc135Failed' $true $signals}
+    $transportProp=$TargetPath.PSObject.Properties['RpcTransport']
+    $namedPipes=($transportProp -and [string]$transportProp.Value -eq 'NamedPipes')
+    if($namedPipes){$signals+='RpcTransport:NamedPipes'}
+    if(-not $namedPipes -and -not [bool]$TargetPath.Rpc135Reachable){return New-NextInvestigation 'RpcReachability' 'TargetRpc135Failed' $true $signals}
     $rpcPortProp=$TargetPath.PSObject.Properties['RpcConfiguredPort']
     $rpcPortReachableProp=$TargetPath.PSObject.Properties['RpcConfiguredPortReachable']
-    if($rpcPortProp -and $null -ne $rpcPortProp.Value -and $rpcPortReachableProp -and $rpcPortReachableProp.Value -eq $false){return New-NextInvestigation 'RpcReachability' 'TargetConfiguredRpcPortFailed' $true $signals}
-    if(-not [bool]$TargetPath.ShareNamespaceAccessible){return New-NextInvestigation 'ShareNamespaceOrCredentials' 'TargetNamespaceFailed' $true $signals}
+    $portSource=$TargetPath.PSObject.Properties['RpcConfiguredPortSource']
+    if(-not $namedPipes -and $rpcPortProp -and $null -ne $rpcPortProp.Value -and $rpcPortReachableProp -and $rpcPortReachableProp.Value -eq $false -and $portSource -and [string]$portSource.Value -eq 'ConfirmedRemote'){return New-NextInvestigation 'RpcReachability' 'TargetConfiguredRpcPortFailed' $true $signals}
+    $shareNamespace=$TargetPath.PSObject.Properties['ShareNamespaceAccessible']
+    if(-not $shareNamespace -or $null -eq $shareNamespace.Value){return New-NextInvestigation 'ShareNamespaceUnverified' 'TargetNamespaceProbeUnavailable' $true $signals}
+    if(-not [bool]$shareNamespace.Value){return New-NextInvestigation 'ShareNamespaceOrCredentials' 'TargetNamespaceFailed' $true $signals}
     $installed=[bool]$TargetPath.PrinterInstalled
     $wppProp=$D.PSObject.Properties['WPP']
     if(-not $installed -and $wppProp -and $wppProp.Value -and $wppProp.Value.Enabled){return New-NextInvestigation 'WppCompatibility' 'WppEnabledPrinterNotInstalled' $true $signals}
-    if(-not $installed -and (Test-NextInvestigationEventCategory $D 'DriverOrPackage')){return New-NextInvestigation 'DriverOrPackage' 'RecentDriverOrPackageEvents' $true $signals}
-    if(-not $installed -and (Test-NextInvestigationEventCategory $D 'Policy')){return New-NextInvestigation 'Policy' 'RecentPolicyEvents' $true $signals}
-    if(-not $installed -and (Test-NextInvestigationEventCategory $D 'SharingOrConnection')){return New-NextInvestigation 'SharingOrConnection' 'RecentSharingOrConnectionEvents' $true $signals}
+    if(-not $installed -and (Test-NextInvestigationEventCategory $D 'DriverOrPackage' $TargetPath)){return New-NextInvestigation 'DriverOrPackage' 'RecentDriverOrPackageEvents' $true $signals}
+    if(-not $installed -and (Test-NextInvestigationEventCategory $D 'Policy' $TargetPath)){return New-NextInvestigation 'Policy' 'RecentPolicyEvents' $true $signals}
+    if(-not $installed -and (Test-NextInvestigationEventCategory $D 'SharingOrConnection' $TargetPath)){return New-NextInvestigation 'SharingOrConnection' 'RecentSharingOrConnectionEvents' $true $signals}
     if(-not $installed){return New-NextInvestigation 'PrinterConnectionSetup' 'PrinterNotInstalledAfterTransport' $true $signals}
-    if(Test-NextInvestigationEventCategory $D 'SpoolerOrRpc'){return New-NextInvestigation 'SpoolerOrRpc' 'RecentSpoolerOrRpcEvents' $true $signals}
-    if(Test-NextInvestigationEventCategory $D 'PortOrProcessor'){return New-NextInvestigation 'PortOrProcessor' 'RecentPortOrProcessorEvents' $true $signals}
-    if(Test-NextInvestigationEventCategory $D 'PrintJob'){return New-NextInvestigation 'PrintJob' 'RecentPrintJobEvents' $true $signals}
-    if(Test-NextInvestigationEventCategory $D 'DirectoryOrGpo'){return New-NextInvestigation 'DirectoryOrGpo' 'RecentDirectoryOrGpoEvents' $true $signals}
+    if(Test-NextInvestigationEventCategory $D 'SpoolerOrRpc' $TargetPath){return New-NextInvestigation 'SpoolerOrRpc' 'RecentSpoolerOrRpcEvents' $true $signals}
+    if(Test-NextInvestigationEventCategory $D 'PortOrProcessor' $TargetPath){return New-NextInvestigation 'PortOrProcessor' 'RecentPortOrProcessorEvents' $true $signals}
+    if(Test-NextInvestigationEventCategory $D 'PrintJob' $TargetPath){return New-NextInvestigation 'PrintJob' 'RecentPrintJobEvents' $true $signals}
+    if(Test-NextInvestigationEventCategory $D 'DirectoryOrGpo' $TargetPath){return New-NextInvestigation 'DirectoryOrGpo' 'RecentDirectoryOrGpoEvents' $true $signals}
     return New-NextInvestigation 'FunctionalVerification' 'PrerequisitesHealthy' $true $signals
 }
 
@@ -754,6 +773,7 @@ function Get-NextInvestigationLayerLabel([string]$Layer) {
         'SmbFirewallOrRouting'{return (L 'SMB / firewall / routing' 'SMB / firewall / routing')}
         'RpcReachability'{return (L 'print RPC / firewall' 'RPC printer / firewall')}
         'ShareNamespaceOrCredentials'{return (L 'share namespace / credentials / sharing' 'namespace share / kredensial / sharing')}
+        'ShareNamespaceUnverified'{return (L 'share namespace check unavailable' 'pemeriksaan namespace share belum tersedia')}
         'WppCompatibility'{return (L 'WPP / driver compatibility' 'WPP / kompatibilitas driver')}
         'DriverOrPackage'{return (L 'driver / package' 'driver / paket')}
         'Policy'{return (L 'printer policy' 'kebijakan printer')}
@@ -778,6 +798,7 @@ function Get-NextInvestigationReasonText([string]$Reason) {
         'TargetRpc135Failed'{return (L 'DNS and SMB succeeded but RPC Endpoint Mapper on TCP 135 did not. This does not test the later dynamic RPC ports.' 'DNS dan SMB berhasil tetapi RPC Endpoint Mapper pada TCP 135 tidak. Ini belum menguji dynamic RPC ports setelahnya.')}
         'TargetConfiguredRpcPortFailed'{return (L 'RPC Endpoint Mapper responded, but the explicitly configured print RPC TCP port did not. Check the configured port and firewall path before changing printer security policy.' 'RPC Endpoint Mapper merespons, tetapi port TCP RPC printer yang dikonfigurasi secara eksplisit tidak. Periksa port tersebut dan jalur firewall sebelum mengubah kebijakan keamanan printer.')}
         'TargetNamespaceFailed'{return (L 'SMB and RPC endpoint checks succeeded, but the host share namespace was not accessible. Check sharing, credentials, and policy next.' 'Pemeriksaan SMB dan RPC endpoint berhasil, tetapi namespace share host tidak dapat diakses. Periksa sharing, kredensial, dan kebijakan berikutnya.')}
+        'TargetNamespaceProbeUnavailable'{return (L 'The SMB namespace check timed out or could not run. Its result is unknown; verify the share and credentials before attributing a failure to Windows settings.' 'Pemeriksaan namespace SMB timeout atau tidak dapat dijalankan. Hasilnya belum diketahui; periksa share dan kredensial sebelum menyimpulkan penyebab.')}
         'WppEnabledPrinterNotInstalled'{return (L 'Transport prerequisites look healthy, but WPP is enabled and the target printer is not installed. Verify Windows Ready Print/WPP compatibility before legacy-driver workarounds.' 'Prasyarat transport terlihat sehat, tetapi WPP aktif dan printer target belum terpasang. Periksa kompatibilitas Windows Ready Print/WPP sebelum memakai workaround driver lama.')}
         'RecentDriverOrPackageEvents'{return (L 'Transport prerequisites look healthy and recent PrintService driver/package events exist. Treat them as supporting evidence, not proof of cause.' 'Prasyarat transport terlihat sehat dan ada event PrintService driver/paket terbaru. Anggap ini sebagai bukti pendukung, bukan bukti penyebab.')}
         'RecentPolicyEvents'{return (L 'Transport prerequisites look healthy and recent PrintService policy events exist. Inspect effective policy and its source evidence next.' 'Prasyarat transport terlihat sehat dan ada event kebijakan PrintService terbaru. Periksa kebijakan efektif dan bukti sumbernya berikutnya.')}
@@ -907,18 +928,39 @@ function Show-DiagnosticReport($D) {
     if($policySourcesProp -and $policySourcesProp.Value){$configuredPolicySources=@($policySourcesProp.Value.PSObject.Properties|Where-Object{$_.Value.Configured});if($configuredPolicySources.Count){Write-Rule;Write-Host (L 'Printer policy source evidence:' 'Bukti sumber kebijakan printer:');foreach($entry in $configuredPolicySources){Write-Host ('  {0}: {1}' -f (Get-PrinterPolicyDisplayName $entry.Name),(Get-PolicySourceLabel ([string]$entry.Value.Source)))}}}
     if($D.SharedPrinters.Count){Write-Rule;Write-Host (L 'Shared printers:' 'Printer yang dishare:');foreach($p in $D.SharedPrinters){Write-Host ('  - {0} | share={1} | driver={2} | {3}/{4}' -f $p.Name,$p.ShareName,$p.DriverName,$p.DriverModel,$p.DriverProviderClass)}}
     if($D.Connections.Count){Write-Rule;Write-Host (L 'Network printer connections:' 'Koneksi printer jaringan:');foreach($p in $D.Connections){Write-Host ('  - {0} | driver={1} | {2}/{3}' -f $p.Name,$p.DriverName,$p.DriverModel,$p.DriverProviderClass)}}
-    if($D.Profiles.Count){Write-Rule;Write-Host (L 'Network profiles:' 'Profil jaringan:');foreach($n in $D.Profiles){Write-Host ('  [{0}] {1} / {2} / IPv4={3}' -f $n.InterfaceIndex,$n.InterfaceAlias,(Localize-SystemValue ([string]$n.NetworkCategory)),(Localize-SystemValue ([string]$n.IPv4Connectivity)))}}
+    if($D.Profiles.Count){Write-Rule;Write-Host (L 'Network profiles:' 'Profil jaringan:');foreach($n in $D.Profiles){Write-Host ('  [{0}] {1} / {2} / IPv4={3} / IPv6={4}' -f $n.InterfaceIndex,$n.InterfaceAlias,(Localize-SystemValue ([string]$n.NetworkCategory)),(Localize-SystemValue ([string]$n.IPv4Connectivity)),(Localize-SystemValue ([string]$n.IPv6Connectivity)))}}
     if($D.PrintErrors.Count){Write-Rule;Write-Host (L 'Recent PrintService events:' 'Event PrintService terbaru:');foreach($e in $D.PrintErrors|Select-Object -First 5){$m=([string]$e.Message -replace '\s+',' ');if($m.Length -gt 120){$m=$m.Substring(0,120)+'...'};$layer=Get-PrintServiceCategoryLabel ([string]$e.Category);$code='';if($null -ne $e.Win32Code){$code=' | Win32={0}/{1}' -f $e.Win32Code,(Get-PrintServiceCodeClassLabel ([string]$e.CodeClass))};Write-Host ('  {0:g} ID {1} [{2}{3}]: {4}' -f $e.TimeCreated,$e.Id,$layer,$code,$m)}}
     Write-Rule; Write-Info ('Log: {0}' -f $script:CurrentLog)
     if(Read-YesNo (L 'Test a specific shared printer path now?' 'Tes path printer sharing tertentu sekarang?') $true){Invoke-SharedPrinterPathDiagnosis}
     Pause-Tui
 }
 
+function Test-SafePrinterUncPath([string]$Path) {
+    return (-not [string]::IsNullOrWhiteSpace($Path) -and $Path -match '^\\\\[^\\/:"<>|?*]+\\[^\\/:"<>|?*]+$')
+}
+function Test-ShareNamespaceBounded([string]$ComputerName,[int]$TimeoutSeconds=5) {
+    $job=$null
+    try {
+        $sharePath=("\\{0}\" -f $ComputerName)
+        $job=Start-Job -ScriptBlock {
+            [bool](Test-Path -LiteralPath $using:sharePath -ErrorAction Stop)
+        } -ErrorAction Stop
+        $completed=Wait-Job -Job $job -Timeout $TimeoutSeconds -ErrorAction Stop
+        if(-not $completed -or $job.State -ne 'Completed'){return $null}
+        return [bool](Receive-Job -Job $job -ErrorAction Stop|Select-Object -First 1)
+    }catch{Write-Verbose ('Share namespace check unavailable: {0}' -f $_.Exception.Message);return $null}
+    finally {
+        if($job){
+            if($job.State -notin @('Completed','Failed','Stopped')){Stop-Job -Job $job -ErrorAction SilentlyContinue}
+            Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
 function Invoke-SharedPrinterPathDiagnosis {
     Write-Rule; Write-Host (L 'SHARED PRINTER PATH TEST' 'TES PATH PRINTER SHARING') -ForegroundColor White
     $unc=(Read-Host (L 'Enter printer path like \\PRINT-PC\OfficePrinter (blank = cancel)' 'Masukkan path printer seperti \\PC-PRINT\PrinterKantor (kosong = batal)')).Trim(); if(-not $unc){return}
-    if($unc -notmatch '^\\\\([^\\]+)\\([^\\]+)$'){Write-Warn (L 'Invalid UNC printer path.' 'Path UNC printer tidak valid.');return}
-    $hostName=$Matches[1]
+    if(-not(Test-SafePrinterUncPath $unc)){Write-Warn (L 'Invalid UNC printer path.' 'Path UNC printer tidak valid.');return}
+    $hostName=($unc -split '\\')[2]
     $testedAt=(Get-Date).ToUniversalTime().ToString('o')
     $diagForCorrelation=$script:LastDiagnostic
     if($null -eq $diagForCorrelation){$diagForCorrelation=Invoke-Diagnosis -Quiet}
@@ -929,18 +971,17 @@ function Invoke-SharedPrinterPathDiagnosis {
         if([int]::TryParse([string]$rpcTcpStateProp.Value.Value,[ref]$candidate) -and $candidate -gt 0 -and $candidate -le 65535){$configuredRpcPort=$candidate}
     }
     $addresses=@(Resolve-HostAddresses $hostName 2500); $dns=($addresses.Count -gt 0)
-    $smb=if($dns){Test-TcpPort $hostName 445 2500 $addresses}else{$false}; $rpc=if($dns){Test-TcpPort $hostName 135 2500 $addresses}else{$false}; $root=$false
-    $configuredRpcReachable=if($null -ne $configuredRpcPort -and $dns){Test-TcpPort $hostName $configuredRpcPort 2500 $addresses}else{$null}
-    if($smb){try{$root=Test-Path -LiteralPath ("\\{0}\" -f $hostName) -ErrorAction SilentlyContinue}catch{Write-Verbose ('Share namespace probe failed: {0}' -f $_.Exception.Message)}}
+    $smb=if($dns){Test-TcpPort $hostName 445 2500 $addresses}else{$false}; $rpc=if($dns){Test-TcpPort $hostName 135 2500 $addresses}else{$false}; $root=$null
+    $rpcTransport=if($diagForCorrelation.RpcUseNamedPipe.Present -and [int]$diagForCorrelation.RpcUseNamedPipe.Value -eq 1){'NamedPipes'}else{'Tcp'}
+    # A local port policy is not proof that a remote host listens on that port.
+    $configuredRpcReachable=$null
+    if($smb){$root=Test-ShareNamespaceBounded $hostName 5}
     $installed=@((Get-PrinterInventory)|Where-Object{$_.Name -eq $unc}).Count -gt 0
     if($dns){Write-Ok ((L 'Host resolves: {0}' 'Host berhasil di-resolve: {0}') -f $hostName)}else{Write-Fail ((L 'Host does not resolve: {0}' 'Host tidak dapat di-resolve: {0}') -f $hostName)}
     if($smb){Write-Ok (L 'TCP 445 (SMB) reachable.' 'TCP 445 (SMB) dapat dijangkau.')}else{Write-Fail (L 'TCP 445 (SMB) not reachable.' 'TCP 445 (SMB) tidak dapat dijangkau.')}
-    if($rpc){Write-Ok (L 'TCP 135 (RPC Endpoint Mapper) reachable.' 'TCP 135 (RPC Endpoint Mapper) dapat dijangkau.')}else{Write-Warn (L 'TCP 135 (RPC Endpoint Mapper) not reachable.' 'TCP 135 (RPC Endpoint Mapper) tidak dapat dijangkau.')}
-    if($null -ne $configuredRpcPort){
-        if($configuredRpcReachable){Write-Ok ((L 'Configured print RPC TCP port {0} is reachable.' 'Port TCP RPC printer {0} yang dikonfigurasi dapat dijangkau.') -f $configuredRpcPort)}
-        else{Write-Warn ((L 'Configured print RPC TCP port {0} is not reachable.' 'Port TCP RPC printer {0} yang dikonfigurasi tidak dapat dijangkau.') -f $configuredRpcPort)}
-    }
-    if($root){Write-Ok ((L 'Host share namespace accessible: \\{0}' 'Namespace share host dapat diakses: \\{0}') -f $hostName)}elseif($smb){Write-Warn (L 'SMB port is reachable but the share namespace was not accessible; credentials, sharing, or policy may be involved.' 'Port SMB dapat dijangkau tetapi namespace share tidak dapat diakses; kredensial, pengaturan sharing, atau kebijakan Windows mungkin terlibat.')}
+    if($rpc){Write-Ok (L 'TCP 135 (RPC Endpoint Mapper) reachable.' 'TCP 135 (RPC Endpoint Mapper) dapat dijangkau.')}elseif($rpcTransport -eq 'NamedPipes'){Write-Info (L 'TCP 135 unavailable, but the client uses RPC Named Pipes; verify the host listener and an actual print connection.' 'TCP 135 tidak tersedia, tetapi klien memakai RPC Named Pipes; periksa listener host dan koneksi cetak.') }else{Write-Warn (L 'TCP 135 (RPC Endpoint Mapper) not reachable.' 'TCP 135 (RPC Endpoint Mapper) tidak dapat dijangkau.')}
+    if($null -ne $configuredRpcPort){Write-Info ((L 'Local RPC TCP port policy: {0}; remote host port unknown.' 'Kebijakan port TCP RPC lokal: {0}; port host remote belum diketahui.') -f $configuredRpcPort)}
+    if($root){Write-Ok ((L 'Host share namespace accessible: \\{0}' 'Namespace share host dapat diakses: \\{0}') -f $hostName)}elseif($smb -and $null -eq $root){Write-Warn (L 'SMB is reachable but share enumeration timed out or could not be checked; result unknown.' 'SMB dapat dijangkau tetapi pemeriksaan share timeout atau tidak tersedia; hasil belum diketahui.')}elseif($smb){Write-Warn (L 'SMB port is reachable but the share namespace was not accessible; credentials, sharing, or policy may be involved.' 'Port SMB dapat dijangkau tetapi namespace share tidak dapat diakses; kredensial, sharing, atau kebijakan Windows mungkin terlibat.')}
     $smbSecuritySignals=@()
     if($smb -and -not $root){
         $recentSmbEvents=@(Get-RecentSmbSecurityEvents -ClientOnly)
@@ -948,7 +989,8 @@ function Invoke-SharedPrinterPathDiagnosis {
         if($smbSecuritySignals.Count){Write-Info ((L 'Recent normalized SMB security evidence: {0}' 'Bukti keamanan SMB ternormalisasi terbaru: {0}') -f ($smbSecuritySignals -join ', '))}
     }
     if($installed){Write-Ok ((L 'Printer installed locally: {0}' 'Printer sudah terpasang lokal: {0}') -f $unc)}else{Write-Info ((L 'Printer not currently installed locally: {0}' 'Printer belum terpasang lokal: {0}') -f $unc)}
-    $target=[pscustomobject]@{TestedAtUtc=$testedAt;DnsResolved=[bool]$dns;Smb445Reachable=[bool]$smb;Rpc135Reachable=[bool]$rpc;RpcConfiguredPort=$configuredRpcPort;RpcConfiguredPortReachable=$configuredRpcReachable;ShareNamespaceAccessible=[bool]$root;PrinterInstalled=[bool]$installed;SmbSecuritySignals=@($smbSecuritySignals);LikelyLayer=''}
+    $matchedEvents=@($diagForCorrelation.PrintErrors|Where-Object{([string]$_.Message).IndexOf($unc,[StringComparison]::OrdinalIgnoreCase) -ge 0}|ForEach-Object{[string]$_.Category}|Where-Object{$_}|Select-Object -Unique)
+    $target=[pscustomobject]@{TestedAtUtc=$testedAt;DnsResolved=[bool]$dns;Smb445Reachable=[bool]$smb;Rpc135Reachable=[bool]$rpc;RpcTransport=$rpcTransport;RpcConfiguredPort=$configuredRpcPort;RpcConfiguredPortSource='LocalOnly';RpcConfiguredPortReachable=$configuredRpcReachable;ShareNamespaceAccessible=$root;PrinterInstalled=[bool]$installed;MatchedPrintEventCategories=@($matchedEvents);SmbSecuritySignals=@($smbSecuritySignals);LikelyLayer=''}
     $next=Get-NextInvestigation $diagForCorrelation $target
     $likelyLayer=switch([string]$next.Layer){
         'LocalSpooler'{'LocalSpooler'}
@@ -1004,6 +1046,7 @@ function Get-RestoreActionContract([string]$Reason) {
 function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Services','Network','Firewall','SMB1'),[object[]]$FirewallRules=$null,[object[]]$NetworkProfiles=$null,[string[]]$RegistryNames=$null,[string[]]$ServiceNames=$null) {
     $dir=$null
     try{
+        Assert-ManagedBackupPointer $script:LatestStateFile
         $contract=Get-RestoreActionContract $Reason
         $actualScopes=@($Scopes|ForEach-Object{[string]$_})
         $expectedScopes=@($contract.Scopes|ForEach-Object{[string]$_})
@@ -1064,7 +1107,7 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
 
         if($actualScopes -contains 'Firewall'){
             $sourceRules=if($PSBoundParameters.ContainsKey('FirewallRules')){@($FirewallRules)}else{@(Get-FirewallSharingRules)}
-            $changedRules=@($sourceRules|Where-Object{[string]$_.Profile -match 'Private|Domain|Any'})
+            $changedRules=@($sourceRules|Where-Object{Test-FirewallRuleNeedsSafeRepair $_})
             $fw=@($changedRules|ForEach-Object{[pscustomobject]@{Name=[string]$_.Name;Enabled=[string]$_.Enabled;Profile=[string]$_.Profile}})
             if($Reason -eq 'Enable sharing firewall rules' -and -not $fw.Count){
                 throw 'Firewall repair snapshot requires at least one managed Domain/Private/Any rule.'
@@ -1094,6 +1137,24 @@ function New-RestoreSnapshot([string]$Reason,[string[]]$Scopes=@('Registry','Ser
     }
 }
 
+function Assert-ManagedBackupPointer([string]$Path) {
+    # Read/write only regular local pointer files, never reparse points (link/junction targets).
+    if([string]::IsNullOrWhiteSpace($Path)){throw 'Managed backup pointer path is empty.'}
+    $root=Get-Item -LiteralPath $script:BackupRoot -Force -ErrorAction Stop
+    if(-not $root.PSIsContainer -or (($root.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
+        throw 'Managed backup root must be a normal directory, not a reparse point.'
+    }
+    $pointer=Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if($null -ne $pointer){
+        if($pointer.PSIsContainer -or (($pointer.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
+            throw 'Managed backup pointer cannot be a directory, symlink or other reparse point.'
+        }
+        if($pointer.Length -gt 4096){throw 'Managed backup pointer exceeds the 4 KiB safety limit.'}
+    }elseif(Test-Path -LiteralPath $Path){
+        throw 'Managed backup pointer exists but its metadata cannot be inspected.'
+    }
+}
+
 function Get-ValidatedRestoreSnapshot([string]$Directory) {
     if(-not $Directory){throw 'Restore snapshot pointer is empty.'}
     $backupFull=[IO.Path]::GetFullPath([string]$script:BackupRoot).TrimEnd([char]'\',[char]'/')
@@ -1102,11 +1163,22 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
     if(-not [string]::Equals($parent,$backupFull,[StringComparison]::OrdinalIgnoreCase)){throw 'Restore snapshot is outside the managed backup root.'}
     $leaf=[IO.Path]::GetFileName($dirFull)
     if($leaf -notmatch '^\d{8}-\d{6}-[0-9a-fA-F]{6}$'){throw 'Restore snapshot directory name is invalid.'}
+    $rootItem=Get-Item -LiteralPath $backupFull -Force -ErrorAction Stop
+    if(-not $rootItem.PSIsContainer -or (($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
+        throw 'Managed backup root must be a normal local directory, not a reparse point.'
+    }
     $dirItem=Get-Item -LiteralPath $dirFull -Force -ErrorAction Stop
     if(-not $dirItem.PSIsContainer -or (($dirItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){throw 'Restore snapshot directory is not a normal managed directory.'}
 
     $file=Join-Path $dirFull 'managed-state.json'
     if(-not(Test-Path -LiteralPath $file -PathType Leaf)){throw 'Restore snapshot state file is missing.'}
+    $stateFileItem=Get-Item -LiteralPath $file -Force -ErrorAction Stop
+    if(($stateFileItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){
+        throw 'Restore snapshot state file cannot be a symbolic link or other reparse point.'
+    }
+    if($stateFileItem.Length -gt 1048576){
+        throw 'Restore snapshot state file exceeds the 1 MiB safety limit.'
+    }
     $state=Get-Content -LiteralPath $file -Raw -ErrorAction Stop|ConvertFrom-Json
     $required=@('Version','Reason','Scopes','Registry','Services','NetworkProfiles','FirewallRules','WindowsFeatures')
     foreach($property in $required){if($property -notin @($state.PSObject.Properties.Name)){throw "Restore snapshot is missing required field: $property"}}
@@ -1241,11 +1313,14 @@ function Get-ValidatedRestoreSnapshot([string]$Directory) {
     return [pscustomobject]@{Directory=$dirFull;State=$state}
 }
 
-function Invoke-RestoreLatest {
+function Invoke-RestoreLatest([string]$SnapshotDirectory='') {
     Write-Header (L 'RESTORE' 'KEMBALIKAN PERUBAHAN')
     Write-Warn (L 'Restore reverts only the states captured for the latest v4 action. Deleted print jobs and removed printer connections cannot be recreated automatically.' 'Restore hanya mengembalikan kondisi yang disimpan oleh tindakan v4 terakhir. Print job yang sudah dihapus dan koneksi printer yang sudah dilepas tidak dapat dibuat ulang otomatis.')
-    if(-not(Test-Path -LiteralPath $script:LatestStateFile)){Write-Warn (L 'No v4 restore snapshot exists yet.' 'Belum ada snapshot restore v4.');Pause-Tui;return}
-    $dir=([string](Get-Content -LiteralPath $script:LatestStateFile|Select-Object -First 1)).Trim()
+    if(-not $SnapshotDirectory){
+        if(-not(Test-Path -LiteralPath $script:LatestStateFile)){Write-Warn (L 'No v4 restore snapshot exists yet.' 'Belum ada snapshot restore v4.');Pause-Tui;return}
+        Assert-ManagedBackupPointer $script:LatestStateFile
+        $dir=([string](Get-Content -LiteralPath $script:LatestStateFile|Select-Object -First 1)).Trim()
+    }else{$dir=$SnapshotDirectory}
     try{
         $validated=Get-ValidatedRestoreSnapshot $dir
         $dir=[string]$validated.Directory
@@ -1256,9 +1331,45 @@ function Invoke-RestoreLatest {
         Pause-Tui
         return
     }
+    if(Test-PointAndPrintRecoveryRequired){
+        $emergencyMarker=Get-PendingPointAndPrintMarkerPath
+        $source=if(Test-Path -LiteralPath $emergencyMarker -PathType Leaf){$emergencyMarker}else{$script:LatestStateFile}
+        Assert-ManagedBackupPointer $source
+        try{
+            $emergencyPath=([string](Get-Content -LiteralPath $source -ErrorAction Stop|Select-Object -First 1)).Trim()
+            $sameEmergency=[string]::Equals([IO.Path]::GetFullPath($emergencyPath).TrimEnd([char]'\'),([IO.Path]::GetFullPath($dir)).TrimEnd([char]'\'),[StringComparison]::OrdinalIgnoreCase)
+        }catch{$sameEmergency=$false}
+        if(-not $sameEmergency -or [string]$state.Reason -ne 'Temporary Point and Print relaxation'){
+            Write-Fail (L 'Restore is restricted to the pending Point and Print emergency snapshot until security recovery completes.' 'Restore hanya diizinkan untuk snapshot darurat Point and Print yang tertunda sampai pemulihan keamanan selesai.')
+            Pause-Tui
+            return
+        }
+    }
+    # Historical snapshots may predate newer managed settings. Require stronger consent.
+    if($SnapshotDirectory -and (Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf)){
+        $latest=([string](Get-Content -LiteralPath $script:LatestStateFile -ErrorAction Stop|Select-Object -First 1)).Trim()
+        if($latest -and -not [string]::Equals([IO.Path]::GetFullPath($latest).TrimEnd([char]'\'),([IO.Path]::GetFullPath($dir)).TrimEnd([char]'\'),[StringComparison]::OrdinalIgnoreCase)){
+            Write-Warn (L 'This is an older action snapshot, not the latest one. Restoring it can overwrite changes made by later repairs or Windows administration.' 'Ini snapshot tindakan lama, bukan yang terbaru. Restore dapat menimpa perubahan dari perbaikan berikutnya atau administrator Windows.')
+            if((Read-Host (L 'Type RESTORE-HISTORY to accept this risk' 'Ketik RESTORE-HISTORY jika memahami risiko ini')).Trim().ToUpperInvariant() -ne 'RESTORE-HISTORY'){return}
+        }
+    }
     if(-not(Read-YesNo ((L 'Restore state from {0}?' 'Kembalikan kondisi dari {0}?') -f $dir) $true)){return}
 
+    # Restore does not have authority to overwrite effective GPO/MDM firewall policy.
+    # Validate the entire firewall restoration scope BEFORE touching any registry, service, or network setting.
+    $firewallRestoreScope=@($state.FirewallRules)
+    if($firewallRestoreScope.Count){
+        try{Assert-FirewallLocalPolicyEffective -Rules $firewallRestoreScope -SkipBaselineComparison}
+        catch{
+            Write-Fail ((L 'Restore blocked before changes: firewall policy is not proven locally effective. {0}' 'Restore diblokir sebelum perubahan: kebijakan firewall belum terbukti efektif secara lokal. {0}') -f $_.Exception.Message)
+            Write-Log ("Restore blocked by effective firewall policy: {0}" -f $_.Exception.Message) 'ERROR'
+            Pause-Tui
+            return
+        }
+    }
+
     $failures=@()
+    $pendingReboot=$false
 
     foreach($entry in @($state.Registry)){
         try{Restore-RegistryValue $entry}
@@ -1287,6 +1398,7 @@ function Invoke-RestoreLatest {
                     if(-not [string]::Equals([string]$entry.Enabled,[string]$verifiedRule.Enabled,[StringComparison]::OrdinalIgnoreCase) -or ($expectedProfiles -join ',') -ne ($actualProfiles -join ',')){
                         throw "Firewall rule postcondition mismatch: Enabled=$($verifiedRule.Enabled) Profile=$($verifiedRule.Profile)"
                     }
+                    Assert-FirewallLocalPolicyEffective -Rules @($entry)
                 }
                 catch{
                     $message=("Firewall rule {0}: {1}" -f $entry.Name,$_.Exception.Message)
@@ -1336,7 +1448,8 @@ function Invoke-RestoreLatest {
             }
             $verified=Get-WindowsFeatureState $feature.Name
             if($expected -match '^Enabled' -and $verified -notmatch '^Enabled'){throw "Feature did not return to Enabled state; current state is $verified"}
-            if($expected -match '^Disabled' -and $verified -notmatch '^Disabled'){throw "Feature did not return to Disabled state; current state is $verified"}
+            if($expected -match '^Disabled' -and $verified -notmatch '^Disabled' -and $verified -ne 'DisablePending'){throw "Feature did not return to Disabled state or DisablePending; current state is $verified"}
+            if($verified -eq 'DisablePending'){$pendingReboot=$true;Write-Warn (L 'SMB1 disable pending Windows restart; verify again after reboot.' 'SMB1 sedang dinonaktifkan dan menunggu restart; periksa lagi setelah reboot.');Write-Log 'SMB1 disable pending reboot' 'WARN'}
         }catch{
             $message=("Windows feature {0}: {1}" -f $feature.Name,$_.Exception.Message)
             $failures+=$message
@@ -1359,6 +1472,9 @@ function Invoke-RestoreLatest {
     if($failures.Count){
         Write-Fail ((L 'Restore completed with {0} failure(s). Some managed state may still differ; review the log and keep this snapshot for retry.' 'Restore selesai dengan {0} kegagalan. Sebagian kondisi terkelola mungkin masih berbeda; periksa log dan pertahankan snapshot ini untuk mencoba lagi.') -f $failures.Count)
         Write-Log ("Restore partially completed from {0}; failures={1}" -f $dir,$failures.Count) 'ERROR'
+    }elseif($pendingReboot){
+        Write-Warn (L 'Managed Restore changes were applied, but SMB1 needs a restart before final verification.' 'Perubahan Restore diterapkan, tetapi SMB1 perlu restart sebelum verifikasi akhir.')
+        Write-Log "Restore pending reboot from $dir" 'WARN'
     }else{
         Write-Ok (L 'Managed state restored.' 'Kondisi yang dikelola aplikasi berhasil dikembalikan.')
         Write-Log "Restore completed from $dir"
@@ -1366,6 +1482,27 @@ function Invoke-RestoreLatest {
     Pause-Tui
 }
 
+function Invoke-RestoreHistory {
+    Write-Header (L 'RESTORE HISTORY' 'RIWAYAT RESTORE')
+    $candidates=@(Get-ChildItem -LiteralPath $script:BackupRoot -Directory -ErrorAction Stop|Sort-Object Name -Descending|Select-Object -First 20)
+    $valid=@()
+    foreach($candidate in $candidates){
+        try{
+            $snapshot=Get-ValidatedRestoreSnapshot $candidate.FullName
+            $valid+= [pscustomobject]@{Directory=[string]$snapshot.Directory;Reason=[string]$snapshot.State.Reason;Created=[string]$snapshot.State.Created}
+        }catch{Write-Log ("Restore history ignored invalid snapshot: {0}; {1}" -f $candidate.Name,$_.Exception.Message) 'WARN'}
+    }
+    if(-not $valid.Count){Write-Warn (L 'No valid managed restore snapshot was found.' 'Tidak ditemukan snapshot restore yang valid.');Pause-Tui;return}
+    Write-Warn (L 'Each snapshot represents ONE managed action, not all historical changes. Select the action to undo.' 'Setiap snapshot hanya mewakili SATU tindakan, bukan semua perubahan sejak awal. Pilih tindakan yang akan dibatalkan.')
+    for($i=0;$i -lt $valid.Count;$i++){Write-Host ('[{0}] {1} | {2}' -f ($i+1),$valid[$i].Created,$valid[$i].Reason)}
+    Write-Host "[B] $(T 'Back')"
+    $allowed=@(1..$valid.Count|ForEach-Object{[string]$_})+'B'
+    $choice=Read-Choice (T 'Select') $allowed
+    if($choice -eq 'B'){return}
+    $selection=[int]$choice - 1
+    $chosen=$valid[$selection]
+    Invoke-RestoreLatest -SnapshotDirectory ([string]$chosen.Directory)
+}
 function Invoke-RestartSpooler {
     Stop-Service Spooler -Force -ErrorAction Stop
     $stopped=Get-Service -Name Spooler -ErrorAction Stop
@@ -1376,42 +1513,115 @@ function Invoke-RestartSpooler {
     Write-Ok (L 'Print Spooler restarted.' 'Print Spooler berhasil direstart.')
 }
 
+function Get-EffectiveSpoolDirectory {
+    $fallback=Join-Path $env:SystemRoot 'System32\spool\PRINTERS'
+    $state=Get-RegistryValueStateStrict 'HKLM:\SYSTEM\CurrentControlSet\Control\Print\Printers' 'DefaultSpoolDirectory'
+    $configured=if($state.Present){[string]$state.Value}else{''}
+    $path=if([string]::IsNullOrWhiteSpace($configured)){$fallback}else{[Environment]::ExpandEnvironmentVariables($configured)}
+    if(-not [IO.Path]::IsPathRooted($path) -or $path.StartsWith('\\')){throw 'Spool directory must be a local absolute path.'}
+    $full=[IO.Path]::GetFullPath($path)
+    if($full.TrimEnd([char]'\') -ieq ([IO.Path]::GetPathRoot($full)).TrimEnd([char]'\')){throw 'Refusing to clear queue files from a drive root.'}
+    if(-not(Test-Path -LiteralPath $full -PathType Container)){throw "Spool directory not found: $full"}
+    $directory=Get-Item -LiteralPath $full -Force -ErrorAction Stop
+    if(($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Spool directory is a reparse point; automatic cleanup refused.'}
+    return $full
+}
 function Invoke-ClearPrintQueue {
-    Write-Warn (L 'This permanently removes pending print jobs and cannot be restored.' 'Ini menghapus print job yang masih menunggu secara permanen dan tidak dapat dikembalikan.')
-    if(-not(Read-YesNo (L 'Continue?' 'Lanjutkan?') $true)){return}
-    $queuePath="$env:SystemRoot\System32\spool\PRINTERS"
-    $failure=$null
-    try{
-        Stop-Service Spooler -Force -ErrorAction Stop
-        $spooler=Get-Service -Name Spooler -ErrorAction Stop
-        if($spooler.Status -ne 'Stopped'){throw 'Print Spooler did not reach Stopped state.'}
-
-        if(Test-Path -LiteralPath $queuePath -PathType Container){
-            $queueFiles=@(Get-ChildItem -LiteralPath $queuePath -Force -ErrorAction Stop)
-            foreach($item in $queueFiles){Remove-Item -LiteralPath $item.FullName -Force -Recurse -ErrorAction Stop}
-            $remaining=@(Get-ChildItem -LiteralPath $queuePath -Force -ErrorAction Stop)
-            if($remaining.Count){throw ("{0} queue file(s) remain after cleanup." -f $remaining.Count)}
-        }
-    }catch{
-        $failure=$_.Exception.Message
-        Write-Log ("Queue cleanup failed before Spooler restart: {0}" -f $failure) 'ERROR'
-    }finally{
-        try{
-            Start-Service Spooler -ErrorAction Stop
-            $spooler=Get-Service -Name Spooler -ErrorAction Stop
-            if($spooler.Status -ne 'Running'){throw 'Print Spooler did not reach Running state after queue cleanup.'}
-        }catch{
-            $restartError=$_.Exception.Message
-            if($failure){$failure="$failure; Spooler restart failed: $restartError"}else{$failure="Spooler restart failed: $restartError"}
-            Write-Log ("Queue cleanup Spooler recovery failed: {0}" -f $restartError) 'ERROR'
-        }
-    }
-    if($failure){
-        Write-Fail ((L 'Pending queue cleanup was not fully completed: {0}' 'Pembersihan antrean tertunda tidak selesai sepenuhnya: {0}') -f $failure)
+    $baseline=[string](Get-Service -Name Spooler -ErrorAction Stop).Status
+    if($baseline -notin @('Running','Stopped')){throw "Print Spooler is in an unsupported state for queue cleanup: $baseline"}
+    $queuePath=Get-EffectiveSpoolDirectory
+    $preview=@(Get-ChildItem -LiteralPath $queuePath -File -Force -ErrorAction Stop|Where-Object{$_.Extension -in @('.SPL','.SHD')})
+    if(-not $preview.Count){
+        Write-Info (L 'No pending SPL/SHD spool files found; nothing changed.' 'Tidak ditemukan file antrean SPL/SHD; tidak ada perubahan.')
         return
     }
-    Write-Ok (L 'Pending queue files cleared and Print Spooler is running.' 'File antrean tertunda berhasil dibersihkan dan Print Spooler sedang berjalan.')
-    Write-Log 'Queue cleared; irreversible.' 'WARN'
+    Write-Warn (L 'This permanently removes pending jobs from ALL printer queues on this PC. Try cancelling the affected printer jobs in Windows Settings first.' 'Ini menghapus job tertunda pada SEMUA antrean printer di PC ini secara permanen. Coba batalkan job printer terkait lewat Settings Windows terlebih dahulu.')
+    Write-Info ((L 'Spool folder: {0}; SPL/SHD files: {1}; initial Spooler: {2}' 'Folder spool: {0}; file SPL/SHD: {1}; Spooler awal: {2}') -f $queuePath,$preview.Count,$baseline)
+    if(-not(Read-YesNo (L 'Permanently delete these queued files?' 'Hapus file antrean tersebut secara permanen?') $true)){return}
+    $failure=$null
+    try{
+        if($baseline -eq 'Running'){
+            Stop-Service Spooler -Force -ErrorAction Stop
+            if([string](Get-Service -Name Spooler -ErrorAction Stop).Status -ne 'Stopped'){throw 'Spooler did not stop.'}
+        }
+        $queueFiles=@(Get-ChildItem -LiteralPath $queuePath -File -Force -ErrorAction Stop|Where-Object{$_.Extension -in @('.SPL','.SHD')})
+        $previewPaths=@($preview|ForEach-Object{[string]$_.FullName}|Sort-Object)
+        $currentPaths=@($queueFiles|ForEach-Object{[string]$_.FullName}|Sort-Object)
+        if($queueFiles.Count -ne $preview.Count -or ($previewPaths -join '|') -cne ($currentPaths -join '|')){
+            throw 'Queued spool files changed since confirmation; no files removed. Recheck the queue.'
+        }
+        foreach($item in $queueFiles){Remove-Item -LiteralPath $item.FullName -Force -ErrorAction Stop}
+        $remaining=@(Get-ChildItem -LiteralPath $queuePath -File -Force -ErrorAction Stop|Where-Object{$_.Extension -in @('.SPL','.SHD')})
+        if($remaining.Count){throw ("{0} queue file(s) remain." -f $remaining.Count)}
+    }catch{
+        $failure=$_.Exception.Message
+        Write-Log ("Queue cleanup failure: {0}" -f $failure) 'ERROR'
+    }finally{
+        try{
+            $current=[string](Get-Service -Name Spooler -ErrorAction Stop).Status
+            if($baseline -eq 'Running' -and $current -ne 'Running'){Start-Service Spooler -ErrorAction Stop}
+            $actual=[string](Get-Service -Name Spooler -ErrorAction Stop).Status
+            if($actual -ne $baseline){throw "Initial Spooler state=$baseline; current=$actual. Restore the original state manually."}
+        }catch{
+            $stateError=$_.Exception.Message
+            if($failure){$failure="$failure; Spooler recovery: $stateError"}else{$failure="Spooler recovery: $stateError"}
+            Write-Log ("Queue cleanup Spooler recovery failed: {0}" -f $stateError) 'ERROR'
+        }
+    }
+    if($failure){Write-Fail ((L 'Queue cleanup was incomplete or original Spooler state could not be verified: {0}' 'Pembersihan antrean tidak selesai atau status awal Spooler tidak terverifikasi: {0}') -f $failure);return}
+    Write-Ok ((L 'Removed {0} spool files; Spooler remains {1} as before.' '{0} file spool dihapus; Spooler tetap {1} seperti sebelumnya.') -f $preview.Count,$baseline)
+    Write-Log ("Queue cleared; files=$($preview.Count); initial Spooler=$baseline; irreversible.") 'WARN'
+}
+
+function Assert-FirewallLocalPolicyEffective {
+    [CmdletBinding()]
+    param([object[]]$Rules,[switch]$RequireEnabled,[switch]$SkipBaselineComparison)
+    if(-not $Rules.Count){return}
+    if(-not(Get-Command Get-NetFirewallProfile -ErrorAction SilentlyContinue)){
+        throw 'Cannot verify effective firewall profile policy; no local firewall repair was started.'
+    }
+    if(-not(Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue)){
+        throw 'Cannot verify effective firewall rule policy; no local firewall repair was started.'
+    }
+    # PersistentStore is a local write target, but ActiveStore is what Windows applies after GPO/MDM merging.
+    $profiles=@(Get-NetFirewallProfile -PolicyStore ActiveStore -ErrorAction Stop)
+    foreach($profileName in @('Domain','Private')){
+        $matching=@($profiles|Where-Object{[string]$_.Name -eq $profileName})
+        if($matching.Count -ne 1){
+            throw ("Cannot identify exactly one effective {0} firewall profile; local repair was blocked." -f $profileName)
+        }
+        if([string]$matching[0].AllowLocalFirewallRules -ne 'True'){
+            throw ("Effective {0} firewall policy does not allow local rule merging (or is unknown). Contact the policy administrator." -f $profileName)
+        }
+        if([string]$matching[0].Enabled -ne 'True'){
+            throw ("Effective {0} firewall profile is disabled or unverifiable. Changing local rules cannot be reported as effective repair." -f $profileName)
+        }
+    }
+    foreach($rule in @($Rules)){
+        $name=[string]$rule.Name
+        if([string]::IsNullOrWhiteSpace($name)){throw 'Firewall rule has no stable name.'}
+        $matching=@(Get-NetFirewallRule -Name $name -PolicyStore ActiveStore -TracePolicyStore -ErrorAction Stop)
+        if($matching.Count -ne 1){
+            throw ("Firewall rule {0} is absent or ambiguous in ActiveStore; local repair is blocked." -f $name)
+        }
+        $active=$matching[0]
+        $source=$active.PSObject.Properties['PolicyStoreSourceType']
+        if($null -eq $source -or [string]$source.Value -ne 'Local'){
+            throw ("Firewall rule {0} is not proven local in effective policy (GPO/MDM override possible); contact the administrator." -f $name)
+        }
+        if([string]$active.Direction -ne 'Inbound' -or [string]$active.Action -ne 'Allow'){
+            throw ("Effective firewall rule {0} is not an inbound Allow rule." -f $name)
+        }
+        $expectedEnabled=if($RequireEnabled){'True'}else{[string]$rule.Enabled}
+        $expectedProfile=if($RequireEnabled){'Domain,Private'}else{[string]$rule.Profile}
+        if(-not $SkipBaselineComparison){
+            $actualProfile=@(([string]$active.Profile -split ',')|ForEach-Object{$_.Trim()}|Where-Object{$_}|Sort-Object -Unique)
+            $baselineProfile=@(($expectedProfile -split ',')|ForEach-Object{$_.Trim()}|Where-Object{$_}|Sort-Object -Unique)
+            if(-not [string]::Equals($expectedEnabled,[string]$active.Enabled,[StringComparison]::OrdinalIgnoreCase) -or ($actualProfile -join ',') -ne ($baselineProfile -join ',')){
+                throw ("Effective firewall rule {0} does not match the expected state; preview/repair is not authoritative." -f $name)
+            }
+        }
+    }
 }
 
 function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null) {
@@ -1419,7 +1629,7 @@ function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null) {
     if(-not(Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue)){Write-Warn (L 'Modern firewall read-back cmdlet is unavailable; repair was not started.' 'Cmdlet pembacaan ulang firewall modern tidak tersedia; perbaikan tidak dijalankan.');return}
     $rules=@(if($PSBoundParameters.ContainsKey('FirewallRules')){@($FirewallRules)}else{@(Get-FirewallSharingRules)})
     if(-not $rules.Count){Write-Warn (L 'File and Printer Sharing firewall group could not be identified.' 'Grup firewall File and Printer Sharing tidak dapat diidentifikasi.');return}
-    $eligible=@($rules|Where-Object{[string]$_.Profile -match 'Private|Domain|Any'})
+    $eligible=@($rules|Where-Object{Test-FirewallRuleNeedsSafeRepair $_})
     if(-not $eligible.Count){Write-Warn (L 'No File and Printer Sharing firewall rules are eligible for the Domain/Private repair.' 'Tidak ada aturan firewall File and Printer Sharing yang dapat diperbaiki untuk Domain/Private.');return}
     $succeeded=0
     $failed=@()
@@ -1439,6 +1649,14 @@ function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null) {
             Write-Log ("Firewall repair failed for rule {0}: {1}" -f $rule.Name,$_.Exception.Message) 'ERROR'
         }
     }
+    if(-not $failed.Count){
+        try{Assert-FirewallLocalPolicyEffective -Rules $eligible -RequireEnabled}
+        catch{
+            $failed+=('EffectiveFirewallPolicy')
+            Write-Log ("Local firewall rule write succeeded but ActiveStore policy verification failed: {0}" -f $_.Exception.Message) 'ERROR'
+            Write-Warn (L 'A local firewall change was made, but effective policy could not be verified. The result is NOT confirmed; review Group Policy and Restore if needed.' 'Aturan firewall lokal telah diubah, tetapi kebijakan efektif belum dapat diverifikasi. Hasilnya BELUM terkonfirmasi; periksa Group Policy dan Restore jika perlu.')
+        }
+    }
     if($failed.Count){
         Write-Fail ((L 'Firewall repair verified {0} of {1} eligible rule(s); {2} failed or could not be verified. Check the log before assuming sharing is enabled.' 'Perbaikan firewall memverifikasi {0} dari {1} aturan yang memenuhi syarat; {2} gagal atau tidak dapat diverifikasi. Periksa log sebelum menganggap sharing sudah aktif.') -f $succeeded,$eligible.Count,$failed.Count)
         return
@@ -1446,7 +1664,7 @@ function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null) {
     Write-Ok ((L 'Verified {0} sharing firewall rule(s) enabled for Domain/Private only.' '{0} aturan firewall sharing terverifikasi aktif hanya untuk Domain/Private.') -f $succeeded)
 }
 function Select-NetworkProfile {
-    $p=@(Get-NetworkProfilesSafe|Where-Object{$_.IPv4Connectivity -ne 'Disconnected'})
+    $p=@(Get-NetworkProfilesSafe|Where-Object{$_.IPv4Connectivity -ne 'Disconnected' -or $_.IPv6Connectivity -ne 'Disconnected'})
     if(-not $p.Count){Write-Warn (L 'No active network profile found.' 'Tidak ditemukan profil jaringan aktif.');return $null}
     for($i=0;$i -lt $p.Count;$i++){Write-Host ('[{0}] {1} / {2} / {3}' -f ($i+1),$p[$i].InterfaceAlias,$p[$i].Name,(Localize-SystemValue ([string]$p[$i].NetworkCategory)))}
     $allowed=@(1..$p.Count|ForEach-Object{[string]$_})+'B'
@@ -1495,6 +1713,9 @@ function Test-FirewallRuleNeedsSafeRepair([object]$Rule) {
     if([string]$Rule.Profile -notmatch 'Private|Domain|Any'){return $false}
     $profiles=@(([string]$Rule.Profile -split ',')|ForEach-Object{$_.Trim()}|Where-Object{$_}|Sort-Object -Unique)
     $isEnabled=[string]::Equals('True',[string]$Rule.Enabled,[StringComparison]::OrdinalIgnoreCase)
+    $direction=$Rule.PSObject.Properties['Direction'];$action=$Rule.PSObject.Properties['Action']
+    if($direction -and [string]$direction.Value -ne 'Inbound'){return $false}
+    if($action -and [string]$action.Value -ne 'Allow'){return $false}
     return (-not $isEnabled -or ($profiles -join ',') -ne 'Domain,Private')
 }
 
@@ -1511,6 +1732,72 @@ function Get-NetworkDiscoveryRepairPlan {
     }
 }
 
+function Confirm-SafeRepairPreview([string]$Action,[string[]]$Steps,[string]$Impact,[string]$RestoreNote) {
+    if(-not $Steps.Count){throw 'A Safe Repair preview needs at least one planned step.'}
+    Write-Rule
+    Write-Info (L 'READ-ONLY PREVIEW: no change or Restore snapshot was made.' 'PRATINJAU HANYA BACA: belum ada perubahan atau snapshot Restore.')
+    Write-Host ('  {0}' -f $Action)
+    foreach($step in @($Steps|Select-Object -First 12)){Write-Host ('  - {0}' -f $step)}
+    if($Steps.Count -gt 12){Write-Info ((L '... plus {0} more planned steps.' '... ditambah {0} langkah lainnya.') -f ($Steps.Count-12))}
+    Write-Warn ((L 'Impact: {0}' 'Dampak: {0}') -f $Impact)
+    Write-Info ((L 'Recovery: {0}' 'Pemulihan: {0}') -f $RestoreNote)
+    Write-Info (L 'This is a snapshot of current observations, not a guarantee; Windows state may change before execution.' 'Ini pengamatan kondisi saat ini, bukan jaminan; kondisi Windows bisa berubah sebelum tindakan.')
+    return [bool](Read-YesNo (L 'Apply this previewed Safe Repair?' 'Jalankan Perbaikan Aman sesuai pratinjau?') $true)
+}
+
+function Assert-SafeRepairPlanUnchanged {
+    [CmdletBinding()]
+    param(
+        [object[]]$ExpectedServices=@(),
+        [object[]]$ExpectedFirewallRules=@(),
+        [switch]$CheckFirewall,
+        [object]$ExpectedNetworkProfile=$null
+    )
+    # Fail closed before snapshot or mutation. This is an optimistic check, not an atomic Windows transaction.
+    if((Get-Command Test-PointAndPrintRecoveryRequired -CommandType Function -ErrorAction SilentlyContinue) -and (Test-PointAndPrintRecoveryRequired)){
+        throw 'Point and Print security recovery became required after the preview. No Safe Repair was started; restore the emergency snapshot first.'
+    }
+    foreach($expected in @($ExpectedServices)){
+        $name=[string]$expected.Name
+        if([string]::IsNullOrWhiteSpace($name)){throw 'Safe Repair preview contains a service without an identifier.'}
+        $actual=Get-Service -Name $name -ErrorAction Stop
+        if($null -eq $actual -or [string]$actual.Status -ne [string]$expected.Status){
+            throw ("Safe Repair plan changed: service {0} no longer has its previewed state. No changes were started; preview again." -f $name)
+        }
+    }
+    if($CheckFirewall){
+        $now=@(Get-FirewallSharingRules|Where-Object{Test-FirewallRuleNeedsSafeRepair $_})
+        if($now.Count -ne $ExpectedFirewallRules.Count){
+            throw 'Safe Repair plan changed: the number of eligible firewall rules differs from preview. No changes were started; preview again.'
+        }
+        foreach($expected in @($ExpectedFirewallRules)){
+            $name=[string]$expected.Name
+            $match=@($now|Where-Object{[string]::Equals([string]$_.Name,$name,[StringComparison]::OrdinalIgnoreCase)})
+            if(-not $name -or $match.Count -ne 1){
+                throw ("Safe Repair plan changed: firewall rule {0} was removed, replaced, or is no longer eligible. No changes were started." -f $name)
+            }
+            foreach($field in @('Enabled','Profile','Direction','Action')){
+                if([string]$match[0].$field -ne [string]$expected.$field){
+                    throw ("Safe Repair plan changed: firewall rule {0} field {1} differs from preview. No changes were started." -f $name,$field)
+                }
+            }
+        }
+    }
+    if($null -ne $ExpectedNetworkProfile){
+        $index=[string]$ExpectedNetworkProfile.InterfaceIndex
+        $matching=@(Get-NetworkProfilesSafe|Where-Object{[string]$_.InterfaceIndex -eq $index})
+        if(-not $index -or $matching.Count -ne 1){
+            throw 'Safe Repair plan changed: the selected network interface disappeared or is ambiguous. No changes were started.'
+        }
+        foreach($field in @('InterfaceAlias','Name','NetworkCategory','IPv4Connectivity','IPv6Connectivity')){
+            $before=$ExpectedNetworkProfile.PSObject.Properties[$field]
+            if($null -ne $before -and [string]$matching[0].$field -ne [string]$before.Value){
+                throw ("Safe Repair plan changed: selected network interface {0} field {1} differs from preview. No changes were started." -f $index,$field)
+            }
+        }
+    }
+}
+
 function Show-SafeRepairMenu {
     while($true){
         Write-Header (L 'SAFE REPAIR' 'PERBAIKAN AMAN')
@@ -1524,9 +1811,14 @@ function Show-SafeRepairMenu {
         Write-Host (L '[6] Run all non-destructive safe repairs' '[6] Jalankan semua perbaikan aman yang tidak destruktif')
         Write-Host "[B] $(T 'Back')"
         $c=Read-Choice (T 'Select') @('1','2','3','4','5','6','B');if($c -eq 'B'){return}
+        if(-not(Test-RepairAllowedAfterRecovery)){Pause-Tui;continue}
         $snap=$null
         try{switch($c){
             '1'{
+                $initial=[string](Get-Service -Name Spooler -ErrorAction Stop).Status
+                $steps=@(((L 'Spooler: currently {0} -> Running after restart' 'Spooler: saat ini {0} -> Berjalan setelah mulai ulang') -f $initial))
+                if(-not(Confirm-SafeRepairPreview (L 'Restart Print Spooler' 'Mulai ulang Print Spooler') $steps (L 'All local printer queues may pause briefly; no queued files are intentionally deleted.' 'Semua antrean printer lokal bisa terhenti sebentar; file antrean tidak sengaja dihapus.') (L 'Service state is captured for Restore; interrupted jobs cannot be recreated.' 'Status layanan disimpan untuk Restore; pekerjaan yang terganggu tidak dapat dibuat ulang.'))){break}
+                Assert-SafeRepairPlanUnchanged -ExpectedServices @([pscustomobject]@{Name='Spooler';Status=$initial})
                 $snap=New-RestoreSnapshot 'Restart Print Spooler' @('Services')
                 if($snap){Invoke-RestartSpooler}
             }
@@ -1539,9 +1831,16 @@ function Show-SafeRepairMenu {
                 $firewallRules=@(Get-FirewallSharingRules)
                 $repairRules=@($firewallRules|Where-Object{Test-FirewallRuleNeedsSafeRepair $_})
                 if(-not $repairRules.Count){
-                    Write-Info (L 'File and Printer Sharing firewall rules already need no Domain/Private repair; Restore history was left unchanged.' 'Aturan firewall File and Printer Sharing tidak memerlukan perbaikan Domain/Private; riwayat Restore tidak diubah.')
+                    Write-Info (L 'No eligible LOCAL sharing firewall rules were found; no Restore snapshot was created. This does not prove effective ActiveStore/GPO access. Run diagnosis if printing still fails.' 'Tidak ditemukan aturan firewall sharing LOKAL yang perlu diubah; snapshot Restore tidak dibuat. Ini bukan bukti akses ActiveStore/GPO sudah terbuka. Jalankan diagnosis jika pencetakan masih gagal.')
                     break
                 }
+                $firewallBaseline=@($repairRules|Select-Object Name,Enabled,Profile,Direction,Action)
+                $steps=@($repairRules|ForEach-Object{
+                    ((L 'Firewall {0}: Enabled={1}, Profile={2} -> Enabled=True, Profile=Domain,Private' 'Firewall {0}: Aktif={1}, Profil={2} -> Aktif=True, Profil=Domain,Private') -f $_.Name,$_.Enabled,$_.Profile)
+                })
+                if(-not(Confirm-SafeRepairPreview (L 'File and Printer Sharing firewall' 'Firewall File and Printer Sharing') $steps (L 'Only selected inbound Private/Domain rules change; trusted-network exposure may increase.' 'Hanya aturan masuk Private/Domain terpilih yang diubah; akses perangkat di jaringan tepercaya dapat bertambah.') (L 'The selected rules previous Enabled/Profile values are stored for Restore.' 'Nilai Enabled/Profile aturan yang dipilih disimpan untuk Restore.'))){break}
+                Assert-SafeRepairPlanUnchanged -CheckFirewall -ExpectedFirewallRules $firewallBaseline
+                Assert-FirewallLocalPolicyEffective -Rules $repairRules
                 $snap=New-RestoreSnapshot 'Enable sharing firewall rules' @('Firewall') -FirewallRules $repairRules
                 if($snap){Enable-PrivateFirewallSharing -FirewallRules $repairRules}
             }
@@ -1560,6 +1859,10 @@ function Show-SafeRepairMenu {
                     Write-Warn (L 'Network-profile read/write cmdlets are unavailable; no repair snapshot was created.' 'Cmdlet baca/tulis profil jaringan tidak tersedia; snapshot perbaikan tidak dibuat.')
                     break
                 }
+                $networkBaseline=$selectedProfile|Select-Object InterfaceIndex,InterfaceAlias,Name,NetworkCategory,IPv4Connectivity,IPv6Connectivity
+                $steps=@(((L 'Interface {0} (index {1}): {2} -> Private' 'Antarmuka {0} (indeks {1}): {2} -> Privat') -f $selectedProfile.InterfaceAlias,$selectedProfile.InterfaceIndex,$selectedProfile.NetworkCategory))
+                if(-not(Confirm-SafeRepairPreview (L 'Change selected network profile' 'Ubah profil jaringan terpilih') $steps (L 'Discovery and sharing exposure on the selected interface may change. Confirm the network is trusted.' 'Penemuan perangkat dan akses sharing pada antarmuka ini dapat berubah. Pastikan jaringannya tepercaya.') (L 'The selected interface and original network category are captured for Restore.' 'Antarmuka dan kategori jaringan awal disimpan untuk Restore.'))){break}
+                Assert-SafeRepairPlanUnchanged -ExpectedNetworkProfile $networkBaseline
                 $snap=New-RestoreSnapshot 'Change selected network profile' @('Network') -NetworkProfiles @($selectedProfile)
                 if($snap){Set-OneNetworkPrivate -SelectedProfile $selectedProfile}
             }
@@ -1570,6 +1873,12 @@ function Show-SafeRepairMenu {
                     break
                 }
                 $serviceNames=@($plan.Services|Where-Object{$_.Status -ne 'Running'}|ForEach-Object{[string]$_.Name})
+                $serviceBaseline=@($plan.Services|Select-Object Name,Status)
+                $steps=@($plan.Services|Where-Object{$_.Status -ne 'Running'}|ForEach-Object{
+                    ((L 'Service {0}: {1} -> Running' 'Layanan {0}: {1} -> Berjalan') -f $_.Name,$_.Status)
+                })
+                if(-not(Confirm-SafeRepairPreview (L 'Start Network Discovery services' 'Jalankan layanan Network Discovery') $steps (L 'The PC may become discoverable on trusted networks; startup type is not changed.' 'PC dapat terlihat di jaringan tepercaya; tipe startup tidak diubah.') (L 'Only the affected service states are captured for Restore.' 'Hanya keadaan layanan yang terdampak disimpan untuk Restore.'))){break}
+                Assert-SafeRepairPlanUnchanged -ExpectedServices $serviceBaseline
                 $snap=New-RestoreSnapshot 'Start Network Discovery services' @('Services') -ServiceNames $serviceNames
                 if($snap){Start-NetworkDiscoveryServices}
             }
@@ -1583,6 +1892,23 @@ function Show-SafeRepairMenu {
                 }else{
                     Write-Warn (L 'Firewall read/write cmdlets are unavailable; the combined repair will continue with service repairs only.' 'Cmdlet baca/tulis firewall tidak tersedia; perbaikan gabungan akan tetap menjalankan perbaikan layanan saja.')
                 }
+                $spoolerBefore=Get-Service -Name Spooler -ErrorAction Stop
+                $combinedServiceBaseline=@([pscustomobject]@{Name='Spooler';Status=[string]$spoolerBefore.Status})
+                $combinedServiceBaseline+=@($discoveryPlan.Services|Select-Object Name,Status)
+                $combinedFirewallBaseline=@($repairRules|Select-Object Name,Enabled,Profile,Direction,Action)
+                if(-not $repairRules.Count){
+                    Write-Warn (L 'Combined Safe Repair found no eligible local firewall changes. Effective firewall policy and GPO restrictions remain unverified.' 'Perbaikan Aman gabungan tidak menemukan aturan firewall lokal yang perlu diubah. Kebijakan firewall efektif dan pembatasan GPO belum terverifikasi.')
+                }
+                $steps=@((L 'Restart Print Spooler (pending job files are not deleted)' 'Mulai ulang Print Spooler (file antrean tidak dihapus)'))
+                $steps+=@($discoveryPlan.Services|Where-Object{$_.Status -ne 'Running'}|ForEach-Object{
+                    ((L 'Service {0}: {1} -> Running' 'Layanan {0}: {1} -> Berjalan') -f $_.Name,$_.Status)
+                })
+                $steps+=@($repairRules|ForEach-Object{
+                    ((L 'Firewall {0}: Enabled={1}, Profile={2} -> Enabled=True, Profile=Domain,Private' 'Firewall {0}: Aktif={1}, Profil={2} -> Aktif=True, Profil=Domain,Private') -f $_.Name,$_.Enabled,$_.Profile)
+                })
+                if(-not(Confirm-SafeRepairPreview (L 'Combined non-destructive Safe Repair' 'Perbaikan Aman gabungan') $steps (L 'Printing may pause; discovery and trusted-network firewall exposure may change. No queue deletion or security downgrade is planned.' 'Pencetakan dapat tertunda; layanan penemuan dan akses firewall jaringan tepercaya dapat berubah. Tidak ada penghapusan antrean atau penurunan keamanan.') (L 'Affected service/firewall states are snapshotted, but interrupted print jobs cannot be recreated.' 'Status layanan/firewall yang berubah disimpan, tetapi pekerjaan cetak yang terganggu tidak dapat dibuat ulang.'))){break}
+                Assert-SafeRepairPlanUnchanged -ExpectedServices $combinedServiceBaseline -CheckFirewall -ExpectedFirewallRules $combinedFirewallBaseline
+                if($repairRules.Count){Assert-FirewallLocalPolicyEffective -Rules $repairRules}
                 $snap=New-RestoreSnapshot 'Combined non-destructive Safe Repair' @('Services','Firewall') -FirewallRules $repairRules -ServiceNames $serviceNames
                 if($snap){
                     try{Invoke-RestartSpooler}
@@ -1612,6 +1938,12 @@ function Show-SafeRepairMenu {
     }
 }
 
+function Assert-PrinterPolicyNotManaged([string]$RegistryPath,[string]$ValueName) {
+    $rsop=Get-ComputerRsopRegistryPolicySettings
+    if(-not $rsop.Available){return}
+    $policy=Find-RsopRegistryPolicySource $rsop.Settings $RegistryPath $ValueName
+    if($null -ne $policy){throw ("Setting {0} is controlled by {1}. Change the managing policy rather than overwriting its registry output." -f $ValueName,$policy.Source)}
+}
 function Set-RpcNamedPipeFallback {
     $diagnosis=Invoke-Diagnosis -Quiet
     $role=[string]$diagnosis.Role
@@ -1636,6 +1968,7 @@ function Set-RpcNamedPipeFallback {
         return
     }
 
+    foreach($name in $registryNames){Assert-PrinterPolicyNotManaged 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC' $name}
     $snap=New-RestoreSnapshot 'RPC Named Pipes compatibility fallback' @('Registry') -RegistryNames $registryNames
     if(-not $snap){return}
     Write-Warn (L 'RPC over TCP is the Windows default. Named Pipes is a compatibility fallback.' 'RPC melalui TCP adalah default Windows. Named Pipes hanya fallback kompatibilitas.')
@@ -1646,17 +1979,19 @@ function Set-RpcNamedPipeFallback {
 
 function Connect-SharedPrinterTemporarilyRelaxed {
     $unc=(Read-Host (L 'Shared printer path, e.g. \\PRINT-PC\OfficePrinter' 'Path printer sharing, contoh \\PC-PRINT\PrinterKantor')).Trim()
-    if($unc -notmatch '^\\\\[^\\]+\\[^\\]+$'){Write-Warn (L 'Invalid printer UNC path.' 'Path UNC printer tidak valid.');return}
+    if(-not(Test-SafePrinterUncPath $unc)){Write-Warn (L 'Invalid printer UNC path.' 'Path UNC printer tidak valid.');return}
     $existing=@(Get-PrinterInventory|Where-Object{[string]$_.Name -eq [string]$unc})
     if($existing.Count){
         Write-Info ((L 'This shared printer is already connected; Point and Print protection was not changed: {0}' 'Printer sharing ini sudah terhubung; proteksi Point and Print tidak diubah: {0}') -f $unc)
         return
     }
     $path='HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint'
-    Write-Warn (L 'This temporarily reduces Point and Print driver-installation protection. It will be restored immediately after the connection attempt.' 'Tindakan ini menurunkan proteksi pemasangan driver Point and Print hanya sementara. Nilai sebelumnya akan langsung dikembalikan setelah percobaan koneksi.')
+    Write-Warn (L 'HIGH RISK: temporarily setting RestrictDriverInstallationToAdministrators=0 can permit non-admin installation of unsafe printer drivers. Microsoft considers this configuration vulnerable. Only test on an isolated trusted PC; automatic rollback and emergency recovery are not a substitute for the security protection.' 'RISIKO TINGGI: pengaturan sementara RestrictDriverInstallationToAdministrators=0 dapat mengizinkan pengguna non-admin memasang driver printer berbahaya. Microsoft menganggap konfigurasi ini rentan. Uji hanya di PC tepercaya yang terisolasi; rollback dan pemulihan darurat bukan pengganti perlindungan keamanan tersebut.')
     if((Read-Host (L 'Type RISK to continue' 'Ketik RISK untuk lanjut')).Trim().ToUpperInvariant() -ne 'RISK'){return}
     $original=Get-RegistryValueStateStrict $path 'RestrictDriverInstallationToAdministrators'
 
+    try{Assert-ManagedBackupPointer $script:LatestStateFile;Assert-ManagedBackupPointer (Get-PendingPointAndPrintMarkerPath)}
+    catch{Write-Fail ((L 'Unsafe backup pointer: {0}' 'Pointer backup tidak aman: {0}') -f $_.Exception.Message);return}
     $hadPreviousLatest=Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf
     $previousLatest=$null
     if($hadPreviousLatest){
@@ -1668,7 +2003,15 @@ function Connect-SharedPrinterTemporarilyRelaxed {
         }
     }
 
+    Assert-PrinterPolicyNotManaged $path 'RestrictDriverInstallationToAdministrators'
     $snap=New-RestoreSnapshot 'Temporary Point and Print relaxation' @('Registry');if(-not $snap){return}
+    # The durable marker survives a crash even if another action changes latest_backup.txt.
+    $emergencyMarker=Get-PendingPointAndPrintMarkerPath
+    try{Assert-ManagedBackupPointer $emergencyMarker;$snap|Set-Content -LiteralPath $emergencyMarker -Encoding UTF8 -ErrorAction Stop}
+    catch{
+        Write-Fail ((L 'Could not write Point and Print recovery marker; no security setting was changed: {0}' 'Tidak dapat menyimpan penanda pemulihan Point and Print; pengaturan keamanan belum diubah: {0}') -f $_.Exception.Message)
+        return
+    }
     try{
         Set-RegistryDword $path 'RestrictDriverInstallationToAdministrators' 0
         if(Get-Command Add-Printer -ErrorAction SilentlyContinue){
@@ -1694,8 +2037,10 @@ function Connect-SharedPrinterTemporarilyRelaxed {
 
         if($rollbackSucceeded){
             try{
+                if(Test-Path -LiteralPath $emergencyMarker -PathType Leaf){Remove-Item -LiteralPath $emergencyMarker -Force -ErrorAction Stop}
                 if($hadPreviousLatest){
                     if(-not $previousLatest){throw 'Previous Restore pointer was empty.'}
+                    Assert-ManagedBackupPointer $script:LatestStateFile
                     $previousLatest|Set-Content -LiteralPath $script:LatestStateFile -Encoding UTF8 -ErrorAction Stop
                 }else{
                     Remove-Item -LiteralPath $script:LatestStateFile -Force -ErrorAction SilentlyContinue
@@ -1722,6 +2067,7 @@ function Set-RpcPrivacyCompatibility {
         Write-Info (L 'RPC packet privacy is already disabled; Restore history was left unchanged.' 'Privasi paket RPC sudah dinonaktifkan; riwayat Restore tidak diubah.')
         return
     }
+    Assert-PrinterPolicyNotManaged 'HKLM:\SYSTEM\CurrentControlSet\Control\Print' 'RpcAuthnLevelPrivacyEnabled'
     $snap=New-RestoreSnapshot 'High-risk RPC privacy workaround' @('Registry')
     if($snap){Set-RegistryDword 'HKLM:\SYSTEM\CurrentControlSet\Control\Print' 'RpcAuthnLevelPrivacyEnabled' 0;Write-Warn (L 'RPC packet privacy is now disabled.' 'Privasi paket RPC sekarang dinonaktifkan.');Write-Info ((L 'Restore snapshot: {0}' 'Snapshot restore: {0}') -f $snap)}
 }
@@ -1770,6 +2116,7 @@ function Show-CompatibilityMenu {
         Write-Host (L '[5] Disable RPC packet privacy [HIGH RISK]' '[5] Nonaktifkan privasi paket RPC [RISIKO TINGGI]') -ForegroundColor Yellow
         Write-Host "[B] $(T 'Back')"
         $c=Read-Choice (T 'Select') @('1','2','3','4','5','B');if($c -eq 'B'){return}
+        if($c -ne '3' -and -not(Test-RepairAllowedAfterRecovery)){Pause-Tui;continue}
         try{switch($c){'1'{Set-RpcNamedPipeFallback};'2'{Connect-SharedPrinterTemporarilyRelaxed};'3'{Show-WppHelp};'4'{Reset-ClientPrinterConnectionTargeted};'5'{Set-RpcPrivacyCompatibility}}}catch{Write-Fail $_.Exception.Message}
         Pause-Tui
     }
@@ -1841,6 +2188,7 @@ function Show-LegacyMenu {
         Write-Host (L '[4] Blank-password remote logon: NOT AUTOMATED (use a password instead)' '[4] Login remote tanpa password: TIDAK DIOTOMATISKAN (gunakan password)')
         Write-Host "[B] $(T 'Back')"
         $c=Read-Choice (T 'Select') @('1','2','3','4','B');if($c -eq 'B'){return}
+        if($c -ne '4' -and -not(Test-RepairAllowedAfterRecovery)){Pause-Tui;continue}
         try{switch($c){'1'{Enable-Smb1ClientLegacy};'2'{Enable-InsecureGuestLegacy};'3'{Set-LegacyLmCompatibility};'4'{Write-Warn (L 'This utility intentionally refuses to disable LimitBlankPasswordUse. Use password-protected credentials instead.' 'Utilitas ini sengaja menolak menonaktifkan LimitBlankPasswordUse. Gunakan akun yang dilindungi password.')}}}catch{Write-Fail $_.Exception.Message}
         Pause-Tui
     }
@@ -1936,7 +2284,7 @@ function ConvertTo-DiagnosticExportObject($D,[object]$TargetPath=$null,[object]$
     if($null -ne $TargetPath){
         $rpcPortProp=$TargetPath.PSObject.Properties['RpcConfiguredPort'];$rpcPortReachableProp=$TargetPath.PSObject.Properties['RpcConfiguredPortReachable'];$smbSignalsProp=$TargetPath.PSObject.Properties['SmbSecuritySignals']
         [object[]]$smbSignals=@();if($smbSignalsProp){[object[]]$smbSignals=@($smbSignalsProp.Value)}
-        $target=[pscustomobject]@{TestedAtUtc=[string]$TargetPath.TestedAtUtc;DnsResolved=[bool]$TargetPath.DnsResolved;Smb445Reachable=[bool]$TargetPath.Smb445Reachable;Rpc135Reachable=[bool]$TargetPath.Rpc135Reachable;RpcConfiguredPort=if($rpcPortProp -and $null -ne $rpcPortProp.Value){[int]$rpcPortProp.Value}else{$null};RpcConfiguredPortReachable=if($rpcPortReachableProp -and $null -ne $rpcPortReachableProp.Value){[bool]$rpcPortReachableProp.Value}else{$null};ShareNamespaceAccessible=[bool]$TargetPath.ShareNamespaceAccessible;PrinterInstalled=[bool]$TargetPath.PrinterInstalled;SmbSecuritySignals=$smbSignals;LikelyLayer=[string]$TargetPath.LikelyLayer}
+        $target=[pscustomobject]@{TestedAtUtc=[string]$TargetPath.TestedAtUtc;DnsResolved=[bool]$TargetPath.DnsResolved;Smb445Reachable=[bool]$TargetPath.Smb445Reachable;Rpc135Reachable=[bool]$TargetPath.Rpc135Reachable;RpcTransport=if($TargetPath.PSObject.Properties['RpcTransport']){[string]$TargetPath.RpcTransport}else{$null};RpcConfiguredPortSource=if($TargetPath.PSObject.Properties['RpcConfiguredPortSource']){[string]$TargetPath.RpcConfiguredPortSource}else{$null};RpcConfiguredPort=if($rpcPortProp -and $null -ne $rpcPortProp.Value){[int]$rpcPortProp.Value}else{$null};RpcConfiguredPortReachable=if($rpcPortReachableProp -and $null -ne $rpcPortReachableProp.Value){[bool]$rpcPortReachableProp.Value}else{$null};ShareNamespaceAccessible=if($null -ne $TargetPath.ShareNamespaceAccessible){[bool]$TargetPath.ShareNamespaceAccessible}else{$null};PrinterInstalled=[bool]$TargetPath.PrinterInstalled;SmbSecuritySignals=$smbSignals;LikelyLayer=[string]$TargetPath.LikelyLayer}
     }
     $verification=$null
     if($null -ne $FunctionalVerification){$verification=[pscustomobject]@{VerifiedAtUtc=[string]$FunctionalVerification.VerifiedAtUtc;DiagnosticCollectedAtUtc=[string]$FunctionalVerification.DiagnosticCollectedAtUtc;RequestStatus=[string]$FunctionalVerification.RequestStatus;Outcome=[string]$FunctionalVerification.Outcome;NetworkConnection=[bool]$FunctionalVerification.NetworkConnection;DriverModel=[string]$FunctionalVerification.DriverModel;DriverProviderClass=[string]$FunctionalVerification.DriverProviderClass;DriverTechnology=[string]$FunctionalVerification.DriverTechnology}}
@@ -2002,6 +2350,7 @@ function Export-DiagnosticText {
     $lines+='';$lines+=(L 'Printers:' 'Printer:')
     foreach($p in $d.Printers){$lines+="- $($p.Name) | driver=$($p.DriverName) | share=$($p.ShareName) | model=$($p.DriverModel) | provider=$($p.DriverProviderClass) | technology=$($p.DriverTechnology)"}
     $lines|Set-Content -LiteralPath $path -Encoding UTF8
+    Write-Warn (L 'Text reports contain printer/share names. Redact before publishing.' 'Laporan teks berisi nama printer/share. Sensor sebelum dipublikasikan.')
     Write-Ok ((L 'Diagnostic report exported: {0}' 'Laporan diagnosis diekspor: {0}') -f $path)
 }
 
@@ -2063,9 +2412,73 @@ function Write-MainMenuItem([string]$Number,[string]$Label,[ConsoleColor]$Color=
     Write-Host $text -ForegroundColor $Color
 }
 
+function Get-PendingPointAndPrintMarkerPath {
+    return (Join-Path $script:BackupRoot 'pointandprint-pending.txt')
+}
+function Show-PendingPointAndPrintRecovery {
+    $marker=Get-PendingPointAndPrintMarkerPath
+    $hasMarker=Test-Path -LiteralPath $marker -PathType Leaf
+    if(-not $hasMarker -and -not(Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf)){return}
+    try{
+        $source=if($hasMarker){$marker}else{$script:LatestStateFile}
+        Assert-ManagedBackupPointer $source
+        $path=([string](Get-Content -LiteralPath $source -ErrorAction Stop|Select-Object -First 1)).Trim()
+        $snapshot=Get-ValidatedRestoreSnapshot $path
+        if([string]$snapshot.State.Reason -ne 'Temporary Point and Print relaxation'){
+            if($hasMarker){throw 'Recovery marker does not reference an emergency Point and Print snapshot.'}
+            return
+        }
+        $entry=@($snapshot.State.Registry|Where-Object{$_.Name -eq 'RestrictDriverInstallationToAdministrators'})|Select-Object -First 1
+        if(-not $entry){throw 'Emergency snapshot does not contain the Point and Print restriction.'}
+        $actual=Get-RegistryValueStateStrict ([string]$entry.Path) ([string]$entry.Name)
+        if(Test-RegistryStateMatches $entry $actual){
+            if($hasMarker){
+                Remove-Item -LiteralPath $marker -Force -ErrorAction Stop
+                Write-Info (L 'Point and Print policy matches its captured baseline; stale emergency marker cleared.' 'Kebijakan Point and Print sudah sesuai kondisi awal; penanda darurat lama dibersihkan.')
+            }
+            return
+        }
+        Write-Fail (L 'Emergency: Point and Print driver-installation restriction differs from the captured baseline. Restore the emergency snapshot before making other changes.' 'Darurat: pembatasan instalasi driver Point and Print berbeda dari kondisi awal. Pulihkan snapshot darurat sebelum perubahan lain.')
+    }catch{
+        Write-Fail ((L 'Point and Print recovery state could not be verified: {0}. Do not assume the restriction is safe.' 'Kondisi pemulihan Point and Print tidak dapat diverifikasi: {0}. Jangan menganggap pembatasannya sudah aman.') -f $_.Exception.Message)
+        Write-Log ("Point and Print emergency check failed: {0}" -f $_.Exception.Message) 'ERROR'
+    }
+}
+
+function Test-PointAndPrintRecoveryRequired {
+    # Interactive production paths initialize the workspace first. Synthetic tests may load functions alone.
+    $backupRootVar=Get-Variable -Name BackupRoot -Scope Script -ErrorAction SilentlyContinue
+    $latestFileVar=Get-Variable -Name LatestStateFile -Scope Script -ErrorAction SilentlyContinue
+    if($null -eq $backupRootVar -or $null -eq $latestFileVar){return $false}
+    if([string]::IsNullOrWhiteSpace([string]$backupRootVar.Value) -or [string]::IsNullOrWhiteSpace([string]$latestFileVar.Value)){return $false}
+    $marker=Get-PendingPointAndPrintMarkerPath
+    $hasMarker=Test-Path -LiteralPath $marker -PathType Leaf
+    if(-not $hasMarker -and -not(Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf)){return $false}
+    try{
+        $source=if($hasMarker){$marker}else{$script:LatestStateFile}
+        Assert-ManagedBackupPointer $source
+        $snapshotPath=([string](Get-Content -LiteralPath $source -ErrorAction Stop|Select-Object -First 1)).Trim()
+        $snapshot=Get-ValidatedRestoreSnapshot $snapshotPath
+        if([string]$snapshot.State.Reason -ne 'Temporary Point and Print relaxation'){return [bool]$hasMarker}
+        $entry=@($snapshot.State.Registry|Where-Object{$_.Name -eq 'RestrictDriverInstallationToAdministrators'})|Select-Object -First 1
+        if(-not $entry){return $true}
+        $actual=Get-RegistryValueStateStrict ([string]$entry.Path) ([string]$entry.Name)
+        return -not(Test-RegistryStateMatches $entry $actual)
+    }catch{
+        # A corrupt emergency marker is an unsafe unknown. A bad general restore pointer must not lock all repairs.
+        return [bool]$hasMarker
+    }
+}
+function Test-RepairAllowedAfterRecovery {
+    if(-not(Test-PointAndPrintRecoveryRequired)){return $true}
+    Write-Fail (L 'RECOVERY REQUIRED: Point and Print security differs from its baseline or its emergency state is unknown. Repairs are blocked. Restore the emergency snapshot using menu [5] first.' 'PEMULIHAN WAJIB: keamanan Point and Print berbeda dari kondisi awal atau kondisi darurat belum diketahui. Perbaikan diblokir. Restore snapshot darurat melalui menu [5] terlebih dahulu.')
+    return $false
+}
+
 function Show-MainMenu {
     while($true){
         Write-Header (T 'Main')
+        Show-PendingPointAndPrintRecovery
         $os=Get-OsInfo
         $spool=Get-Service Spooler -ErrorAction SilentlyContinue
         $languageName=if($script:Language -eq 'ID'){'Indonesia'}else{'English'}
@@ -2086,7 +2499,8 @@ function Show-MainMenu {
         Write-MainMenuItem '9' (T 'Exit') DarkGray
         Write-Rule
         $c=Read-Choice (T 'Select') @('1','2','3','4','5','6','7','8','9')
-        switch($c){'1'{[void](Invoke-Diagnosis)};'2'{Show-SafeRepairMenu};'3'{Show-CompatibilityMenu};'4'{Show-LegacyMenu};'5'{Invoke-RestoreLatest};'6'{Show-ToolsMenu};'7'{Show-GuideMenu};'8'{Show-LanguageMenu};'9'{return}}
+        if($c -in @('2','3','4') -and -not(Test-RepairAllowedAfterRecovery)){Pause-Tui;continue}
+        switch($c){'1'{[void](Invoke-Diagnosis)};'2'{Show-SafeRepairMenu};'3'{Show-CompatibilityMenu};'4'{Show-LegacyMenu};'5'{Invoke-RestoreHistory};'6'{Show-ToolsMenu};'7'{Show-GuideMenu};'8'{Show-LanguageMenu};'9'{return}}
     }
 }
 $headlessIntent = $DiagnoseOnly -or -not [string]::IsNullOrWhiteSpace($JsonOutput)
@@ -2106,7 +2520,7 @@ try {
         Write-Output $outputPath
         exit 0
     }
-    if(-not(Ensure-Administrator)){if(-not(Test-IsAdministrator)){exit 0}}
+    if(-not(Ensure-Administrator)){if(-not(Test-IsAdministrator)){if($script:NoElevationRequested -or -not $script:ElevationLaunched){exit 5}else{exit 0}}}
     Show-MainMenu
 } catch {
     if($headlessIntent){

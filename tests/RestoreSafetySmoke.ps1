@@ -61,6 +61,44 @@ try {
     $checked=Get-ValidatedRestoreSnapshot $validDir
     if($checked.Directory -ne [IO.Path]::GetFullPath($validDir)){throw 'Valid managed restore snapshot was not accepted.'}
 
+    # Snapshot JSON must be a regular, bounded file: no reparse traversal or oversized parsing.
+    $hugeDir=Join-Path $script:BackupRoot '20260918-120019-abcdef'
+    New-Item -ItemType Directory -Path $hugeDir -Force|Out-Null
+    $hugeFile=Join-Path $hugeDir 'managed-state.json'
+    [IO.File]::WriteAllBytes($hugeFile,(New-Object byte[] 1048577))
+    Assert-Rejected $hugeDir 'oversized snapshot state file'
+    $sourceFile=Join-Path $validDir 'managed-state.json'
+    $linkedDir=Join-Path $script:BackupRoot '20260918-120020-abcdef'
+    New-Item -ItemType Directory -Path $linkedDir -Force|Out-Null
+    $link=Join-Path $linkedDir 'managed-state.json'
+    try{
+        New-Item -ItemType SymbolicLink -Path $link -Target $sourceFile -ErrorAction Stop|Out-Null
+        Assert-Rejected $linkedDir 'reparse-point snapshot state file'
+    }catch{
+        if(-not(Test-Path -LiteralPath $link)){Write-Verbose 'This Windows runner disallows creation of a test symlink.'}
+        else{throw}
+    }
+
+    $pointer=Join-Path $script:BackupRoot 'latest_backup.txt'
+    ('x' * 5000)|Set-Content -LiteralPath $pointer -Encoding ASCII
+    $oversizeRejected=$false
+    try{Assert-ManagedBackupPointer $pointer}catch{$oversizeRejected=$true}
+    if(-not $oversizeRejected){throw 'Oversized Restore pointer was accepted.'}
+    Remove-Item -LiteralPath $pointer -Force
+    $outsidePointer=Join-Path $temp 'external-pointer.txt'
+    'outside unchanged'|Set-Content -LiteralPath $outsidePointer
+    try{
+        New-Item -ItemType SymbolicLink -Path $pointer -Target $outsidePointer -ErrorAction Stop|Out-Null
+        $linkedPointerRejected=$false
+        try{Assert-ManagedBackupPointer $pointer}catch{$linkedPointerRejected=$true}
+        if(-not $linkedPointerRejected){throw 'Linked restore pointer was accepted.'}
+        if((Get-Content -LiteralPath $outsidePointer -Raw).Trim() -ne 'outside unchanged'){throw 'Linked restore pointer overwrote the external target.'}
+    }catch{
+        if(-not(Test-Path -LiteralPath $pointer)){Write-Verbose 'Symlink creation unavailable on this Windows runner.'}
+        else{throw}
+    }
+    if(Test-Path -LiteralPath $pointer){Remove-Item -LiteralPath $pointer -Force}
+
     $outside=Join-Path $temp '20260918-120001-abcdef'
     Write-Snapshot $outside $valid
     Assert-Rejected $outside 'outside backup root'

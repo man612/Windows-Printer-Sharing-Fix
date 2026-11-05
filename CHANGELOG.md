@@ -1,6 +1,43 @@
 # Changelog
 
-## Unreleased
+## 4.2.1 - Unreleased
+
+### Fixed and hardened
+
+- Keep the original docs/QUICKSTART and generate a deterministic root quickstart with correctly rebased docs links in ZIP releases.
+
+- Verify backup pointers are ordinary, bounded files rather than reparse links before elevated snapshot and emergency marker writes.
+
+- Audit every packaged Markdown/HTML relative link against the extracted release ZIP to prevent missing documentation, offline images, and example references.
+
+- Reject reparse-point backup roots and linked or oversized managed-state JSON files before parsing/restoring; cover large snapshots and linked-file fixtures in security smoke.
+
+- Removed direct GitHub ref-name template interpolation from release PowerShell blocks; use environment variables to prevent script injection through tag text.
+
+- Include linked Safe Repair/A1 runbooks, their referenced read-only tools, the README image, and the contribution guide in the release ZIP; enforce extracted-archive checks so offline links and commands work.
+
+- Prevent partially applying a Restore when policy now overrides its managed firewall rules; validate effective local policy before any Restore mutation and verify ActiveStore after firewall restoration.
+
+- Added fail-closed effective firewall checks: verify ActiveStore local provenance, Domain/Private firewall/local merge policy before Safe Repair snapshots, and active policy postconditions after local changes; no GPO edits.
+
+- Reject stale Safe Repair approvals before snapshot/mutation: revalidate service states, firewall rule eligibility/properties, and selected network identity/category; add regression tests for changed targets and combined repairs.
+
+- Added interactive read-only Safe Repair plan previews with impact, scoped Restore limitations and default-No consent; queue cleanup retains its separate destructive-operation confirmation.
+
+- Hardened queue purge with all-machine file preview, default-No confirmation, original Spooler status preservation, and changed-file-count refusal.
+- Blocked repair actions and unrelated Restore while pending Point and Print security recovery is unverified.
+- Added synthetic queue/recovery tests and cross-Windows CI smoke (Windows Server 2022 x64 and Windows 11 ARM64); real host/client testing remains deferred.
+
+
+- RPC troubleshooting respects Named Pipes and distinguishes local configuration from verified remote port evidence.
+- PrintService events require target-path correlation; UNC names receive stricter validation.
+- Custom spool directories are honored and queue cleanup deletes only SPL/SHD job files.
+- SMB1 restore reports pending reboot distinctly from verified success.
+- Restore provides per-action snapshot selection and interrupted Point and Print recovery warnings.
+- Share namespace checks are bounded, and unknown results are distinguished from confirmed failures.
+- Narrower firewall mutation, IPv6 handling, CIM printer fallback, GPO checks, and text-export privacy warning.
+- Final review fixed unknown-versus-failed namespace classification, prevented direct-IP printer removal as a shared connection, and made interrupted Point and Print recovery durable.
+- Added separate, sanitized A1 host/client readiness preflights; successful TCP/queue checks remain explicitly unverified until a real print succeeds.
 
 ### Changed
 

@@ -2,6 +2,8 @@
 
 Static CI protects syntax and architecture rules, but printer sharing must also be validated on real/disposable Windows machines because behavior depends on the exact OS servicing build (base build + UBR when available), driver type, policy, network profile, host/client roles, and printer hardware.
 
+GitHub CI also runs **synthetic/read-only** smoke checks on `windows-2022` (Windows Server 2022 x64) and `windows-11-arm` (Windows 11 ARM64), in addition to the full Windows Server 2025 suite. These check code portability; none replaces a client-to-host shared-printer test or proves Windows 11 x64 printer-driver compatibility.
+
 ## Minimum lab topology
 
 Use at least two Windows VMs on an isolated virtual network:
@@ -27,6 +29,8 @@ Do not test SMB1, insecure guest authentication, legacy LM authentication, or RP
 
 Planned scenarios and completed validation are tracked separately. See [REAL-WORLD-RESULTS.md](REAL-WORLD-RESULTS.md) for the evidence ledger and current A1-A6 status.
 
+**⏸ Deferred (2026-11-04):** seluruh pengujian nyata A1–A6 ditunda sampai tersedia PC kedua atau dua VM Windows terisolasi. Pengujian otomatis (CI) tetap boleh berlanjut, tetapi tidak menggantikan bukti koneksi dan test page pada dua mesin. Jangan menandai kasus mana pun sebagai `Validated` sebelum bukti diterima.
+
 For each real/lab run, use the repository **Compatibility report** issue form. Record the exact Windows builds, driver/path type, WPP/network state, earliest relevant failure layer, highest repair tier used, functional outcome, and Restore result when applicable.
 
 For a sanitized machine snapshot, testers working from a repository/source checkout can run:
@@ -36,6 +40,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Collect-LabEvide
 ```
 
 Run it once on each relevant side. The collector creates Markdown and JSON locally, omits common machine/network identifiers, and also omits installed driver names and security-posture values by default. Add the target driver manually to the issue form; use the collector's opt-in switches only when extra detail is necessary. Review every file before posting it publicly. By default, files are written under `%TEMP%\WindowsPrinterSharingFix-Evidence`.
+
+## A1 read-only host/client preflight
+
+The [A1 lab runbook](A1-LAB-RUNBOOK.md) provides a safe preflight for each side with sanitized JSON. This does not count as accepted A1 evidence until a real lab client-to-host print job and its observed outcome have also been documented.
 
 ## Network scenarios
 
@@ -59,6 +67,10 @@ Expected behavior: the target-path diagnostic should identify the earliest faili
 4. Clear queue and confirm explicit irreversible-action warning.
 5. Restart Spooler and confirm service returns to Running.
 6. Restore after non-destructive Safe Repair and compare service state to snapshot.
+
+## Point and Print security boundary
+
+Microsoft's [KB5005652](https://support.microsoft.com/en-gb/servicing/os/windows/2021/08/kb5005652-manage-new-point-and-print-default-driver-installation-behavior-cve-2021-34481) warns that setting RestrictDriverInstallationToAdministrators to 0 makes Windows vulnerable; no combination of partial mitigations is equivalent to leaving it enabled. The advanced temporary-relaxation flow is **not** a recommended everyday repair. Prefer administrative driver installation and trusted package deployment. If a disposable lab must exercise this path, verify the original registry baseline, avoid untrusted print servers, confirm automatic rollback, and test the persistent emergency marker. Do not use this procedure on production networks.
 
 ## Point and Print scenario
 
@@ -156,6 +168,22 @@ Also test:
 3. Restart and confirm language preference persists.
 4. Confirm destructive/high-risk prompts remain understandable in both modes.
 5. Run in a narrow terminal and verify important warnings remain readable.
+
+
+## Windows driver servicing changes relevant in 2026
+
+Microsoft's current [third-party driver servicing roadmap](https://learn.microsoft.com/en-us/windows-hardware/drivers/print/end-of-servicing-plan-for-third-party-printer-drivers-on-windows) states that, since January 15, 2026, new third-party printer drivers for Windows 11 and Windows Server 2025 are generally no longer published via Windows Update, and that as of July 1, 2026, Windows prefers the inbox IPP class driver in driver ranking. Existing third-party drivers can still be installed from manufacturer packages. **Do not diagnose every missing legacy printer as a network fault.**
+
+Microsoft's [Windows Protected Print Mode documentation](https://learn.microsoft.com/en-us/windows/modern-print/windows-protected-print-mode/windows-protected-print-mode) confirms that enabling WPP uninstalls printers using unsupported third-party drivers, while compatible Mopria devices can be reinstalled using Windows Ready Print. Treat WPP state and driver family as separate observations from SMB/RPC connectivity; never bypass an organizational WPP policy automatically.
+
+Additional lab checks for this release:
+- Verify an IPv6-only active Public profile is not treated as disconnected and is reported in the TUI.
+- On a Named Pipes client, block TCP 135 while permitting SMB 445; the tool must not claim TCP 135 is necessarily the root cause.
+- Deliberately time out share enumeration: unknown must never be reported as proven denied access.
+- Keep a local direct-TCP/IP printer installed alongside a UNC printer connection; targeted reconnect must offer only the UNC connection.
+- Interrupt the temporary Point and Print connection attempt in an isolated VM after its security value changes; the recovery marker must persist across restart, even if another backup becomes latest. Confirm restoration and marker cleanup before any further compatibility action.
+
+These are **planned lab checks**, not passing A1-A6 evidence. Record exact OS build/UBR and sanitized printer/driver details when performing them.
 
 ## Full hardware-validation gate
 

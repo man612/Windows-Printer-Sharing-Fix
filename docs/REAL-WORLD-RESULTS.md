@@ -4,19 +4,22 @@ This ledger tracks **accepted real host/client evidence** for the v4 test matrix
 
 A row becomes `Validated` only after a real or disposable-lab setup exercises the expected behavior and links to a sanitized compatibility report. Static CI, code inspection, or a local diagnosis-only run does not count as hardware/network validation.
 
+> **⏸ TESTING ON HOLD — 2026-11-04:** A1–A6 belum dijalankan karena belum tersedia PC Windows kedua untuk pengujian host–client. Tunda pengujian nyata; lanjutkan ketika dua PC/VM terisolasi tersedia. Ini bukan hasil gagal dan bukan validasi berhasil. Status CI otomatis tidak berubah.
+
 ## Core matrix status
 
 | ID | Client | Host | Driver / path | WPP | Status | Evidence |
 | --- | --- | --- | --- | --- | --- | --- |
-| A1 | Windows 11 current | Windows 11 current | IPP / inbox | Off | Pending | — |
-| A2 | Windows 11 current | Windows 11 current | Third-party legacy driver | Off | Pending | — |
-| A3 | Windows 11 current | Windows 10 22H2 / ESU lab | Third-party legacy driver | Off | Pending | — |
-| A4 | Windows 11 current | Windows 10 lab | Third-party legacy driver | On (client) | Pending | — |
-| A5 | Windows 10 lab | Windows 11 current | Supported driver | N/A | Pending | — |
-| A6 | Windows 11 current | Windows 11 current | Network printer connection | Off | Pending | — |
+| A1 | Windows 11 current | Windows 11 current | IPP / inbox | Off | ⏸ Deferred | — |
+| A2 | Windows 11 current | Windows 11 current | Third-party legacy driver | Off | ⏸ Deferred | — |
+| A3 | Windows 11 current | Windows 10 22H2 / ESU lab | Third-party legacy driver | Off | ⏸ Deferred | — |
+| A4 | Windows 11 current | Windows 10 lab | Third-party legacy driver | On (client) | ⏸ Deferred | — |
+| A5 | Windows 10 lab | Windows 11 current | Supported driver | N/A | ⏸ Deferred | — |
+| A6 | Windows 11 current | Windows 11 current | Network printer connection | Off | ⏸ Deferred | — |
 
 ## Status meanings
 
+- `⏸ Deferred` — pengujian host–client sengaja ditunda karena PC Windows kedua belum tersedia; belum ada bukti cetak nyata dan status ini bukan lulus/gagal.
 - `Pending` — no accepted real-world evidence yet.
 - `Reported` — a useful report exists, but one or more required checks are incomplete.
 - `Validated` — expected behavior was exercised and the evidence is sufficient for this matrix row.

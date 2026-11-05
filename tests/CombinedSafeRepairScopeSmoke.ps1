@@ -39,6 +39,14 @@ function Write-Ok([string]$Text){}
 function Write-Log([string]$Message,[string]$Level='INFO'){}
 function Pause-Tui{}
 function Write-Host{param([Parameter(ValueFromRemainingArguments=$true)]$Object);$null=$Object}
+$script:PreviewCalls=0
+$script:PreviewConsent=$true
+function Confirm-SafeRepairPreview([string]$Action,[string[]]$Steps,[string]$Impact,[string]$RestoreNote){
+    $null=@($Action,$Steps,$Impact,$RestoreNote)
+    $script:PreviewCalls++
+    if($script:PreviewDrift -eq 'Discovery'){$script:ServiceStates['fdPHost']='Running'}
+    return [bool]$script:PreviewConsent
+}
 function Read-Choice([string]$Prompt,[string[]]$Allowed){
     $null=@($Prompt,$Allowed)
     if(-not $script:ChoiceQueue.Count){throw 'Choice queue exhausted.'}
@@ -59,6 +67,7 @@ function Get-CimInstance{
     if(-not $script:ServiceStates.ContainsKey($name)){throw "Unknown service: $name"}
     [pscustomobject]@{Name=$name;State=$script:ServiceStates[$name]}
 }
+function Assert-FirewallLocalPolicyEffective([object[]]$Rules,[switch]$RequireEnabled,[switch]$SkipBaselineComparison){$null=@($Rules,$RequireEnabled,$SkipBaselineComparison)}
 function Get-FirewallSharingRules{@($script:FirewallFixture)}
 function Set-NetFirewallRule{[CmdletBinding()]param([string]$Name,$Enabled,[Alias('Profile')]$FirewallProfile);$null=@($Name,$Enabled,$FirewallProfile)}
 function Get-NetFirewallRule{[CmdletBinding()]param([string]$Name);$null=$Name;[pscustomobject]@{Name='synthetic';Enabled='True';Profile='Domain, Private'}}
@@ -85,6 +94,7 @@ function Assert-Names([object[]]$Items,[string[]]$Expected,[string]$Label){
     $wanted=@($Expected|Sort-Object)
     if(($actual -join '|') -ne ($wanted -join '|')){throw "$Label mismatch. Actual=$($actual -join ',') Expected=$($wanted -join ',')"}
 }
+$script:PreviewDrift=''
 function Reset-Harness {
     Remove-Item -LiteralPath $script:BackupRoot -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Path $script:BackupRoot -Force|Out-Null
@@ -96,6 +106,7 @@ function Reset-Harness {
     $script:FailRestart=$false
     $script:FailFirewall=$false
     $script:FailDiscovery=$false
+    $script:PreviewDrift=''
 }
 
 try {
@@ -103,9 +114,9 @@ try {
     Reset-Harness
     $script:ServiceStates=@{Spooler='Running';fdPHost='Stopped';FDResPub='Running'}
     $script:FirewallFixture=@(
-      [pscustomobject]@{Name='FPS-Ready';Profile='Domain, Private';Enabled='True'},
-      [pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False'},
-      [pscustomobject]@{Name='FPS-Public';Profile='Public';Enabled='False'}
+      [pscustomobject]@{Name='FPS-Ready';Profile='Domain, Private';Enabled='True';Direction='Inbound';Action='Allow'},
+      [pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False';Direction='Inbound';Action='Allow'},
+      [pscustomobject]@{Name='FPS-Public';Profile='Public';Enabled='False';Direction='Inbound';Action='Allow'}
     )
     Show-SafeRepairMenu
     $mixed=Read-LatestState
@@ -118,7 +129,7 @@ try {
     # Already-correct discovery/firewall state: combined snapshot contains Spooler only, with no firewall state.
     Reset-Harness
     $script:ServiceStates=@{Spooler='Running';fdPHost='Running';FDResPub='Running'}
-    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Ready';Profile='Domain, Private';Enabled='True'})
+    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Ready';Profile='Domain, Private';Enabled='True';Direction='Inbound';Action='Allow'})
     Show-SafeRepairMenu
     $noop=Read-LatestState
     Assert-Names @($noop.State.Services) @('Spooler') 'Combined already-correct service snapshot'
@@ -130,13 +141,37 @@ try {
     # Independent combined substeps must all be attempted even when earlier ones throw.
     Reset-Harness
     $script:ServiceStates=@{Spooler='Running';fdPHost='Stopped';FDResPub='Running'}
-    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False'})
+    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False';Direction='Inbound';Action='Allow'})
     $script:FailRestart=$true
     $script:FailFirewall=$true
     $script:FailDiscovery=$true
     Show-SafeRepairMenu
     if($script:RestartCalls -ne 1 -or $script:FirewallRepairNames.Count -ne 1 -or $script:DiscoveryCalls -ne 1){throw 'Combined substep failure stopped a later planned repair.'}
     if($script:FailMessages.Count -ne 3){throw "Combined substep failures were not reported independently. Count=$($script:FailMessages.Count)"}
+
+    # An explicit No at preview must not create a Restore snapshot or touch a managed service/firewall.
+    Reset-Harness
+    $script:PreviewConsent=$false
+    $script:PreviewCalls=0
+    $script:ServiceStates=@{Spooler='Running';fdPHost='Stopped';FDResPub='Running'}
+    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False';Direction='Inbound';Action='Allow'})
+    Show-SafeRepairMenu
+    if($script:PreviewCalls -ne 1 -or $script:RestartCalls -ne 0 -or $script:DiscoveryCalls -ne 0 -or $script:FirewallRepairNames.Count){
+        throw 'Combined Safe Repair ignored a declined preview.'
+    }
+    if(Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf){throw 'Declined combined Safe Repair created a Restore snapshot.'}
+    $script:PreviewConsent=$true
+
+    # An external service change after consent must block the entire combined mutation.
+    Reset-Harness
+    $script:PreviewConsent=$true
+    $script:PreviewDrift='Discovery'
+    $script:ServiceStates=@{Spooler='Running';fdPHost='Stopped';FDResPub='Running'}
+    $script:FirewallFixture=@([pscustomobject]@{Name='FPS-Fix';Profile='Private';Enabled='False';Direction='Inbound';Action='Allow'})
+    Show-SafeRepairMenu
+    if(Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf){throw 'Stale combined preview created a Restore snapshot.'}
+    if($script:RestartCalls -or $script:DiscoveryCalls -or $script:FirewallRepairNames.Count){throw 'Stale combined preview still performed a repair.'}
+    $script:PreviewDrift=''
 
     Write-Host 'Combined Safe Repair scope smoke passed: snapshot services/firewall exactly match the planned mutation set.' -ForegroundColor Green
 } finally {

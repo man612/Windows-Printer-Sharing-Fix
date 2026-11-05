@@ -23,9 +23,56 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $root $file))) { throw "Packaged file missing: $file" }
     }
 
+    foreach ($requiredPath in @('CONTRIBUTING.md','tools\Test-A1Readiness.ps1','tools\Collect-LabEvidence.ps1','docs\assets\hero-v2.png')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $root $requiredPath) -PathType Leaf)) {
+            throw "Packaged README/runbook dependency missing: $requiredPath"
+        }
+    }
+
+    $rootQuickstart=Get-Content -LiteralPath (Join-Path $root 'QUICKSTART.md') -Raw
+    $docsQuickstart=Get-Content -LiteralPath (Join-Path $root 'docs\QUICKSTART.md') -Raw
+    if($rootQuickstart -notmatch '\]\(docs/SAFE-REPAIR-PREVIEW\.md\)'){
+        throw 'Root QUICKSTART links were not rebased to docs/ during release packaging.'
+    }
+    if($docsQuickstart -notmatch '\]\(SAFE-REPAIR-PREVIEW\.md\)'){
+        throw 'Source docs/QUICKSTART relative links were unexpectedly rewritten.'
+    }
+
+    # Every local Markdown/HTML link in the extracted user documentation must resolve offline.
+    $packageRoot=([IO.Path]::GetFullPath($root)).TrimEnd([char]'\',[char]'/')
+    $packagePrefix=$packageRoot+[IO.Path]::DirectorySeparatorChar
+    $checkedLinks=0
+    foreach($markdown in @(Get-ChildItem -LiteralPath $root -File -Filter '*.md' -Recurse)){
+        $markdownText=Get-Content -LiteralPath $markdown.FullName -Raw
+        foreach($pattern in @('\]\(([^)]+)\)','(?:href|src)="([^"]+)"')){
+            foreach($match in [regex]::Matches($markdownText,$pattern)){
+                $targetText=([string]$match.Groups[1].Value).Trim()
+                if($targetText.StartsWith('<')){$targetText=$targetText.Trim('<','>')}
+                $targetText=($targetText -split '\s+')[0]
+                if($targetText -match '^(?:[a-z][a-z0-9+.-]*:|#|//|\\)' -or -not $targetText){continue}
+                $relative=([Uri]::UnescapeDataString(($targetText -split '[#?]')[0])).Replace('/',[IO.Path]::DirectorySeparatorChar)
+                if(-not $relative){continue}
+                $target=([IO.Path]::GetFullPath((Join-Path $markdown.DirectoryName $relative)))
+                if(-not $target.StartsWith($packagePrefix,[StringComparison]::OrdinalIgnoreCase) -and -not [string]::Equals($target,$packageRoot,[StringComparison]::OrdinalIgnoreCase)){
+                    throw "Packaged document link escapes extracted ZIP root: $($markdown.Name) => $targetText"
+                }
+                if(-not(Test-Path -LiteralPath $target)){
+                    throw "Broken offline link in packaged document: $($markdown.Name) => $targetText"
+                }
+                $checkedLinks++
+            }
+        }
+    }
+    if($checkedLinks -lt 10){throw 'Release documentation link scanner did not exercise enough local links.'}
+
     if (Test-Path -LiteralPath (Join-Path $root '.git')) { throw 'Release package must not contain .git metadata.' }
     if (Test-Path -LiteralPath (Join-Path $root 'tests')) { throw 'Release package should not include the repository test suite.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\REAL-WORLD-RESULTS.md'))) { throw 'Packaged real-world results ledger is missing.' }
+    foreach ($requiredDoc in @('SAFE-REPAIR-PREVIEW.md','A1-LAB-RUNBOOK.md','QUICKSTART.md')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $root ('docs\' + $requiredDoc)) -PathType Leaf)) {
+            throw "Packaged linked runbook missing: $requiredDoc"
+        }
+    }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\DIAGNOSTIC-JSON.md'))) { throw 'Packaged diagnostic JSON schema documentation is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\diagnosis.schema.json'))) { throw 'Packaged formal diagnosis JSON Schema is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\PRINTSERVICE-EVENTS.md'))) { throw 'Packaged PrintService event classification documentation is missing.' }
@@ -40,8 +87,8 @@ try {
 
     $auto = Join-Path $temp 'auto-version'
     & $builder -OutputDirectory $auto | Out-Null
-    $autoZip = Join-Path $auto 'Windows-Printer-Sharing-Fix-v4.2.0.zip'
-    if (-not (Test-Path -LiteralPath $autoZip)) { throw 'Release builder failed to auto-detect stable version 4.2.0.' }
+    $autoZip = Join-Path $auto 'Windows-Printer-Sharing-Fix-v4.2.1.zip'
+    if (-not (Test-Path -LiteralPath $autoZip)) { throw 'Release builder failed to auto-detect stable version 4.2.1.' }
 
     Write-Host 'Package smoke passed: user ZIP/checksum are complete and auto-version detection works.' -ForegroundColor Green
 }

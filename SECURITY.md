@@ -44,7 +44,9 @@ The utility may detect Windows Protected Print Mode and direct the user to suppo
 
 Managed repair actions create a state snapshot before modification. Restore is designed to revert the specific managed states rather than importing an old copy of the entire Windows Print registry tree.
 
-Irreversible operations, such as deleting pending print jobs, must display a warning before execution.
+Irreversible operations, such as deleting pending print jobs, must display a warning before execution. Queue cleanup is a per-PC operation across all printer queues; it displays the target folder and job-file count, defaults to No, refuses a changed queue inventory, and preserves the Spooler's original Running/Stopped state.
+
+If a pending Point and Print emergency snapshot indicates a security mismatch (or its marker cannot be verified), Safe/Compatibility/Legacy repair actions are blocked until the emergency state is restored. Only read-only investigation, WPP help, and restoring the pending emergency snapshot remain available.
 
 ## Reporting a vulnerability
 

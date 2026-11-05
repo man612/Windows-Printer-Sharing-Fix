@@ -33,8 +33,8 @@ jobs:
           $match = [regex]::Match($source, '\$script:Version\s*=\s*''([^'']+)''', 'IgnoreCase')
           if (-not $match.Success) { throw 'Could not read stable source version.' }
           $expected = 'v' + $match.Groups[1].Value
-          if ('${{ github.ref_name }}' -ne $expected) {
-            throw "Release tag ${{ github.ref_name }} does not match source version $expected."
+          if ($env:GITHUB_REF_NAME -ne $expected) {
+            throw "Release tag $env:GITHUB_REF_NAME does not match source version $expected."
           }
 
       - name: Verify tag source and main validation gate
@@ -42,7 +42,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = '${{ github.ref_name }}'
+          $tag = $env:GITHUB_REF_NAME
           $sha = (git rev-parse HEAD).Trim()
           if ($LASTEXITCODE -ne 0 -or -not $sha) { throw 'Could not resolve checked-out release commit.' }
 
@@ -85,7 +85,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = '${{ github.ref_name }}'
+          $tag = $env:GITHUB_REF_NAME
           $releases = @(gh release list --limit 100 --json tagName,isDraft | ConvertFrom-Json)
           if ($LASTEXITCODE -ne 0) { throw 'Could not list existing releases.' }
           $release = @($releases | Where-Object { $_.tagName -eq $tag }) | Select-Object -First 1
@@ -99,14 +99,14 @@ jobs:
 
       - name: Build deterministic user package and checksum
         shell: powershell
-        run: .\tools\Build-Release.ps1 -Version "${{ github.ref_name }}" -OutputDirectory .\dist
+        run: .\tools\Build-Release.ps1 -Version "$env:GITHUB_REF_NAME" -OutputDirectory .\dist
 
       - name: Create or reuse draft release
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = '${{ github.ref_name }}'
+          $tag = $env:GITHUB_REF_NAME
           $releases = @(gh release list --limit 100 --json tagName,isDraft | ConvertFrom-Json)
           if ($LASTEXITCODE -ne 0) { throw 'Could not list existing releases.' }
           $release = @($releases | Where-Object { $_.tagName -eq $tag }) | Select-Object -First 1
@@ -129,7 +129,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload '${{ github.ref_name }}' .\dist\*.zip .\dist\SHA256SUMS.txt --clobber
+          gh release upload $env:GITHUB_REF_NAME .\dist\*.zip .\dist\SHA256SUMS.txt --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Release asset upload failed.' }
 
       - name: Verify uploaded release assets
@@ -137,7 +137,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = '${{ github.ref_name }}'
+          $tag = $env:GITHUB_REF_NAME
           $verifyDir = Join-Path $env:RUNNER_TEMP 'wpsf-release-upload-verify'
           if (Test-Path -LiteralPath $verifyDir) { Remove-Item -LiteralPath $verifyDir -Recurse -Force }
           New-Item -ItemType Directory -Path $verifyDir -Force | Out-Null
@@ -168,5 +168,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release edit '${{ github.ref_name }}' --draft=false --latest
+          gh release edit $env:GITHUB_REF_NAME --draft=false --latest
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
