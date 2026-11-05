@@ -1,12 +1,13 @@
 # Changelog
 
+## 4.2.1 - Unreleased
+
+### Fixed and hardened
+
 - Hardened queue purge with all-machine file preview, default-No confirmation, original Spooler status preservation, and changed-file-count refusal.
 - Blocked repair actions and unrelated Restore while pending Point and Print security recovery is unverified.
 - Added synthetic queue/recovery tests and cross-Windows CI smoke (Windows Server 2022 x64 and Windows 11 ARM64); real host/client testing remains deferred.
 
-## 4.2.1 - Unreleased
-
-### Fixed and hardened
 
 - RPC troubleshooting respects Named Pipes and distinguishes local configuration from verified remote port evidence.
 - PrintService events require target-path correlation; UNC names receive stricter validation.

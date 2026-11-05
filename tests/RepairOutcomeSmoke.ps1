@@ -175,13 +175,13 @@ if($script:Ok.Count -ne 1 -or $script:Fail.Count -ne 0){throw 'Successful queue 
 if($script:QueueEntries.Count -ne 0 -or $script:SpoolerState -ne 'Running'){throw 'Successful queue cleanup did not clear files and restore Spooler.'}
 if($script:StopCalls -ne 1 -or $script:StartCalls -ne 1){throw 'Successful queue cleanup service call count is wrong.'}
 
-# Stop failure: deletion must not run, recovery start still attempted, no OK.
+# Stop failure: deletion must not run, and an already-Running Spooler must not be restarted.
 Reset-QueueHarness
 $script:StopFails=$true
 Invoke-ClearPrintQueue
 if($script:Ok.Count -ne 0 -or $script:Fail.Count -ne 1){throw 'Spooler stop failure produced a false success or no failure.'}
 if($script:QueueEntries.Count -ne 2){throw 'Queue files were touched after Spooler stop failed.'}
-if($script:StartCalls -ne 1){throw 'Spooler recovery was not attempted after stop failure.'}
+if($script:StartCalls -ne 0 -or $script:SpoolerState -ne 'Running'){throw 'Spooler that remained Running was restarted unnecessarily after stop failure.'}
 
 # Delete failure: restart still attempted, no OK.
 Reset-QueueHarness

@@ -1497,7 +1497,11 @@ function Invoke-ClearPrintQueue {
             if([string](Get-Service -Name Spooler -ErrorAction Stop).Status -ne 'Stopped'){throw 'Spooler did not stop.'}
         }
         $queueFiles=@(Get-ChildItem -LiteralPath $queuePath -File -Force -ErrorAction Stop|Where-Object{$_.Extension -in @('.SPL','.SHD')})
-        if($queueFiles.Count -ne $preview.Count){throw 'Queue file count changed since confirmation; no files removed. Recheck the queue.'}
+        $previewPaths=@($preview|ForEach-Object{[string]$_.FullName}|Sort-Object)
+        $currentPaths=@($queueFiles|ForEach-Object{[string]$_.FullName}|Sort-Object)
+        if($queueFiles.Count -ne $preview.Count -or ($previewPaths -join '|') -cne ($currentPaths -join '|')){
+            throw 'Queued spool files changed since confirmation; no files removed. Recheck the queue.'
+        }
         foreach($item in $queueFiles){Remove-Item -LiteralPath $item.FullName -Force -ErrorAction Stop}
         $remaining=@(Get-ChildItem -LiteralPath $queuePath -File -Force -ErrorAction Stop|Where-Object{$_.Extension -in @('.SPL','.SHD')})
         if($remaining.Count){throw ("{0} queue file(s) remain." -f $remaining.Count)}
