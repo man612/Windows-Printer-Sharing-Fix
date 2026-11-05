@@ -1298,6 +1298,19 @@ function Invoke-RestoreLatest([string]$SnapshotDirectory='') {
         Pause-Tui
         return
     }
+    if(Test-PointAndPrintRecoveryRequired){
+        $emergencyMarker=Get-PendingPointAndPrintMarkerPath
+        $source=if(Test-Path -LiteralPath $emergencyMarker -PathType Leaf){$emergencyMarker}else{$script:LatestStateFile}
+        try{
+            $emergencyPath=([string](Get-Content -LiteralPath $source -ErrorAction Stop|Select-Object -First 1)).Trim()
+            $sameEmergency=[string]::Equals([IO.Path]::GetFullPath($emergencyPath).TrimEnd([char]'\'),([IO.Path]::GetFullPath($dir)).TrimEnd([char]'\'),[StringComparison]::OrdinalIgnoreCase)
+        }catch{$sameEmergency=$false}
+        if(-not $sameEmergency -or [string]$state.Reason -ne 'Temporary Point and Print relaxation'){
+            Write-Fail (L 'Restore is restricted to the pending Point and Print emergency snapshot until security recovery completes.' 'Restore hanya diizinkan untuk snapshot darurat Point and Print yang tertunda sampai pemulihan keamanan selesai.')
+            Pause-Tui
+            return
+        }
+    }
     # Historical snapshots may predate newer managed settings. Require stronger consent.
     if($SnapshotDirectory -and (Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf)){
         $latest=([string](Get-Content -LiteralPath $script:LatestStateFile -ErrorAction Stop|Select-Object -First 1)).Trim()
@@ -1466,36 +1479,48 @@ function Get-EffectiveSpoolDirectory {
     return $full
 }
 function Invoke-ClearPrintQueue {
-    Write-Warn (L 'This permanently removes pending print jobs and cannot be restored.' 'Ini menghapus print job yang masih menunggu secara permanen dan tidak dapat dikembalikan.')
-    if(-not(Read-YesNo (L 'Continue?' 'Lanjutkan?') $true)){return}
+    $baseline=[string](Get-Service -Name Spooler -ErrorAction Stop).Status
+    if($baseline -notin @('Running','Stopped')){throw "Print Spooler is in an unsupported state for queue cleanup: $baseline"}
     $queuePath=Get-EffectiveSpoolDirectory
+    $preview=@(Get-ChildItem -LiteralPath $queuePath -File -Force -ErrorAction Stop|Where-Object{$_.Extension -in @('.SPL','.SHD')})
+    if(-not $preview.Count){
+        Write-Info (L 'No pending SPL/SHD spool files found; nothing changed.' 'Tidak ditemukan file antrean SPL/SHD; tidak ada perubahan.')
+        return
+    }
+    Write-Warn (L 'This permanently removes pending jobs from ALL printer queues on this PC. Try cancelling the affected printer jobs in Windows Settings first.' 'Ini menghapus job tertunda pada SEMUA antrean printer di PC ini secara permanen. Coba batalkan job printer terkait lewat Settings Windows terlebih dahulu.')
+    Write-Info ((L 'Spool folder: {0}; SPL/SHD files: {1}; initial Spooler: {2}' 'Folder spool: {0}; file SPL/SHD: {1}; Spooler awal: {2}') -f $queuePath,$preview.Count,$baseline)
+    if(-not(Read-YesNo (L 'Permanently delete these queued files?' 'Hapus file antrean tersebut secara permanen?') $false)){return}
     $failure=$null
     try{
-        Stop-Service Spooler -Force -ErrorAction Stop
-        $spooler=Get-Service -Name Spooler -ErrorAction Stop
-        if($spooler.Status -ne 'Stopped'){throw 'Print Spooler did not reach Stopped state.'}
+        if($baseline -eq 'Running'){
+            Stop-Service Spooler -Force -ErrorAction Stop
+            if([string](Get-Service -Name Spooler -ErrorAction Stop).Status -ne 'Stopped'){throw 'Spooler did not stop.'}
+        }
         $queueFiles=@(Get-ChildItem -LiteralPath $queuePath -File -Force -ErrorAction Stop|Where-Object{$_.Extension -in @('.SPL','.SHD')})
+        if($queueFiles.Count -ne $preview.Count){throw 'Queue file count changed since confirmation; no files removed. Recheck the queue.'}
         foreach($item in $queueFiles){Remove-Item -LiteralPath $item.FullName -Force -ErrorAction Stop}
         $remaining=@(Get-ChildItem -LiteralPath $queuePath -File -Force -ErrorAction Stop|Where-Object{$_.Extension -in @('.SPL','.SHD')})
-        if($remaining.Count){throw ("{0} queue file(s) remain after cleanup." -f $remaining.Count)}
+        if($remaining.Count){throw ("{0} queue file(s) remain." -f $remaining.Count)}
     }catch{
         $failure=$_.Exception.Message
-        Write-Log ("Queue cleanup failed before Spooler restart: {0}" -f $failure) 'ERROR'
+        Write-Log ("Queue cleanup failure: {0}" -f $failure) 'ERROR'
     }finally{
         try{
-            Start-Service Spooler -ErrorAction Stop
-            $spooler=Get-Service -Name Spooler -ErrorAction Stop
-            if($spooler.Status -ne 'Running'){throw 'Print Spooler did not reach Running state after queue cleanup.'}
+            $current=[string](Get-Service -Name Spooler -ErrorAction Stop).Status
+            if($baseline -eq 'Running' -and $current -ne 'Running'){Start-Service Spooler -ErrorAction Stop}
+            $actual=[string](Get-Service -Name Spooler -ErrorAction Stop).Status
+            if($actual -ne $baseline){throw "Initial Spooler state=$baseline; current=$actual. Restore the original state manually."}
         }catch{
-            $restartError=$_.Exception.Message
-            if($failure){$failure="$failure; Spooler restart failed: $restartError"}else{$failure="Spooler restart failed: $restartError"}
-            Write-Log ("Queue cleanup Spooler recovery failed: {0}" -f $restartError) 'ERROR'
+            $stateError=$_.Exception.Message
+            if($failure){$failure="$failure; Spooler recovery: $stateError"}else{$failure="Spooler recovery: $stateError"}
+            Write-Log ("Queue cleanup Spooler recovery failed: {0}" -f $stateError) 'ERROR'
         }
     }
-    if($failure){Write-Fail ((L 'Pending queue cleanup was not fully completed: {0}' 'Pembersihan antrean tertunda tidak selesai sepenuhnya: {0}') -f $failure);return}
-    Write-Ok (L 'Pending queue files cleared and Print Spooler is running.' 'File antrean tertunda berhasil dibersihkan dan Print Spooler sedang berjalan.')
-    Write-Log 'Queue cleared; irreversible.' 'WARN'
+    if($failure){Write-Fail ((L 'Queue cleanup was incomplete or original Spooler state could not be verified: {0}' 'Pembersihan antrean tidak selesai atau status awal Spooler tidak terverifikasi: {0}') -f $failure);return}
+    Write-Ok ((L 'Removed {0} spool files; Spooler remains {1} as before.' '{0} file spool dihapus; Spooler tetap {1} seperti sebelumnya.') -f $preview.Count,$baseline)
+    Write-Log ("Queue cleared; files=$($preview.Count); initial Spooler=$baseline; irreversible.") 'WARN'
 }
+
 function Enable-PrivateFirewallSharing([object[]]$FirewallRules=$null) {
     if(-not(Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue)){Write-Warn (L 'Modern firewall mutation cmdlet is unavailable.' 'Cmdlet perubahan firewall modern tidak tersedia.');return}
     if(-not(Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue)){Write-Warn (L 'Modern firewall read-back cmdlet is unavailable; repair was not started.' 'Cmdlet pembacaan ulang firewall modern tidak tersedia; perbaikan tidak dijalankan.');return}
@@ -1609,6 +1634,7 @@ function Show-SafeRepairMenu {
         Write-Host (L '[6] Run all non-destructive safe repairs' '[6] Jalankan semua perbaikan aman yang tidak destruktif')
         Write-Host "[B] $(T 'Back')"
         $c=Read-Choice (T 'Select') @('1','2','3','4','5','6','B');if($c -eq 'B'){return}
+        if(-not(Test-RepairAllowedAfterRecovery)){Pause-Tui;continue}
         $snap=$null
         try{switch($c){
             '1'{
@@ -1872,6 +1898,7 @@ function Show-CompatibilityMenu {
         Write-Host (L '[5] Disable RPC packet privacy [HIGH RISK]' '[5] Nonaktifkan privasi paket RPC [RISIKO TINGGI]') -ForegroundColor Yellow
         Write-Host "[B] $(T 'Back')"
         $c=Read-Choice (T 'Select') @('1','2','3','4','5','B');if($c -eq 'B'){return}
+        if($c -ne '3' -and -not(Test-RepairAllowedAfterRecovery)){Pause-Tui;continue}
         try{switch($c){'1'{Set-RpcNamedPipeFallback};'2'{Connect-SharedPrinterTemporarilyRelaxed};'3'{Show-WppHelp};'4'{Reset-ClientPrinterConnectionTargeted};'5'{Set-RpcPrivacyCompatibility}}}catch{Write-Fail $_.Exception.Message}
         Pause-Tui
     }
@@ -1943,6 +1970,7 @@ function Show-LegacyMenu {
         Write-Host (L '[4] Blank-password remote logon: NOT AUTOMATED (use a password instead)' '[4] Login remote tanpa password: TIDAK DIOTOMATISKAN (gunakan password)')
         Write-Host "[B] $(T 'Back')"
         $c=Read-Choice (T 'Select') @('1','2','3','4','B');if($c -eq 'B'){return}
+        if($c -ne '4' -and -not(Test-RepairAllowedAfterRecovery)){Pause-Tui;continue}
         try{switch($c){'1'{Enable-Smb1ClientLegacy};'2'{Enable-InsecureGuestLegacy};'3'{Set-LegacyLmCompatibility};'4'{Write-Warn (L 'This utility intentionally refuses to disable LimitBlankPasswordUse. Use password-protected credentials instead.' 'Utilitas ini sengaja menolak menonaktifkan LimitBlankPasswordUse. Gunakan akun yang dilindungi password.')}}}catch{Write-Fail $_.Exception.Message}
         Pause-Tui
     }
@@ -2198,6 +2226,30 @@ function Show-PendingPointAndPrintRecovery {
     }
 }
 
+function Test-PointAndPrintRecoveryRequired {
+    $marker=Get-PendingPointAndPrintMarkerPath
+    $hasMarker=Test-Path -LiteralPath $marker -PathType Leaf
+    if(-not $hasMarker -and -not(Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf)){return $false}
+    try{
+        $source=if($hasMarker){$marker}else{$script:LatestStateFile}
+        $snapshotPath=([string](Get-Content -LiteralPath $source -ErrorAction Stop|Select-Object -First 1)).Trim()
+        $snapshot=Get-ValidatedRestoreSnapshot $snapshotPath
+        if([string]$snapshot.State.Reason -ne 'Temporary Point and Print relaxation'){return [bool]$hasMarker}
+        $entry=@($snapshot.State.Registry|Where-Object{$_.Name -eq 'RestrictDriverInstallationToAdministrators'})|Select-Object -First 1
+        if(-not $entry){return $true}
+        $actual=Get-RegistryValueStateStrict ([string]$entry.Path) ([string]$entry.Name)
+        return -not(Test-RegistryStateMatches $entry $actual)
+    }catch{
+        # A corrupt emergency marker is an unsafe unknown. A bad general restore pointer must not lock all repairs.
+        return [bool]$hasMarker
+    }
+}
+function Test-RepairAllowedAfterRecovery {
+    if(-not(Test-PointAndPrintRecoveryRequired)){return $true}
+    Write-Fail (L 'RECOVERY REQUIRED: Point and Print security differs from its baseline or its emergency state is unknown. Repairs are blocked. Restore the emergency snapshot using menu [5] first.' 'PEMULIHAN WAJIB: keamanan Point and Print berbeda dari kondisi awal atau kondisi darurat belum diketahui. Perbaikan diblokir. Restore snapshot darurat melalui menu [5] terlebih dahulu.')
+    return $false
+}
+
 function Show-MainMenu {
     while($true){
         Write-Header (T 'Main')
@@ -2222,6 +2274,7 @@ function Show-MainMenu {
         Write-MainMenuItem '9' (T 'Exit') DarkGray
         Write-Rule
         $c=Read-Choice (T 'Select') @('1','2','3','4','5','6','7','8','9')
+        if($c -in @('2','3','4') -and -not(Test-RepairAllowedAfterRecovery)){Pause-Tui;continue}
         switch($c){'1'{[void](Invoke-Diagnosis)};'2'{Show-SafeRepairMenu};'3'{Show-CompatibilityMenu};'4'{Show-LegacyMenu};'5'{Invoke-RestoreHistory};'6'{Show-ToolsMenu};'7'{Show-GuideMenu};'8'{Show-LanguageMenu};'9'{return}}
     }
 }
