@@ -9,13 +9,13 @@ foreach($name in @('Assert-SafeRepairPlanUnchanged','Test-FirewallRuleNeedsSafeR
     if(-not $fn){throw "Required check missing: $name"}
     . ([scriptblock]::Create($fn.Extent.Text))
 }
-$script:Services=@{Spooler='Running';fdPHost='Stopped'}
+$script:ServiceMap=@{Spooler='Running';fdPHost='Stopped'}
 $script:Rules=@([pscustomobject]@{Name='FPS-Fix';Enabled='False';Profile='Private';Direction='Inbound';Action='Allow'})
 $script:Profiles=@([pscustomobject]@{InterfaceIndex=9;InterfaceAlias='Ethernet';Name='OfficeLAN';NetworkCategory='Public';IPv4Connectivity='Internet';IPv6Connectivity='Disconnected'})
 function Get-Service{
     [CmdletBinding()]param([string]$Name)
-    if(-not $script:Services.ContainsKey($Name)){throw 'Service not found in the synthetic OS.'}
-    [pscustomobject]@{Name=$Name;Status=$script:Services[$Name]}
+    if(-not $script:ServiceMap.ContainsKey($Name)){throw 'Service not found in the synthetic OS.'}
+    [pscustomobject]@{Name=$Name;Status=$script:ServiceMap[$Name]}
 }
 function Get-FirewallSharingRules{return @($script:Rules)}
 function Get-NetworkProfilesSafe{return @($script:Profiles)}
@@ -29,9 +29,9 @@ $firewall=@($script:Rules|Select-Object Name,Enabled,Profile,Direction,Action)
 $network=$script:Profiles[0]|Select-Object InterfaceIndex,InterfaceAlias,Name,NetworkCategory,IPv4Connectivity,IPv6Connectivity
 # Unchanged preview must pass, including a valid empty eligible rule list.
 Assert-SafeRepairPlanUnchanged -ExpectedServices $services -ExpectedFirewallRules $firewall -CheckFirewall -ExpectedNetworkProfile $network
-$script:Services['fdPHost']='Running'
+$script:ServiceMap['fdPHost']='Running'
 Assert-Rejected {Assert-SafeRepairPlanUnchanged -ExpectedServices $services} 'service status changed'
-$script:Services['fdPHost']='Stopped'
+$script:ServiceMap['fdPHost']='Stopped'
 $script:Rules[0].Enabled='True'
 Assert-Rejected {Assert-SafeRepairPlanUnchanged -ExpectedFirewallRules $firewall -CheckFirewall} 'firewall enabled changed'
 $script:Rules[0].Enabled='False'
