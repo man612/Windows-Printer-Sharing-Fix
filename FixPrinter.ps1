@@ -2231,6 +2231,11 @@ function Show-PendingPointAndPrintRecovery {
 }
 
 function Test-PointAndPrintRecoveryRequired {
+    # Interactive production paths initialize the workspace first. Synthetic tests may load functions alone.
+    $backupRootVar=Get-Variable -Name BackupRoot -Scope Script -ErrorAction SilentlyContinue
+    $latestFileVar=Get-Variable -Name LatestStateFile -Scope Script -ErrorAction SilentlyContinue
+    if($null -eq $backupRootVar -or $null -eq $latestFileVar){return $false}
+    if([string]::IsNullOrWhiteSpace([string]$backupRootVar.Value) -or [string]::IsNullOrWhiteSpace([string]$latestFileVar.Value)){return $false}
     $marker=Get-PendingPointAndPrintMarkerPath
     $hasMarker=Test-Path -LiteralPath $marker -PathType Leaf
     if(-not $hasMarker -and -not(Test-Path -LiteralPath $script:LatestStateFile -PathType Leaf)){return $false}
