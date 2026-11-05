@@ -39,7 +39,7 @@ function Add-ReleaseSource([string]$RelativePath,[string]$SourcePath) {
     $script:releaseSources[$relative] = $SourcePath
 }
 
-$rootFiles = @('FixPrinter.bat','FixPrinter.ps1','README.md','QUICKSTART.md','LICENSE','SECURITY.md','CHANGELOG.md','ROADMAP.md')
+$rootFiles = @('FixPrinter.bat','FixPrinter.ps1','README.md','QUICKSTART.md','LICENSE','SECURITY.md','CHANGELOG.md','ROADMAP.md','CONTRIBUTING.md')
 foreach ($name in $rootFiles) {
     $sourcePath = if ($name -eq 'QUICKSTART.md') { Join-Path $repo 'docs\QUICKSTART.md' } else { Join-Path $repo $name }
     Add-ReleaseSource $name $sourcePath
@@ -53,6 +53,13 @@ $docs = @(
 foreach ($name in $docs) {
     Add-ReleaseSource ('docs/' + $name) (Join-Path $repo ('docs\' + $name))
 }
+
+# Distribute the read-only lab tools that the packaged A1/TEST-MATRIX runbooks invoke.
+foreach ($script in @('Test-A1Readiness.ps1','Collect-LabEvidence.ps1')) {
+    Add-ReleaseSource ('tools/' + $script) (Join-Path $repo ('tools\' + $script))
+}
+# Keep the locally referenced README image available in the downloaded ZIP.
+Add-ReleaseSource 'docs/assets/hero-v2.png' (Join-Path $repo 'docs\assets\hero-v2.png')
 
 $examplesSource = Join-Path $repo 'docs\examples'
 foreach ($file in @(Get-ChildItem -LiteralPath $examplesSource -File -Recurse)) {

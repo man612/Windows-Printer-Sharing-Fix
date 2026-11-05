@@ -8,7 +8,7 @@ Stable release artifacts are built so users can verify the bytes they downloaded
 
 The builder:
 
-The user ZIP includes linked Safe Repair and A1 lab runbooks, even though they do not require a second Windows PC to build or verify. Packaging smoke tests verify both are present in the extracted archive.
+The user ZIP includes linked Safe Repair and A1 lab runbooks, the read-only A1/evidence scripts that those runbooks invoke, the README's local hero image, and the linked contribution guide. Packaging smoke tests verify these dependencies are present in the extracted archive.
 
 - enumerates the explicit release file set;
 - normalizes ZIP paths to `/` separators;

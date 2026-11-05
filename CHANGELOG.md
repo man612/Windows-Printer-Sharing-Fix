@@ -4,7 +4,7 @@
 
 ### Fixed and hardened
 
-- Include linked Safe Repair preview and A1 lab runbooks in release ZIP; enforce extracted-archive checks so public README links stay valid.
+- Include linked Safe Repair/A1 runbooks, their referenced read-only tools, the README image, and the contribution guide in the release ZIP; enforce extracted-archive checks so offline links and commands work.
 
 - Prevent partially applying a Restore when policy now overrides its managed firewall rules; validate effective local policy before any Restore mutation and verify ActiveStore after firewall restoration.
 

@@ -23,6 +23,12 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $root $file))) { throw "Packaged file missing: $file" }
     }
 
+    foreach ($requiredPath in @('CONTRIBUTING.md','tools\Test-A1Readiness.ps1','tools\Collect-LabEvidence.ps1','docs\assets\hero-v2.png')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $root $requiredPath) -PathType Leaf)) {
+            throw "Packaged README/runbook dependency missing: $requiredPath"
+        }
+    }
+
     if (Test-Path -LiteralPath (Join-Path $root '.git')) { throw 'Release package must not contain .git metadata.' }
     if (Test-Path -LiteralPath (Join-Path $root 'tests')) { throw 'Release package should not include the repository test suite.' }
     if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\REAL-WORLD-RESULTS.md'))) { throw 'Packaged real-world results ledger is missing.' }
